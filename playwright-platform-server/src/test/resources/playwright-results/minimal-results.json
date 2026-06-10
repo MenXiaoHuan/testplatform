@@ -1,0 +1,35 @@
+{
+  "suites": [
+    {
+      "title": "checkout",
+      "specs": [
+        {
+          "title": "should pay successfully",
+          "tests": [
+            {
+              "projectName": "chromium",
+              "results": [
+                {
+                  "status": "passed",
+                  "duration": 321,
+                  "attachments": [
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": ".playwright-artifacts/checkout/trace.zip"
+                    },
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": ".playwright-artifacts/checkout/failure.png"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

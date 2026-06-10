@@ -1,0 +1,226 @@
+:root {
+  font-family: 'Avenir Next', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  color: #f5f1ea;
+  background:
+    radial-gradient(circle at top left, rgba(254, 196, 72, 0.2), transparent 24%),
+    radial-gradient(circle at top right, rgba(238, 92, 126, 0.18), transparent 28%),
+    linear-gradient(145deg, #0d1020 0%, #10192d 48%, #0f1320 100%);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 1280px;
+  min-height: 100vh;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image: linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 32px 32px;
+  mask-image: radial-gradient(circle at center, black 40%, transparent 85%);
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+#app {
+  min-height: 100vh;
+}
+
+.shell {
+  min-height: 100vh;
+  color: #f5f1ea;
+}
+
+.shell-aside {
+  padding: 28px 22px;
+  background: rgba(7, 11, 24, 0.72);
+  backdrop-filter: blur(22px);
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.brand {
+  padding: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 24px;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.03));
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
+}
+
+.brand p,
+.eyebrow {
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.24em;
+  font-size: 12px;
+  color: #f3c46b;
+}
+
+.brand h2,
+.shell-header h3,
+.page-hero h1 {
+  margin: 10px 0 8px;
+  font-family: 'Iowan Old Style', 'Palatino Linotype', 'Times New Roman', serif;
+  font-weight: 700;
+}
+
+.brand span,
+.hero-copy,
+.muted {
+  color: rgba(245, 241, 234, 0.72);
+}
+
+.nav-menu {
+  margin-top: 24px;
+  border: none;
+  background: transparent;
+}
+
+.nav-menu .el-menu-item {
+  margin-bottom: 8px;
+  border-radius: 16px;
+  color: rgba(245, 241, 234, 0.84);
+}
+
+.nav-menu .el-menu-item.is-active {
+  background: linear-gradient(90deg, rgba(243, 196, 107, 0.2), rgba(238, 92, 126, 0.18));
+  color: #fff5df;
+}
+
+.shell-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 26px 32px 8px;
+  background: transparent;
+}
+
+.shell-main {
+  padding: 12px 32px 32px;
+}
+
+.header-badge {
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #f7dd9c;
+}
+
+.page-grid {
+  display: grid;
+  gap: 20px;
+}
+
+.page-hero {
+  padding: 28px;
+  border-radius: 28px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.03));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.24);
+}
+
+.page-hero h1 {
+  font-size: 42px;
+}
+
+.hero-copy {
+  max-width: 760px;
+  margin: 0 0 22px;
+  line-height: 1.7;
+}
+
+.glass-card {
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 24px !important;
+  background: rgba(8, 12, 24, 0.68) !important;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.24);
+}
+
+.glass-card :is(.el-card__header, .el-card__body) {
+  background: transparent;
+  color: #f5f1ea;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 16px;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  gap: 20px;
+}
+
+.detail-list {
+  display: grid;
+  gap: 14px;
+}
+
+.detail-list div,
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+
+.detail-list span,
+.muted {
+  color: rgba(245, 241, 234, 0.68);
+}
+
+.el-dialog,
+.el-popper,
+.el-select-dropdown {
+  border-radius: 24px !important;
+}
+
+.el-dialog {
+  background: #11182a !important;
+}
+
+.el-dialog__title,
+.el-form-item__label,
+.el-table,
+.el-table th.el-table__cell,
+.el-table tr,
+.el-table td.el-table__cell,
+.el-empty__description p,
+.el-descriptions__label,
+.el-descriptions__content {
+  color: #f5f1ea !important;
+}
+
+.el-table,
+.el-table__inner-wrapper::before,
+.el-table tr,
+.el-table th.el-table__cell,
+.el-table td.el-table__cell {
+  background: transparent !important;
+}
+
+.el-input__wrapper,
+.el-textarea__inner,
+.el-select__wrapper {
+  background: rgba(255, 255, 255, 0.06) !important;
+  box-shadow: none !important;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}

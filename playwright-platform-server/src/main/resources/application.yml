@@ -1,0 +1,25 @@
+spring:
+  application:
+    name: playwright-platform-server
+  datasource:
+    url: ${PLATFORM_DB_URL:jdbc:mysql://localhost:3306/playwright_platform?useSSL=false&allowPublicKeyRetrieval=true&createDatabaseIfNotExist=true&serverTimezone=UTC}
+    username: ${PLATFORM_DB_USERNAME:root}
+    password: ${PLATFORM_DB_PASSWORD:12345678}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+server:
+  port: ${SERVER_PORT:8080}
+platform:
+  runner:
+    workspace-root: ${PLATFORM_RUNNER_WORKSPACE_ROOT:${java.io.tmpdir}/playwright-platform/workspaces}
+  storage:
+    bucket: ${PLATFORM_STORAGE_BUCKET:qa-report}
+    minio:
+      endpoint: ${PLATFORM_MINIO_ENDPOINT:http://127.0.0.1:9000}
+      access-key: ${PLATFORM_MINIO_ACCESS_KEY:minioadmin}
+      secret-key: ${PLATFORM_MINIO_SECRET_KEY:minioadmin}

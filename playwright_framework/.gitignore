@@ -1,0 +1,10 @@
+
+# Playwright
+node_modules/
+/reports/allure-report/
+/.allure-results/
+/.playwright-artifacts/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/
+/.worktrees/

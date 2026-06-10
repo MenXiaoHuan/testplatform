@@ -1,0 +1,32 @@
+.DS_Store
+.tmp/
+
+# Node / frontend
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Java / backend
+target/
+.mvn/
+
+# Editor / IDE
+.idea/
+*.iml
+.vscode/*
+!.vscode/extensions.json
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Playwright artifacts
+reports/allure-report/
+.allure-results/
+.playwright-artifacts/
+blob-report/
+playwright/.cache/
+playwright/.auth/
+.worktrees/
