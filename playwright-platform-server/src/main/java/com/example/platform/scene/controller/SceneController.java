@@ -1,8 +1,10 @@
 package com.example.platform.scene.controller;
 
+import com.example.platform.common.ApiResponse;
+import com.example.platform.common.PageResponse;
+import com.example.platform.scene.dto.SceneCardResponse;
 import com.example.platform.scene.model.SceneEntity;
 import com.example.platform.scene.service.SceneService;
-import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -24,23 +26,25 @@ public class SceneController {
     }
 
     @PostMapping
-    public SceneEntity create(@RequestBody SceneEntity entity) {
-        return sceneService.create(entity);
+    public ApiResponse<SceneEntity> create(@RequestBody SceneEntity entity) {
+        return ApiResponse.ok(sceneService.create(entity));
     }
 
     @GetMapping
-    public List<SceneEntity> list() {
-        return sceneService.list();
+    public ApiResponse<PageResponse<SceneCardResponse>> list(
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue = "1") int page,
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue = "10") int size) {
+        return ApiResponse.ok(sceneService.listCards(page, size));
     }
 
     @GetMapping("/{id}")
-    public SceneEntity get(@PathVariable Long id) {
-        return sceneService.get(id);
+    public ApiResponse<SceneEntity> get(@PathVariable Long id) {
+        return ApiResponse.ok(sceneService.get(id));
     }
 
     @PutMapping("/{id}")
-    public SceneEntity update(@PathVariable Long id, @RequestBody SceneEntity entity) {
-        return sceneService.update(id, entity);
+    public ApiResponse<SceneEntity> update(@PathVariable Long id, @RequestBody SceneEntity entity) {
+        return ApiResponse.ok(sceneService.update(id, entity));
     }
 
     @DeleteMapping("/{id}")

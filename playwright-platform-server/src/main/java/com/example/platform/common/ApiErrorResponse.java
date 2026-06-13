@@ -1,4 +1,4 @@
 package com.example.platform.common;
 
-public record ApiErrorResponse(String code, String message) {
+public record ApiErrorResponse(String code, Object data, String msg) {
 }

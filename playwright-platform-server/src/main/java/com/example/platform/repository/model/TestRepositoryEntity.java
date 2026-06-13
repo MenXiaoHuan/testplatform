@@ -24,8 +24,8 @@ public class TestRepositoryEntity {
     @Column(name = "default_branch", nullable = false, length = 128)
     private String defaultBranch;
 
-    @Column(name = "package_manager", nullable = false, length = 32)
-    private String packageManager;
+    @Column(name = "working_directory", length = 256)
+    private String workingDirectory;
 
     @Column(name = "install_command", nullable = false, length = 256)
     private String installCommand;
@@ -45,9 +45,6 @@ public class TestRepositoryEntity {
     @Column(name = "artifact_root_relative_path", nullable = false, length = 256)
     private String artifactRootRelativePath = ".playwright-artifacts";
 
-    @Column(name = "node_version", nullable = false, length = 32)
-    private String nodeVersion;
-
     @Column(nullable = false, columnDefinition = "tinyint(1)")
     private Boolean enabled = true;
 
@@ -65,8 +62,8 @@ public class TestRepositoryEntity {
     public void setGitUrl(String gitUrl) { this.gitUrl = gitUrl; }
     public String getDefaultBranch() { return defaultBranch; }
     public void setDefaultBranch(String defaultBranch) { this.defaultBranch = defaultBranch; }
-    public String getPackageManager() { return packageManager; }
-    public void setPackageManager(String packageManager) { this.packageManager = packageManager; }
+    public String getWorkingDirectory() { return workingDirectory; }
+    public void setWorkingDirectory(String workingDirectory) { this.workingDirectory = workingDirectory; }
     public String getInstallCommand() { return installCommand; }
     public void setInstallCommand(String installCommand) { this.installCommand = installCommand; }
     public String getRunCommandTemplate() { return runCommandTemplate; }
@@ -79,8 +76,6 @@ public class TestRepositoryEntity {
     public void setResultsIndexRelativePath(String resultsIndexRelativePath) { this.resultsIndexRelativePath = resultsIndexRelativePath; }
     public String getArtifactRootRelativePath() { return artifactRootRelativePath; }
     public void setArtifactRootRelativePath(String artifactRootRelativePath) { this.artifactRootRelativePath = artifactRootRelativePath; }
-    public String getNodeVersion() { return nodeVersion; }
-    public void setNodeVersion(String nodeVersion) { this.nodeVersion = nodeVersion; }
     public Boolean getEnabled() { return enabled; }
     public void setEnabled(Boolean enabled) { this.enabled = enabled; }
     public LocalDateTime getCreatedAt() { return createdAt; }

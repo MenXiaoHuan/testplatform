@@ -1,26 +1,25 @@
-import http from './http'
-import type { SceneForm, SceneRecord } from '../types/scene'
+import { del, get, post, put } from './http'
+import type { PageResult } from '../types/common'
+import type { SceneDetail, SceneForm, SceneRecord } from '../types/scene'
 
-export const listScenes = async () => {
-  const { data } = await http.get<SceneRecord[]>('/scenes')
-  return data
+export const listScenes = async (page = 1, size = 10) => {
+  return get<PageResult<SceneRecord>>('/scenes', {
+    params: { page, size },
+  })
 }
 
 export const getScene = async (id: number) => {
-  const { data } = await http.get<SceneRecord>(`/scenes/${id}`)
-  return data
+  return get<SceneDetail>(`/scenes/${id}`)
 }
 
 export const createScene = async (payload: SceneForm) => {
-  const { data } = await http.post<SceneRecord>('/scenes', payload)
-  return data
+  return post<SceneRecord>('/scenes', payload)
 }
 
 export const updateScene = async (id: number, payload: SceneForm) => {
-  const { data } = await http.put<SceneRecord>(`/scenes/${id}`, payload)
-  return data
+  return put<SceneRecord>(`/scenes/${id}`, payload)
 }
 
 export const deleteScene = async (id: number) => {
-  await http.delete(`/scenes/${id}`)
+  await del(`/scenes/${id}`)
 }

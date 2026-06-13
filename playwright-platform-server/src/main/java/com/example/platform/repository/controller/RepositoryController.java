@@ -1,8 +1,9 @@
 package com.example.platform.repository.controller;
 
+import com.example.platform.common.ApiResponse;
+import com.example.platform.common.PageResponse;
 import com.example.platform.repository.model.TestRepositoryEntity;
 import com.example.platform.repository.service.RepositoryService;
-import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -24,23 +25,25 @@ public class RepositoryController {
     }
 
     @PostMapping
-    public TestRepositoryEntity create(@RequestBody TestRepositoryEntity entity) {
-        return repositoryService.create(entity);
+    public ApiResponse<TestRepositoryEntity> create(@RequestBody TestRepositoryEntity entity) {
+        return ApiResponse.ok(repositoryService.create(entity));
     }
 
     @GetMapping
-    public List<TestRepositoryEntity> list() {
-        return repositoryService.list();
+    public ApiResponse<PageResponse<TestRepositoryEntity>> list(
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue = "1") int page,
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue = "10") int size) {
+        return ApiResponse.ok(repositoryService.list(page, size));
     }
 
     @GetMapping("/{id}")
-    public TestRepositoryEntity get(@PathVariable Long id) {
-        return repositoryService.get(id);
+    public ApiResponse<TestRepositoryEntity> get(@PathVariable Long id) {
+        return ApiResponse.ok(repositoryService.get(id));
     }
 
     @PutMapping("/{id}")
-    public TestRepositoryEntity update(@PathVariable Long id, @RequestBody TestRepositoryEntity entity) {
-        return repositoryService.update(id, entity);
+    public ApiResponse<TestRepositoryEntity> update(@PathVariable Long id, @RequestBody TestRepositoryEntity entity) {
+        return ApiResponse.ok(repositoryService.update(id, entity));
     }
 
     @DeleteMapping("/{id}")

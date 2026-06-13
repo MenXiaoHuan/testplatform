@@ -49,11 +49,41 @@ public class TaskEntity {
     @Column(name = "log_url", length = 1024)
     private String logUrl;
 
+    @Column(name = "resolved_branch", length = 128)
+    private String resolvedBranch;
+
+    @Column(name = "resolved_browser", length = 32)
+    private String resolvedBrowser;
+
+    @Column(name = "resolved_env_json", columnDefinition = "TEXT")
+    private String resolvedEnvJson;
+
+    @Column(name = "resolved_match_value", length = 256)
+    private String resolvedMatchValue;
+
+    @Column(name = "resolved_test_root", length = 256)
+    private String resolvedTestRoot;
+
+    @Column(name = "resolved_run_command", length = 1024)
+    private String resolvedRunCommand;
+
     @Column(name = "created_at", insertable = false, updatable = false)
     private LocalDateTime createdAt;
 
     @Column(name = "updated_at", insertable = false, updatable = false)
     private LocalDateTime updatedAt;
+
+    @Transient
+    private boolean reportReady;
+
+    @Transient
+    private int passedCount;
+
+    @Transient
+    private int failedCount;
+
+    @Transient
+    private int skippedCount;
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -83,4 +113,26 @@ public class TaskEntity {
     public void setReportUrl(String reportUrl) { this.reportUrl = reportUrl; }
     public String getLogUrl() { return logUrl; }
     public void setLogUrl(String logUrl) { this.logUrl = logUrl; }
+    public String getResolvedBranch() { return resolvedBranch; }
+    public void setResolvedBranch(String resolvedBranch) { this.resolvedBranch = resolvedBranch; }
+    public String getResolvedBrowser() { return resolvedBrowser; }
+    public void setResolvedBrowser(String resolvedBrowser) { this.resolvedBrowser = resolvedBrowser; }
+    public String getResolvedEnvJson() { return resolvedEnvJson; }
+    public void setResolvedEnvJson(String resolvedEnvJson) { this.resolvedEnvJson = resolvedEnvJson; }
+    public String getResolvedMatchValue() { return resolvedMatchValue; }
+    public void setResolvedMatchValue(String resolvedMatchValue) { this.resolvedMatchValue = resolvedMatchValue; }
+    public String getResolvedTestRoot() { return resolvedTestRoot; }
+    public void setResolvedTestRoot(String resolvedTestRoot) { this.resolvedTestRoot = resolvedTestRoot; }
+    public String getResolvedRunCommand() { return resolvedRunCommand; }
+    public void setResolvedRunCommand(String resolvedRunCommand) { this.resolvedRunCommand = resolvedRunCommand; }
+    public LocalDateTime getCreatedAt() { return createdAt; }
+    public LocalDateTime getUpdatedAt() { return updatedAt; }
+    public boolean isReportReady() { return reportReady; }
+    public void setReportReady(boolean reportReady) { this.reportReady = reportReady; }
+    public int getPassedCount() { return passedCount; }
+    public void setPassedCount(int passedCount) { this.passedCount = passedCount; }
+    public int getFailedCount() { return failedCount; }
+    public void setFailedCount(int failedCount) { this.failedCount = failedCount; }
+    public int getSkippedCount() { return skippedCount; }
+    public void setSkippedCount(int skippedCount) { this.skippedCount = skippedCount; }
 }

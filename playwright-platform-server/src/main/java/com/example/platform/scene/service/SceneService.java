@@ -1,12 +1,14 @@
 package com.example.platform.scene.service;
 
+import com.example.platform.common.PageResponse;
+import com.example.platform.scene.dto.SceneCardResponse;
 import com.example.platform.scene.model.SceneEntity;
-import java.util.List;
 
 public interface SceneService {
     SceneEntity create(SceneEntity entity);
-    List<SceneEntity> list();
+    PageResponse<SceneCardResponse> listCards(int page, int size);
     SceneEntity get(Long id);
     SceneEntity update(Long id, SceneEntity entity);
     void delete(Long id);
+    void deleteAllByRepoId(Long repoId);
 }

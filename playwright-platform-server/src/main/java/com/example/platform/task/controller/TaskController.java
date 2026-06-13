@@ -1,7 +1,11 @@
 package com.example.platform.task.controller;
 
+import com.example.platform.common.ApiResponse;
+import com.example.platform.common.PageResponse;
 import com.example.platform.task.dto.CaseResultResponse;
+import com.example.platform.task.dto.SceneTaskListResponse;
 import com.example.platform.task.dto.TaskDetailResponse;
+import com.example.platform.task.dto.TaskReportSummaryResponse;
 import com.example.platform.task.model.ArtifactEntity;
 import com.example.platform.task.model.TaskEntity;
 import com.example.platform.task.service.TaskService;
@@ -18,45 +22,54 @@ public class TaskController {
     }
 
     @PostMapping("/api/scenes/{sceneId}/run")
-    public TaskEntity runScene(@PathVariable Long sceneId) {
-        return taskService.createAndRun(sceneId);
+    public ApiResponse<TaskEntity> runScene(@PathVariable Long sceneId) {
+        return ApiResponse.ok(taskService.createAndStart(sceneId));
     }
 
     @GetMapping("/api/tasks")
-    public List<TaskEntity> listTasks() {
-        return taskService.list();
+    public ApiResponse<PageResponse<SceneTaskListResponse>> listTasks(
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue = "1") int page,
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue = "10") int size) {
+        return ApiResponse.ok(taskService.list(page, size));
+    }
+
+    @GetMapping("/api/scenes/{sceneId}/tasks")
+    public ApiResponse<PageResponse<SceneTaskListResponse>> listSceneTasks(
+            @PathVariable Long sceneId,
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue = "1") int page,
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue = "10") int size) {
+        return ApiResponse.ok(taskService.listByScene(sceneId, page, size));
     }
 
     @GetMapping("/api/tasks/{taskId}")
-    public TaskDetailResponse getTask(@PathVariable Long taskId) {
-        TaskEntity task = taskService.get(taskId);
-        List<ArtifactEntity> artifacts = taskService.listArtifacts(taskId);
-        return TaskDetailResponse.from(task, artifacts.size());
+    public ApiResponse<TaskDetailResponse> getTask(@PathVariable Long taskId) {
+        return ApiResponse.ok(taskService.getDetail(taskId));
     }
 
     @GetMapping("/api/tasks/{taskId}/report")
-    public Map<String, Object> getTaskReport(@PathVariable Long taskId) {
-        return Map.of(
+    public ApiResponse<Map<String, Object>> getTaskReport(@PathVariable Long taskId) {
+        return ApiResponse.ok(Map.of(
                 "taskId", taskId,
-                "reportUrl", taskService.getReportUrl(taskId));
+                "reportUrl", taskService.getReportUrl(taskId)));
+    }
+
+    @GetMapping("/api/tasks/{taskId}/report-summary")
+    public ApiResponse<TaskReportSummaryResponse> getTaskReportSummary(@PathVariable Long taskId) {
+        return ApiResponse.ok(taskService.getReportSummary(taskId));
     }
 
     @GetMapping("/api/tasks/{taskId}/artifacts")
-    public List<ArtifactEntity> listTaskArtifacts(@PathVariable Long taskId) {
-        return taskService.listArtifacts(taskId);
+    public ApiResponse<List<ArtifactEntity>> listTaskArtifacts(@PathVariable Long taskId) {
+        return ApiResponse.ok(taskService.listArtifacts(taskId));
     }
 
     @GetMapping("/api/tasks/{taskId}/cases")
-    public List<CaseResultResponse> listTaskCases(@PathVariable Long taskId) {
-        return taskService.listCaseResults(taskId).stream()
-                .map(caseResult -> CaseResultResponse.from(
-                        caseResult,
-                        taskService.listArtifactsByCaseResult(caseResult.getId()).size()))
-                .toList();
+    public ApiResponse<List<CaseResultResponse>> listTaskCases(@PathVariable Long taskId) {
+        return ApiResponse.ok(taskService.listCaseResultResponses(taskId));
     }
 
     @GetMapping("/api/tasks/{taskId}/cases/{caseResultId}/artifacts")
-    public List<ArtifactEntity> listCaseArtifacts(@PathVariable Long taskId, @PathVariable Long caseResultId) {
-        return taskService.listArtifactsByCaseResult(caseResultId);
+    public ApiResponse<List<ArtifactEntity>> listCaseArtifacts(@PathVariable Long taskId, @PathVariable Long caseResultId) {
+        return ApiResponse.ok(taskService.listArtifactsByCaseResult(caseResultId));
     }
 }

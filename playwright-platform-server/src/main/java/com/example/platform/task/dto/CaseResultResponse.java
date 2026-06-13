@@ -1,6 +1,7 @@
 package com.example.platform.task.dto;
 
 import com.example.platform.task.model.CaseResultEntity;
+import java.util.List;
 
 public record CaseResultResponse(
         Long id,
@@ -12,8 +13,26 @@ public record CaseResultResponse(
         String status,
         Long durationMs,
         String projectName,
-        int artifactCount) {
+        String errorMessage,
+        String videoUrl,
+        String traceUrl,
+        List<String> screenshotUrls,
+        String logUrl,
+        int artifactCount,
+        List<CaseArtifactLinkResponse> artifacts) {
     public static CaseResultResponse from(CaseResultEntity entity, int artifactCount) {
+        return from(entity, null, null, null, List.of(), null, artifactCount, List.of());
+    }
+
+    public static CaseResultResponse from(
+            CaseResultEntity entity,
+            String errorMessage,
+            String videoUrl,
+            String traceUrl,
+            List<String> screenshotUrls,
+            String logUrl,
+            int artifactCount,
+            List<CaseArtifactLinkResponse> artifacts) {
         return new CaseResultResponse(
                 entity.getId(),
                 entity.getTaskId(),
@@ -24,6 +43,12 @@ public record CaseResultResponse(
                 entity.getStatus(),
                 entity.getDurationMs(),
                 entity.getProjectName(),
-                artifactCount);
+                errorMessage,
+                videoUrl,
+                traceUrl,
+                screenshotUrls,
+                logUrl,
+                artifactCount,
+                artifacts);
     }
 }

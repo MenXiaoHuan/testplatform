@@ -37,7 +37,7 @@ public class TaskArtifactArchiveServiceImpl implements TaskArtifactArchiveServic
             Map<String, ArtifactBindingTarget> bindingTargets) {
         List<ArtifactEntity> archivedArtifacts = new ArrayList<>();
         for (String artifactRelativeRoot : artifactRelativeRoots) {
-            Path root = workspace.resolve(artifactRelativeRoot);
+            Path root = resolveWorkspaceSubPath(workspace, artifactRelativeRoot, "Artifact relative path");
             if (!Files.exists(root)) {
                 continue;
             }
@@ -51,6 +51,18 @@ public class TaskArtifactArchiveServiceImpl implements TaskArtifactArchiveServic
             }
         }
         return archivedArtifacts;
+    }
+
+    private Path resolveWorkspaceSubPath(Path workspace, String relativePath, String label) {
+        if (relativePath == null || relativePath.isBlank()) {
+            return workspace.normalize();
+        }
+        Path normalizedWorkspace = workspace.normalize();
+        Path resolved = normalizedWorkspace.resolve(relativePath).normalize();
+        if (!resolved.startsWith(normalizedWorkspace)) {
+            throw new IllegalArgumentException(label + " escapes execution directory: " + relativePath);
+        }
+        return resolved;
     }
 
     private ArtifactEntity persistArtifact(

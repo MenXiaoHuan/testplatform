@@ -1,0 +1,41 @@
+{
+  "suites": [
+    {
+      "title": "interview_agent/login/login.spec.ts",
+      "specs": [],
+      "suites": [
+        {
+          "title": "登录模块",
+          "specs": [
+            {
+              "title": "输入正确的账号和密码",
+              "tests": [
+                {
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "status": "failed",
+                      "duration": 60,
+                      "attachments": [
+                        {
+                          "name": "trace",
+                          "contentType": "application/zip",
+                          "path": ".playwright-artifacts/interview_agent/login/trace.zip"
+                        },
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": ".playwright-artifacts/interview_agent/login/error.png"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

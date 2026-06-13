@@ -1,16 +1,22 @@
 package com.example.platform.repository.service;
 
-import com.example.platform.repository.model.TestRepositoryEntity;
+import com.example.platform.common.PageResponse;
 import com.example.platform.repository.model.TestRepositoryJpaRepository;
-import java.util.List;
+import com.example.platform.repository.model.TestRepositoryEntity;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
 @Service
 public class RepositoryServiceImpl implements RepositoryService {
     private final TestRepositoryJpaRepository repository;
+    private final RepositoryCascadeDeleteService repositoryCascadeDeleteService;
 
-    public RepositoryServiceImpl(TestRepositoryJpaRepository repository) {
+    public RepositoryServiceImpl(
+            TestRepositoryJpaRepository repository,
+            RepositoryCascadeDeleteService repositoryCascadeDeleteService) {
         this.repository = repository;
+        this.repositoryCascadeDeleteService = repositoryCascadeDeleteService;
     }
 
     @Override
@@ -19,8 +25,16 @@ public class RepositoryServiceImpl implements RepositoryService {
     }
 
     @Override
-    public List<TestRepositoryEntity> list() {
-        return repository.findAll();
+    public PageResponse<TestRepositoryEntity> list(int page, int size) {
+        int normalizedPage = normalizePage(page);
+        int normalizedSize = normalizeSize(size);
+        return PageResponse.from(
+                repository.findAll(PageRequest.of(
+                        normalizedPage - 1,
+                        normalizedSize,
+                        Sort.by(Sort.Order.desc("updatedAt"), Sort.Order.desc("id")))),
+                normalizedPage,
+                normalizedSize);
     }
 
     @Override
@@ -35,20 +49,27 @@ public class RepositoryServiceImpl implements RepositoryService {
         existing.setName(entity.getName());
         existing.setGitUrl(entity.getGitUrl());
         existing.setDefaultBranch(entity.getDefaultBranch());
-        existing.setPackageManager(entity.getPackageManager());
+        existing.setWorkingDirectory(entity.getWorkingDirectory());
         existing.setInstallCommand(entity.getInstallCommand());
         existing.setRunCommandTemplate(entity.getRunCommandTemplate());
         existing.setTestRoot(entity.getTestRoot());
         existing.setReportRelativePath(entity.getReportRelativePath());
         existing.setResultsIndexRelativePath(entity.getResultsIndexRelativePath());
         existing.setArtifactRootRelativePath(entity.getArtifactRootRelativePath());
-        existing.setNodeVersion(entity.getNodeVersion());
         existing.setEnabled(entity.getEnabled());
         return repository.save(existing);
     }
 
     @Override
     public void delete(Long id) {
-        repository.delete(get(id));
+        repositoryCascadeDeleteService.deleteRepositoryGraph(id);
+    }
+
+    private int normalizePage(int page) {
+        return Math.max(page, 1);
+    }
+
+    private int normalizeSize(int size) {
+        return Math.min(Math.max(size, 1), 100);
     }
 }

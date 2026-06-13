@@ -19,10 +19,25 @@ public class ReportArchiveServiceImpl implements ReportArchiveService {
 
     @Override
     public String archiveReport(Path workspace, Long taskId, String reportRelativePath) {
-        Path reportDir = workspace.resolve(reportRelativePath);
+        Path reportDir = resolveWorkspaceSubPath(workspace, reportRelativePath, "Report relative path", true);
         if (!Files.exists(reportDir)) {
             return null;
         }
         return objectStorageService.uploadDirectory(bucket, "runs/" + taskId + "/report", reportDir);
+    }
+
+    private Path resolveWorkspaceSubPath(Path workspace, String relativePath, String label, boolean requireNonBlank) {
+        if (relativePath == null || relativePath.isBlank()) {
+            if (requireNonBlank) {
+                throw new IllegalArgumentException(label + " must not be blank");
+            }
+            return workspace.normalize();
+        }
+        Path normalizedWorkspace = workspace.normalize();
+        Path resolved = normalizedWorkspace.resolve(relativePath).normalize();
+        if (!resolved.startsWith(normalizedWorkspace)) {
+            throw new IllegalArgumentException(label + " escapes execution directory: " + relativePath);
+        }
+        return resolved;
     }
 }

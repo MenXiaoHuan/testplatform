@@ -1,11 +1,11 @@
 package com.example.platform.repository.service;
 
+import com.example.platform.common.PageResponse;
 import com.example.platform.repository.model.TestRepositoryEntity;
-import java.util.List;
 
 public interface RepositoryService {
     TestRepositoryEntity create(TestRepositoryEntity entity);
-    List<TestRepositoryEntity> list();
+    PageResponse<TestRepositoryEntity> list(int page, int size);
     TestRepositoryEntity get(Long id);
     TestRepositoryEntity update(Long id, TestRepositoryEntity entity);
     void delete(Long id);

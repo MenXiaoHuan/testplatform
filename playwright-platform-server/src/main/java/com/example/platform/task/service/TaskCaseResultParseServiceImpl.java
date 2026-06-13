@@ -6,6 +6,7 @@ import com.example.platform.task.parser.ParsedTaskResults;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -27,43 +28,7 @@ public class TaskCaseResultParseServiceImpl implements TaskCaseResultParseServic
             List<ParsedArtifactBinding> artifactBindings = new ArrayList<>();
 
             for (JsonNode suite : root.path("suites")) {
-                String suiteName = suite.path("title").asText();
-                for (JsonNode spec : suite.path("specs")) {
-                    String storyName = spec.path("title").asText();
-                    String fullName = suiteName + " :: " + storyName;
-                    for (JsonNode test : spec.path("tests")) {
-                        String projectName = test.path("projectName").asText();
-                        JsonNode results = test.path("results");
-                        if (!results.isArray() || results.isEmpty()) {
-                            continue;
-                        }
-                        JsonNode result = results.get(results.size() - 1);
-                        String historyId = projectName + "::" + suiteName + "::" + storyName;
-                        caseResults.add(new ParsedCaseResult(
-                                taskId,
-                                historyId,
-                                fullName,
-                                suiteName,
-                                storyName,
-                                mapStatus(result.path("status").asText()),
-                                result.path("duration").asLong(),
-                                projectName));
-
-                        for (JsonNode attachment : result.path("attachments")) {
-                            String rawPath = attachment.path("path").asText();
-                            if (rawPath == null || rawPath.isBlank()) {
-                                continue;
-                            }
-                            artifactBindings.add(new ParsedArtifactBinding(
-                                    normalizeRelativePath(workspaceRoot, rawPath),
-                                    mapArtifactType(
-                                            attachment.path("name").asText(),
-                                            attachment.path("contentType").asText(),
-                                            rawPath),
-                                    historyId));
-                        }
-                    }
-                }
+                collectSuiteResults(taskId, workspaceRoot, suite, null, caseResults, artifactBindings);
             }
 
             return new ParsedTaskResults(caseResults, artifactBindings);
@@ -72,13 +37,79 @@ public class TaskCaseResultParseServiceImpl implements TaskCaseResultParseServic
         }
     }
 
+    private void collectSuiteResults(
+            Long taskId,
+            Path workspaceRoot,
+            JsonNode suite,
+            String parentSuiteName,
+            List<ParsedCaseResult> caseResults,
+            List<ParsedArtifactBinding> artifactBindings) {
+        String suiteTitle = suite.path("title").asText();
+        String suiteName = (parentSuiteName == null || parentSuiteName.isBlank())
+                ? suiteTitle
+                : parentSuiteName + " / " + suiteTitle;
+
+        for (JsonNode spec : suite.path("specs")) {
+            String storyName = spec.path("title").asText();
+            String fullName = suiteName + " :: " + storyName;
+            for (JsonNode test : spec.path("tests")) {
+                String projectName = test.path("projectName").asText();
+                JsonNode results = test.path("results");
+                if (!results.isArray() || results.isEmpty()) {
+                    continue;
+                }
+                JsonNode result = results.get(results.size() - 1);
+                String historyId = projectName + "::" + suiteName + "::" + storyName;
+                caseResults.add(new ParsedCaseResult(
+                        taskId,
+                        historyId,
+                        fullName,
+                        suiteName,
+                        storyName,
+                        mapStatus(result.path("status").asText()),
+                        result.path("duration").asLong(),
+                        projectName));
+
+                for (JsonNode attachment : result.path("attachments")) {
+                    String rawPath = attachment.path("path").asText();
+                    if (rawPath == null || rawPath.isBlank()) {
+                        continue;
+                    }
+                    artifactBindings.add(new ParsedArtifactBinding(
+                            normalizeRelativePath(workspaceRoot, rawPath),
+                            mapArtifactType(
+                                    attachment.path("name").asText(),
+                                    attachment.path("contentType").asText(),
+                                    rawPath),
+                            historyId));
+                }
+            }
+        }
+
+        for (JsonNode childSuite : suite.path("suites")) {
+            collectSuiteResults(taskId, workspaceRoot, childSuite, suiteName, caseResults, artifactBindings);
+        }
+    }
+
     private String normalizeRelativePath(Path workspaceRoot, String rawPath) {
         Path attachmentPath = Path.of(rawPath).normalize();
-        Path normalizedWorkspace = workspaceRoot.normalize();
+        Path normalizedWorkspace = toComparablePath(workspaceRoot);
         if (attachmentPath.isAbsolute()) {
-            return normalizedWorkspace.relativize(attachmentPath).toString().replace('\\', '/');
+            Path comparableAttachmentPath = toComparablePath(attachmentPath);
+            return normalizedWorkspace.relativize(comparableAttachmentPath).toString().replace('\\', '/');
         }
         return attachmentPath.toString().replace('\\', '/');
+    }
+
+    private Path toComparablePath(Path path) {
+        try {
+            if (Files.exists(path)) {
+                return path.toRealPath().normalize();
+            }
+        } catch (IOException ignored) {
+            // Fall back to normalized absolute path when real path resolution is unavailable.
+        }
+        return path.toAbsolutePath().normalize();
     }
 
     private String mapStatus(String status) {
