@@ -30,3 +30,6 @@ blob-report/
 playwright/.cache/
 playwright/.auth/
 .worktrees/
+
+# Separate git-managed project
+playwright_framework/
