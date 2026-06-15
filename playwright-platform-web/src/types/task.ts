@@ -8,14 +8,20 @@ export interface TaskRecord {
   detailAvailable?: boolean
   triggerType: string
   triggerUser?: string | null
+  triggerReason?: string | null
   branch: string
   commitSha?: string | null
+  currentStage?: string | null
+  resultCode?: string | null
+  resultMessage?: string | null
+  cancelRequested?: boolean
+  cancelRequestedBy?: string | null
+  queuedAt?: string | null
   startedAt?: string | null
   finishedAt?: string | null
   durationMs?: number | null
   createdAt?: string | null
   runnerName?: string | null
-  reportUrl?: string | null
   logUrl?: string | null
   resolvedBranch?: string | null
   resolvedBrowser?: string | null
@@ -26,15 +32,9 @@ export interface TaskRecord {
   environmentVariableCount?: number
   artifactCount?: number
   hasArtifacts?: boolean
-  reportReady?: boolean
   passedCount?: number
   failedCount?: number
   skippedCount?: number
-}
-
-export interface TaskReport {
-  taskId: number
-  reportUrl: string | null
 }
 
 export interface ArtifactRecord {
@@ -47,4 +47,13 @@ export interface ArtifactRecord {
   contentType?: string | null
   size?: number | null
   url?: string | null
+}
+
+export interface TaskStageLogRecord {
+  id: number
+  stage: string
+  streamType: string
+  previewText?: string | null
+  lineCount: number
+  downloadUrl?: string | null
 }

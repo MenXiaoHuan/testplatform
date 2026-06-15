@@ -8,6 +8,8 @@ import com.example.platform.task.model.ArtifactJpaRepository;
 import com.example.platform.task.model.CaseResultJpaRepository;
 import com.example.platform.task.model.TaskEntity;
 import com.example.platform.task.model.TaskJpaRepository;
+import com.example.platform.task.model.TaskStageLogEntity;
+import com.example.platform.task.model.TaskStageLogJpaRepository;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -19,6 +21,7 @@ public class SceneCascadeDeleteServiceImpl implements SceneCascadeDeleteService 
     private final TaskJpaRepository taskRepository;
     private final CaseResultJpaRepository caseResultRepository;
     private final ArtifactJpaRepository artifactRepository;
+    private final TaskStageLogJpaRepository taskStageLogRepository;
     private final ObjectStorageService objectStorageService;
     private final String storageBucket;
 
@@ -27,12 +30,14 @@ public class SceneCascadeDeleteServiceImpl implements SceneCascadeDeleteService 
             TaskJpaRepository taskRepository,
             CaseResultJpaRepository caseResultRepository,
             ArtifactJpaRepository artifactRepository,
+            TaskStageLogJpaRepository taskStageLogRepository,
             ObjectStorageService objectStorageService,
             @Value("${platform.storage.bucket}") String storageBucket) {
         this.sceneRepository = sceneRepository;
         this.taskRepository = taskRepository;
         this.caseResultRepository = caseResultRepository;
         this.artifactRepository = artifactRepository;
+        this.taskStageLogRepository = taskStageLogRepository;
         this.objectStorageService = objectStorageService;
         this.storageBucket = storageBucket;
     }
@@ -47,11 +52,12 @@ public class SceneCascadeDeleteServiceImpl implements SceneCascadeDeleteService 
         List<Long> taskIds = tasks.stream().map(TaskEntity::getId).toList();
 
         deleteArtifactObjects(taskIds);
-        deleteReportObjects(tasks);
+        deleteStageLogObjects(taskIds);
 
         if (!taskIds.isEmpty()) {
             caseResultRepository.deleteAllByTaskIdIn(taskIds);
             artifactRepository.deleteAllByTaskIdIn(taskIds);
+            taskStageLogRepository.deleteAllByTaskIdIn(taskIds);
         }
 
         taskRepository.deleteAllBySceneId(sceneId);
@@ -70,25 +76,16 @@ public class SceneCascadeDeleteServiceImpl implements SceneCascadeDeleteService 
         }
     }
 
-    private void deleteReportObjects(List<TaskEntity> tasks) {
-        for (TaskEntity task : tasks) {
-            String objectKey = extractObjectKey(task.getReportUrl());
-            if (objectKey != null) {
-                objectStorageService.deleteObject(storageBucket, objectKey);
+    private void deleteStageLogObjects(List<Long> taskIds) {
+        if (taskIds.isEmpty()) {
+            return;
+        }
+        List<TaskStageLogEntity> stageLogs = taskStageLogRepository.findAllByTaskIdIn(taskIds);
+        for (TaskStageLogEntity stageLog : stageLogs) {
+            if (stageLog.getObjectKey() != null && !stageLog.getObjectKey().isBlank()) {
+                objectStorageService.deleteObject(storageBucket, stageLog.getObjectKey());
             }
         }
     }
 
-    private String extractObjectKey(String reportUrl) {
-        if (reportUrl == null || reportUrl.isBlank()) {
-            return null;
-        }
-        String marker = "/" + storageBucket + "/";
-        int markerIndex = reportUrl.indexOf(marker);
-        if (markerIndex < 0) {
-            return null;
-        }
-        String objectKey = reportUrl.substring(markerIndex + marker.length());
-        return objectKey.isBlank() ? null : objectKey;
-    }
 }

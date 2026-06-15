@@ -2,6 +2,7 @@ package com.example.platform.common;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -23,6 +24,19 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.CONFLICT)
     public ApiErrorResponse handleIllegalState(IllegalStateException ex) {
         return new ApiErrorResponse("CONFLICT", null, ex.getMessage());
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    public ApiErrorResponse handleDataIntegrityViolation(DataIntegrityViolationException ex) {
+        String message = ex.getMessage() == null ? "" : ex.getMessage().toLowerCase();
+        if (message.contains("uk_test_repository_name") || message.contains("test_repository.name")) {
+            return new ApiErrorResponse("CONFLICT", null, "仓库名称已存在，请更换后重试");
+        }
+        if (message.contains("uk_scene_name") || message.contains("scene.name")) {
+            return new ApiErrorResponse("CONFLICT", null, "场景名称已存在，请更换后重试");
+        }
+        return new ApiErrorResponse("CONFLICT", null, "数据保存冲突，请稍后重试");
     }
 
     @ExceptionHandler(ResponseStatusException.class)

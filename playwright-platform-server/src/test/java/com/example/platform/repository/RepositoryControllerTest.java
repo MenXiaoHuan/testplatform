@@ -39,7 +39,6 @@ class RepositoryControllerTest {
         entity.setInstallCommand("npm install");
         entity.setRunCommandTemplate("node ./scripts/run-e2e.cjs");
         entity.setTestRoot("tests");
-        entity.setReportRelativePath("reports/allure-report");
         entity.setResultsIndexRelativePath("test-results/.playwright-results.json");
         entity.setArtifactRootRelativePath(".playwright-artifacts");
         entity.setEnabled(true);
@@ -58,7 +57,6 @@ class RepositoryControllerTest {
                       "installCommand": "npm install",
                       "runCommandTemplate": "node ./scripts/run-e2e.cjs",
                       "testRoot": "tests",
-                      "reportRelativePath": "reports/allure-report",
                       "resultsIndexRelativePath": "test-results/.playwright-results.json",
                       "artifactRootRelativePath": ".playwright-artifacts",
                       "enabled": true
@@ -94,7 +92,6 @@ class RepositoryControllerTest {
         entity.setInstallCommand("npm install");
         entity.setRunCommandTemplate("node ./scripts/run-e2e.cjs");
         entity.setTestRoot("tests");
-        entity.setReportRelativePath("reports/allure-report");
         entity.setResultsIndexRelativePath("test-results/.playwright-results.json");
         entity.setArtifactRootRelativePath(".playwright-artifacts");
         entity.setEnabled(true);
@@ -108,7 +105,6 @@ class RepositoryControllerTest {
         updated.setInstallCommand("npm ci");
         updated.setRunCommandTemplate("node ./scripts/run-e2e.cjs --grep smoke");
         updated.setTestRoot("tests");
-        updated.setReportRelativePath("reports/allure-report");
         updated.setResultsIndexRelativePath("test-results/results.json");
         updated.setArtifactRootRelativePath(".playwright-output");
         updated.setEnabled(false);
@@ -135,7 +131,6 @@ class RepositoryControllerTest {
                       "installCommand": "npm ci",
                       "runCommandTemplate": "node ./scripts/run-e2e.cjs --grep smoke",
                       "testRoot": "tests",
-                      "reportRelativePath": "reports/allure-report",
                       "resultsIndexRelativePath": "test-results/results.json",
                       "artifactRootRelativePath": ".playwright-output",
                       "enabled": false
@@ -163,7 +158,6 @@ class RepositoryControllerTest {
         entity.setInstallCommand("npm install");
         entity.setRunCommandTemplate("npm run test:e2e --");
         entity.setTestRoot("tests");
-        entity.setReportRelativePath("reports/allure-report");
         entity.setResultsIndexRelativePath("test-results/.playwright-results.json");
         entity.setArtifactRootRelativePath(".playwright-artifacts");
         entity.setEnabled(true);
@@ -181,7 +175,6 @@ class RepositoryControllerTest {
                       "installCommand": "npm install",
                       "runCommandTemplate": "npm run test:e2e --",
                       "testRoot": "tests",
-                      "reportRelativePath": "reports/allure-report",
                       "resultsIndexRelativePath": "test-results/.playwright-results.json",
                       "artifactRootRelativePath": ".playwright-artifacts",
                       "enabled": true
@@ -224,5 +217,31 @@ class RepositoryControllerTest {
                 .andExpect(jsonPath("$.code").value("BAD_REQUEST"))
                 .andExpect(jsonPath("$.data").value(nullValue()))
                 .andExpect(jsonPath("$.msg").value("Repository not found: 99"));
+    }
+
+    @Test
+    void shouldReturnConflictWhenRepositoryNameAlreadyExists() throws Exception {
+        Mockito.when(repositoryService.create(Mockito.any(TestRepositoryEntity.class)))
+                .thenThrow(new IllegalStateException("仓库名称已存在，请更换后重试"));
+
+        mockMvc.perform(post("/api/repos")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "name": "demo-repo",
+                      "gitUrl": "git@demo/repo.git",
+                      "defaultBranch": "main",
+                      "installCommand": "npm install",
+                      "runCommandTemplate": "npx playwright test",
+                      "testRoot": "tests",
+                      "resultsIndexRelativePath": "test-results/.playwright-results.json",
+                      "artifactRootRelativePath": ".playwright-artifacts",
+                      "enabled": true
+                    }
+                    """))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CONFLICT"))
+                .andExpect(jsonPath("$.data").value(nullValue()))
+                .andExpect(jsonPath("$.msg").value("仓库名称已存在，请更换后重试"));
     }
 }

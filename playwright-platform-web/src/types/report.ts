@@ -1,5 +1,3 @@
-import type { ArtifactRecord, TaskRecord } from './task'
-
 export interface CaseArtifactLinkRecord {
   artifactType: string
   label: string
@@ -44,17 +42,4 @@ export interface TaskArtifactSummaryRecord {
 export interface TaskProjectStatRecord {
   projectName: string
   total: number
-}
-
-export interface TaskReportSummary {
-  task: TaskRecord
-  reportStatus: string
-  reportUrl: string | null
-  artifacts: ArtifactRecord[]
-  caseResults: CaseResultRecord[]
-  caseSummary: TaskCaseSummary
-  artifactSummary: TaskArtifactSummaryRecord
-  projectStats: TaskProjectStatRecord[]
-  artifactCount: number
-  reportReady: boolean
 }

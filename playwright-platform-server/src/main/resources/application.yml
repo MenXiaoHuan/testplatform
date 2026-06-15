@@ -15,6 +15,15 @@ spring:
 server:
   port: ${SERVER_PORT:8080}
 platform:
+  task:
+    execution:
+      core-pool-size: 2
+      max-pool-size: 4
+      queue-capacity: 50
+      keep-alive-seconds: 60
+      install-timeout-seconds: 600
+      test-timeout-seconds: 1800
+      monitor-log-interval-seconds: 30
   runner:
     workspace-root: ${PLATFORM_RUNNER_WORKSPACE_ROOT:${java.io.tmpdir}/playwright-platform/workspaces}
   storage:

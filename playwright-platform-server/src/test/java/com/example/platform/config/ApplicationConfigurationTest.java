@@ -17,4 +17,19 @@ class ApplicationConfigurationTest {
         assertThat(applicationYaml).contains("${PLATFORM_DB_USERNAME:root}");
         assertThat(applicationYaml).contains("${PLATFORM_DB_PASSWORD:12345678}");
     }
+
+    @Test
+    void shouldExposeTaskExecutionDefaults() throws IOException {
+        String applicationYaml = Files.readString(Path.of("src/main/resources/application.yml"));
+
+        assertThat(applicationYaml).contains("platform:");
+        assertThat(applicationYaml).contains("task:");
+        assertThat(applicationYaml).contains("execution:");
+        assertThat(applicationYaml).contains("core-pool-size: 2");
+        assertThat(applicationYaml).contains("max-pool-size: 4");
+        assertThat(applicationYaml).contains("queue-capacity: 50");
+        assertThat(applicationYaml).contains("install-timeout-seconds: 600");
+        assertThat(applicationYaml).contains("test-timeout-seconds: 1800");
+        assertThat(applicationYaml).contains("monitor-log-interval-seconds: 30");
+    }
 }

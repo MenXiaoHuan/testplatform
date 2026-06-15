@@ -10,6 +10,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class RepositoryServiceImplTest {
     @Test
@@ -25,7 +26,6 @@ class RepositoryServiceImplTest {
         payload.setInstallCommand("npm install");
         payload.setRunCommandTemplate("npm run test:e2e --");
         payload.setTestRoot("tests");
-        payload.setReportRelativePath("reports/allure-report");
         payload.setResultsIndexRelativePath("test-results/.playwright-results.json");
         payload.setArtifactRootRelativePath(".playwright-artifacts");
         payload.setEnabled(true);
@@ -56,7 +56,6 @@ class RepositoryServiceImplTest {
         existing.setInstallCommand("npm install");
         existing.setRunCommandTemplate("npm run test:e2e --");
         existing.setTestRoot("tests");
-        existing.setReportRelativePath("reports/allure-report");
         existing.setResultsIndexRelativePath("test-results/.playwright-results.json");
         existing.setArtifactRootRelativePath(".playwright-artifacts");
         existing.setEnabled(true);
@@ -69,7 +68,6 @@ class RepositoryServiceImplTest {
         payload.setInstallCommand("npm ci");
         payload.setRunCommandTemplate("npm run test:e2e --");
         payload.setTestRoot("tests");
-        payload.setReportRelativePath("reports/allure-report");
         payload.setResultsIndexRelativePath("test-results/.playwright-results.json");
         payload.setArtifactRootRelativePath(".playwright-artifacts");
         payload.setEnabled(false);
@@ -84,5 +82,44 @@ class RepositoryServiceImplTest {
 
         assertThat(result.getWorkingDirectory()).isEqualTo("playwright_framework");
         assertThat(result.getDefaultBranch()).isEqualTo("release");
+    }
+
+    @Test
+    void shouldRejectDuplicateRepositoryNameWhenCreating() {
+        TestRepositoryJpaRepository repositoryJpaRepository = Mockito.mock(TestRepositoryJpaRepository.class);
+        RepositoryCascadeDeleteService repositoryCascadeDeleteService = Mockito.mock(RepositoryCascadeDeleteService.class);
+        RepositoryServiceImpl service = new RepositoryServiceImpl(repositoryJpaRepository, repositoryCascadeDeleteService);
+
+        TestRepositoryEntity payload = new TestRepositoryEntity();
+        payload.setName("demo-repo");
+
+        Mockito.when(repositoryJpaRepository.existsByNameIgnoreCase("demo-repo")).thenReturn(true);
+
+        assertThatThrownBy(() -> service.create(payload))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("仓库名称已存在，请更换后重试");
+        Mockito.verify(repositoryJpaRepository, Mockito.never()).save(Mockito.any(TestRepositoryEntity.class));
+    }
+
+    @Test
+    void shouldRejectDuplicateRepositoryNameWhenUpdating() {
+        TestRepositoryJpaRepository repositoryJpaRepository = Mockito.mock(TestRepositoryJpaRepository.class);
+        RepositoryCascadeDeleteService repositoryCascadeDeleteService = Mockito.mock(RepositoryCascadeDeleteService.class);
+        RepositoryServiceImpl service = new RepositoryServiceImpl(repositoryJpaRepository, repositoryCascadeDeleteService);
+
+        TestRepositoryEntity existing = new TestRepositoryEntity();
+        existing.setId(1L);
+        existing.setName("demo-repo");
+
+        TestRepositoryEntity payload = new TestRepositoryEntity();
+        payload.setName("demo-repo");
+
+        Mockito.when(repositoryJpaRepository.findById(1L)).thenReturn(Optional.of(existing));
+        Mockito.when(repositoryJpaRepository.existsByNameIgnoreCaseAndIdNot("demo-repo", 1L)).thenReturn(true);
+
+        assertThatThrownBy(() -> service.update(1L, payload))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("仓库名称已存在，请更换后重试");
+        Mockito.verify(repositoryJpaRepository, Mockito.never()).save(Mockito.any(TestRepositoryEntity.class));
     }
 }

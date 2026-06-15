@@ -22,8 +22,14 @@ public class TaskEntity {
     @Column(name = "trigger_type", nullable = false, length = 32)
     private String triggerType;
 
+    @Column(name = "trigger_reason", length = 128)
+    private String triggerReason;
+
     @Column(name = "trigger_user", length = 64)
     private String triggerUser;
+
+    @Column(name = "queued_at")
+    private LocalDateTime queuedAt;
 
     @Column(nullable = false, length = 128)
     private String branch;
@@ -43,8 +49,23 @@ public class TaskEntity {
     @Column(name = "runner_name", length = 128)
     private String runnerName;
 
-    @Column(name = "report_url", length = 1024)
-    private String reportUrl;
+    @Column(name = "current_stage", length = 32)
+    private String currentStage;
+
+    @Column(name = "result_code", length = 32)
+    private String resultCode;
+
+    @Column(name = "result_message", length = 1024)
+    private String resultMessage;
+
+    @Column(name = "cancel_requested", nullable = false, columnDefinition = "tinyint(1)")
+    private Boolean cancelRequested = false;
+
+    @Column(name = "cancel_requested_at")
+    private LocalDateTime cancelRequestedAt;
+
+    @Column(name = "cancel_requested_by", length = 64)
+    private String cancelRequestedBy;
 
     @Column(name = "log_url", length = 1024)
     private String logUrl;
@@ -74,9 +95,6 @@ public class TaskEntity {
     private LocalDateTime updatedAt;
 
     @Transient
-    private boolean reportReady;
-
-    @Transient
     private int passedCount;
 
     @Transient
@@ -95,8 +113,12 @@ public class TaskEntity {
     public void setStatus(String status) { this.status = status; }
     public String getTriggerType() { return triggerType; }
     public void setTriggerType(String triggerType) { this.triggerType = triggerType; }
+    public String getTriggerReason() { return triggerReason; }
+    public void setTriggerReason(String triggerReason) { this.triggerReason = triggerReason; }
     public String getTriggerUser() { return triggerUser; }
     public void setTriggerUser(String triggerUser) { this.triggerUser = triggerUser; }
+    public LocalDateTime getQueuedAt() { return queuedAt; }
+    public void setQueuedAt(LocalDateTime queuedAt) { this.queuedAt = queuedAt; }
     public String getBranch() { return branch; }
     public void setBranch(String branch) { this.branch = branch; }
     public String getCommitSha() { return commitSha; }
@@ -109,8 +131,18 @@ public class TaskEntity {
     public void setDurationMs(Long durationMs) { this.durationMs = durationMs; }
     public String getRunnerName() { return runnerName; }
     public void setRunnerName(String runnerName) { this.runnerName = runnerName; }
-    public String getReportUrl() { return reportUrl; }
-    public void setReportUrl(String reportUrl) { this.reportUrl = reportUrl; }
+    public String getCurrentStage() { return currentStage; }
+    public void setCurrentStage(String currentStage) { this.currentStage = currentStage; }
+    public String getResultCode() { return resultCode; }
+    public void setResultCode(String resultCode) { this.resultCode = resultCode; }
+    public String getResultMessage() { return resultMessage; }
+    public void setResultMessage(String resultMessage) { this.resultMessage = resultMessage; }
+    public Boolean getCancelRequested() { return cancelRequested; }
+    public void setCancelRequested(Boolean cancelRequested) { this.cancelRequested = cancelRequested; }
+    public LocalDateTime getCancelRequestedAt() { return cancelRequestedAt; }
+    public void setCancelRequestedAt(LocalDateTime cancelRequestedAt) { this.cancelRequestedAt = cancelRequestedAt; }
+    public String getCancelRequestedBy() { return cancelRequestedBy; }
+    public void setCancelRequestedBy(String cancelRequestedBy) { this.cancelRequestedBy = cancelRequestedBy; }
     public String getLogUrl() { return logUrl; }
     public void setLogUrl(String logUrl) { this.logUrl = logUrl; }
     public String getResolvedBranch() { return resolvedBranch; }
@@ -127,8 +159,6 @@ public class TaskEntity {
     public void setResolvedRunCommand(String resolvedRunCommand) { this.resolvedRunCommand = resolvedRunCommand; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }
-    public boolean isReportReady() { return reportReady; }
-    public void setReportReady(boolean reportReady) { this.reportReady = reportReady; }
     public int getPassedCount() { return passedCount; }
     public void setPassedCount(int passedCount) { this.passedCount = passedCount; }
     public int getFailedCount() { return failedCount; }

@@ -9,12 +9,15 @@ public record SceneTaskListResponse(
         String status,
         boolean detailAvailable,
         String triggerType,
+        String currentStage,
+        String resultCode,
+        boolean cancelRequested,
         String branch,
+        LocalDateTime queuedAt,
+        LocalDateTime startedAt,
         Long durationMs,
         LocalDateTime createdAt,
         String runnerName,
-        String reportUrl,
-        boolean reportReady,
         int passedCount,
         int failedCount,
         int skippedCount) {
@@ -25,18 +28,22 @@ public record SceneTaskListResponse(
                 task.getStatus(),
                 isDetailAvailable(task),
                 task.getTriggerType(),
+                task.getCurrentStage(),
+                task.getResultCode(),
+                Boolean.TRUE.equals(task.getCancelRequested()),
                 task.getBranch(),
+                task.getQueuedAt(),
+                task.getStartedAt(),
                 task.getDurationMs(),
                 task.getCreatedAt(),
                 task.getRunnerName(),
-                task.getReportUrl(),
-                task.isReportReady(),
                 task.getPassedCount(),
                 task.getFailedCount(),
                 task.getSkippedCount());
     }
 
     private static boolean isDetailAvailable(TaskEntity task) {
-        return !"RUNNING".equalsIgnoreCase(task.getStatus());
+        return !"RUNNING".equalsIgnoreCase(task.getStatus())
+                && !"QUEUED".equalsIgnoreCase(task.getStatus());
     }
 }

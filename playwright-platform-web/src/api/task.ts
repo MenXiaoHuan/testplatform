@@ -1,7 +1,7 @@
 import { get, post } from './http'
 import type { PageResult } from '../types/common'
-import type { ArtifactRecord, TaskRecord, TaskReport } from '../types/task'
-import type { CaseResultRecord, TaskReportSummary } from '../types/report'
+import type { ArtifactRecord, TaskRecord, TaskStageLogRecord } from '../types/task'
+import type { CaseResultRecord } from '../types/report'
 
 export const listTasks = async (page = 1, size = 10) => {
   return get<PageResult<TaskRecord>>('/tasks', {
@@ -23,12 +23,8 @@ export const runScene = async (sceneId: number) => {
   return post<TaskRecord>(`/scenes/${sceneId}/run`)
 }
 
-export const getTaskReport = async (taskId: number) => {
-  return get<TaskReport>(`/tasks/${taskId}/report`)
-}
-
-export const getTaskReportSummary = async (taskId: number) => {
-  return get<TaskReportSummary>(`/tasks/${taskId}/report-summary`)
+export const cancelTask = async (taskId: number) => {
+  return post<void>(`/tasks/${taskId}/cancel`)
 }
 
 export const listArtifacts = async (taskId: number) => {
@@ -37,4 +33,8 @@ export const listArtifacts = async (taskId: number) => {
 
 export const listTaskCases = async (taskId: number) => {
   return get<CaseResultRecord[]>(`/tasks/${taskId}/cases`)
+}
+
+export const listTaskLogs = async (taskId: number) => {
+  return get<TaskStageLogRecord[]>(`/tasks/${taskId}/logs`)
 }

@@ -55,6 +55,30 @@ Legacy nested Git metadata is backed up under `.tmp/git-boundary-backups/`.
 ./scripts/test-server.sh
 ```
 
+### Backend runtime controls
+
+The backend now exposes task execution controls under `platform.task.execution`:
+
+```yaml
+platform:
+  task:
+    execution:
+      core-pool-size: 2
+      max-pool-size: 4
+      queue-capacity: 50
+      keep-alive-seconds: 60
+      install-timeout-seconds: 600
+      test-timeout-seconds: 1800
+      report-timeout-seconds: 300
+```
+
+Tasks now keep additional runtime fields such as queued stage, current stage, cancel request state, and structured result code. The backend also exposes:
+
+- `POST /api/tasks/{taskId}/cancel`
+- `GET /api/tasks/{taskId}/logs`
+
+Scheduled scenes now create `SCHEDULED` tasks through the backend scheduler instead of only being scanned in memory.
+
 ### Frontend tests
 
 ```bash

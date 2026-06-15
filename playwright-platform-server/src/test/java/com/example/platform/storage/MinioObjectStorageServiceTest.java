@@ -14,20 +14,20 @@ class MinioObjectStorageServiceTest {
     void shouldNormalizeFullMinioUrlBeforeSigning() throws Exception {
         MinioClient minioClient = Mockito.mock(MinioClient.class);
         Mockito.when(minioClient.getPresignedObjectUrl(Mockito.any(GetPresignedObjectUrlArgs.class)))
-                .thenReturn("http://minio/presigned/report");
+                .thenReturn("http://minio/presigned/artifact");
 
         MinioObjectStorageService service = new MinioObjectStorageService(minioClient, "http://127.0.0.1:9000");
 
         String result = service.createPresignedGetUrl(
                 "qa-report",
-                "http://127.0.0.1:9000/qa-report/runs/101/report/index.html?X-Amz-Signature=old");
+                "http://127.0.0.1:9000/qa-report/runs/101/artifacts/trace.zip?X-Amz-Signature=old");
 
         ArgumentCaptor<GetPresignedObjectUrlArgs> argsCaptor = ArgumentCaptor.forClass(GetPresignedObjectUrlArgs.class);
         Mockito.verify(minioClient).getPresignedObjectUrl(argsCaptor.capture());
 
-        assertThat(result).isEqualTo("http://minio/presigned/report");
+        assertThat(result).isEqualTo("http://minio/presigned/artifact");
         assertThat(argsCaptor.getValue().bucket()).isEqualTo("qa-report");
-        assertThat(argsCaptor.getValue().object()).isEqualTo("runs/101/report/index.html");
+        assertThat(argsCaptor.getValue().object()).isEqualTo("runs/101/artifacts/trace.zip");
     }
 
     @Test
@@ -35,9 +35,9 @@ class MinioObjectStorageServiceTest {
         MinioClient minioClient = Mockito.mock(MinioClient.class);
         MinioObjectStorageService service = new MinioObjectStorageService(minioClient, "http://127.0.0.1:9000");
 
-        String result = service.createPresignedGetUrl("qa-report", "http://localhost:9000/report/101/index.html");
+        String result = service.createPresignedGetUrl("qa-report", "http://localhost:9000/artifacts/101/trace.zip");
 
-        assertThat(result).isEqualTo("http://localhost:9000/report/101/index.html");
+        assertThat(result).isEqualTo("http://localhost:9000/artifacts/101/trace.zip");
         Mockito.verify(minioClient, Mockito.never()).getPresignedObjectUrl(Mockito.any(GetPresignedObjectUrlArgs.class));
     }
 }

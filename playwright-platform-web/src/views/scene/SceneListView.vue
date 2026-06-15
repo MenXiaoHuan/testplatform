@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
+import { type FormInstance, type FormRules } from 'element-plus'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import ListPageShell from '../../components/list/ListPageShell.vue'
@@ -7,6 +7,7 @@ import { useRepositoryStore } from '../../stores/repository'
 import { useSceneStore } from '../../stores/scene'
 import type { SceneForm, SceneRecord } from '../../types/scene'
 import { toErrorMessage } from '../../utils/error'
+import { confirmDangerAction, showAppToast } from '../../utils/ui-feedback'
 import { isPositiveId, isRequired } from '../../utils/validators'
 
 const repositoryStore = useRepositoryStore()
@@ -94,6 +95,26 @@ const formRules: FormRules<SceneForm> = {
   }],
 }
 
+function toScenePayload(repositoryDefaultBranch: string): SceneForm {
+  const normalizedMatchValue = form.matchValue.trim()
+  const normalizedEnvJson = form.envJson?.trim()
+  return {
+    repoId: form.repoId,
+    name: form.name,
+    description: form.description,
+    matchValue: normalizedMatchValue,
+    projectName: form.browser?.trim() || 'chromium',
+    browser: form.browser?.trim() || 'chromium',
+    envJson: normalizedEnvJson ? normalizedEnvJson : undefined,
+    scheduleEnabled: form.scheduleEnabled,
+    cronExpression: form.cronExpression,
+    branch: repositoryDefaultBranch,
+    testSelectorType: 'file',
+    testSelectorValue: normalizedMatchValue,
+    runCommand: selectedRepository(form.repoId)?.runCommandTemplate ?? form.runCommand,
+  }
+}
+
 if (!form.repoId) {
   form.repoId = enabledRepositories.value[0]?.id ?? 0
 }
@@ -130,8 +151,32 @@ async function openEdit(row: SceneRecord) {
     Object.assign(form, sceneStore.createEmptyForm(), detail)
     dialogVisible.value = true
   } catch (error) {
-    ElMessage.error(toErrorMessage(error, '场景详情加载失败'))
+    showAppToast(toErrorMessage(error, '场景详情加载失败'), 'error')
   }
+}
+
+async function openCopy(row: SceneRecord) {
+  editingId.value = null
+  try {
+    const detail = await sceneStore.fetchOne(row.id)
+    Object.assign(form, sceneStore.createEmptyForm(), detail)
+    dialogVisible.value = true
+  } catch (error) {
+    showAppToast(toErrorMessage(error, '场景复制信息加载失败'), 'error')
+  }
+}
+
+function isNameConflict(error: unknown) {
+  if (typeof error === 'object' && error !== null) {
+    const response = Reflect.get(error, 'response')
+    if (typeof response === 'object' && response !== null) {
+      const data = Reflect.get(response, 'data')
+      if (typeof data === 'object' && data !== null) {
+        return Reflect.get(data, 'code') === 'CONFLICT'
+      }
+    }
+  }
+  return false
 }
 
 function openTasks(row: SceneRecord) {
@@ -146,54 +191,47 @@ async function submit() {
   if (formRef.value) {
     const valid = await formRef.value.validate().catch(() => false)
     if (!valid) {
-      ElMessage.warning('请先完善必填字段')
+      showAppToast('请先完善必填字段', 'warning')
       return
     }
   }
 
   if (!isPositiveId(form.repoId) || !isRequired(form.name)) {
-    ElMessage.warning('请完善所属仓库和场景名称')
+    showAppToast('请完善所属仓库和场景名称', 'warning')
     return
   }
 
   if (!isRequired(form.browser ?? '')) {
-    ElMessage.warning('请完善浏览器')
+    showAppToast('请完善浏览器', 'warning')
     return
   }
 
   const repository = selectedRepository(form.repoId)
   if (repository === null) {
-    ElMessage.warning('请选择有效的所属仓库')
+    showAppToast('请选择有效的所属仓库', 'warning')
     return
   }
   if (!repository.enabled) {
-    ElMessage.warning('所属仓库已停用，请先启用仓库')
+    showAppToast('所属仓库已停用，请先启用仓库', 'warning')
     return
   }
 
   if (form.scheduleEnabled && !isRequired(form.cronExpression)) {
-    ElMessage.warning('启用定时执行时请填写 Cron 表达式')
+    showAppToast('启用定时执行时请填写 Cron 表达式', 'warning')
     return
   }
 
   saving.value = true
   try {
-    const normalizedMatchValue = form.matchValue.trim()
-    const normalizedEnvJson = form.envJson?.trim()
-    await sceneStore.save(editingId.value, {
-      ...form,
-      envJson: normalizedEnvJson ? normalizedEnvJson : undefined,
-      matchValue: normalizedMatchValue,
-      branch: repository.defaultBranch,
-      testSelectorType: 'file',
-      testSelectorValue: normalizedMatchValue,
-      projectName: form.browser?.trim() || 'chromium',
-      runCommand: repository.runCommandTemplate,
-    })
+    await sceneStore.save(editingId.value, toScenePayload(repository.defaultBranch))
     dialogVisible.value = false
-    ElMessage.success(editingId.value === null ? '场景已创建' : '场景已更新')
+    showAppToast(editingId.value === null ? '场景已创建' : '场景已更新', 'success')
   } catch (error) {
-    ElMessage.error(toErrorMessage(error, '场景保存失败'))
+    if (isNameConflict(error)) {
+      showAppToast(toErrorMessage(error, '场景名称已存在，请更换后重试'), 'warning')
+      return
+    }
+    showAppToast(toErrorMessage(error, '场景保存失败'), 'error')
   } finally {
     saving.value = false
   }
@@ -201,18 +239,18 @@ async function submit() {
 
 async function remove(row: SceneRecord) {
   try {
-    await ElMessageBox.confirm(`确认删除场景“${row.name}”吗？`, '删除场景', {
-      type: 'warning',
+    const confirmed = await confirmDangerAction({
+      title: '删除场景',
+      message: `确认删除场景“${row.name}”吗？`,
       confirmButtonText: '删除',
-      cancelButtonText: '取消',
     })
-    await sceneStore.remove(row.id)
-    ElMessage.success('场景已删除')
-  } catch (error) {
-    if (error === 'cancel' || error === 'close') {
+    if (!confirmed) {
       return
     }
-    ElMessage.error(toErrorMessage(error, '场景删除失败'))
+    await sceneStore.remove(row.id)
+    showAppToast('场景已删除', 'success')
+  } catch (error) {
+    showAppToast(toErrorMessage(error, '场景删除失败'), 'error')
   }
 }
 
@@ -223,7 +261,7 @@ onMounted(async () => {
       form.repoId = enabledRepositories.value[0]?.id ?? 0
     }
   } catch (error) {
-    ElMessage.error(toErrorMessage(error, '场景列表加载失败'))
+    showAppToast(toErrorMessage(error, '场景列表加载失败'), 'error')
   }
 })
 
@@ -231,7 +269,7 @@ async function handlePageChange(page: number) {
   try {
     await sceneStore.fetchAll(page, sceneStore.size)
   } catch (error) {
-    ElMessage.error(toErrorMessage(error, '场景列表加载失败'))
+    showAppToast(toErrorMessage(error, '场景列表加载失败'), 'error')
   }
 }
 
@@ -239,7 +277,7 @@ async function handleSizeChange(size: number) {
   try {
     await sceneStore.fetchAll(1, size)
   } catch (error) {
-    ElMessage.error(toErrorMessage(error, '场景列表加载失败'))
+    showAppToast(toErrorMessage(error, '场景列表加载失败'), 'error')
   }
 }
 </script>
@@ -257,7 +295,11 @@ async function handleSizeChange(size: number) {
     <el-table class="list-table" :data="rows" :loading="loading" empty-text="暂无场景">
       <el-table-column label="任务列表" width="120">
         <template #default="{ row }">
-          <el-button class="table-action-button" link @click="openTasks(row)">查看任务</el-button>
+          <el-tooltip content="点击查看任务列表" placement="top" effect="dark">
+            <span class="table-action-trigger">
+              <el-button class="table-action-button" link @click="openTasks(row)">查看任务</el-button>
+            </span>
+          </el-tooltip>
         </template>
       </el-table-column>
       <el-table-column prop="name" label="场景名称" min-width="200" />
@@ -276,10 +318,11 @@ async function handleSizeChange(size: number) {
           <span>{{ formatLastRunAt(row.lastRunAt) }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="180" fixed="right">
+      <el-table-column label="操作" width="220" fixed="right">
         <template #default="{ row }">
           <div class="table-actions">
             <el-button class="table-action-button" link type="primary" @click="openEdit(row)">编辑</el-button>
+            <el-button class="table-action-button" link type="primary" @click="openCopy(row)">复制</el-button>
             <el-button class="table-action-button" link type="danger" @click="remove(row)">删除</el-button>
           </div>
         </template>
@@ -362,6 +405,10 @@ async function handleSizeChange(size: number) {
   flex-wrap: nowrap;
   gap: 12px;
   white-space: nowrap;
+}
+
+.table-action-trigger {
+  display: inline-flex;
 }
 
 .table-actions :deep(.el-button + .el-button) {

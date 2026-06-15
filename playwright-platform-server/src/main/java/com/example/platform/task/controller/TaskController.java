@@ -5,12 +5,11 @@ import com.example.platform.common.PageResponse;
 import com.example.platform.task.dto.CaseResultResponse;
 import com.example.platform.task.dto.SceneTaskListResponse;
 import com.example.platform.task.dto.TaskDetailResponse;
-import com.example.platform.task.dto.TaskReportSummaryResponse;
+import com.example.platform.task.dto.TaskStageLogResponse;
 import com.example.platform.task.model.ArtifactEntity;
 import com.example.platform.task.model.TaskEntity;
 import com.example.platform.task.service.TaskService;
 import java.util.List;
-import java.util.Map;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -24,6 +23,12 @@ public class TaskController {
     @PostMapping("/api/scenes/{sceneId}/run")
     public ApiResponse<TaskEntity> runScene(@PathVariable Long sceneId) {
         return ApiResponse.ok(taskService.createAndStart(sceneId));
+    }
+
+    @PostMapping("/api/tasks/{taskId}/cancel")
+    public ApiResponse<Void> cancelTask(@PathVariable Long taskId) {
+        taskService.cancelTask(taskId, "system-user");
+        return ApiResponse.ok(null);
     }
 
     @GetMapping("/api/tasks")
@@ -46,18 +51,6 @@ public class TaskController {
         return ApiResponse.ok(taskService.getDetail(taskId));
     }
 
-    @GetMapping("/api/tasks/{taskId}/report")
-    public ApiResponse<Map<String, Object>> getTaskReport(@PathVariable Long taskId) {
-        return ApiResponse.ok(Map.of(
-                "taskId", taskId,
-                "reportUrl", taskService.getReportUrl(taskId)));
-    }
-
-    @GetMapping("/api/tasks/{taskId}/report-summary")
-    public ApiResponse<TaskReportSummaryResponse> getTaskReportSummary(@PathVariable Long taskId) {
-        return ApiResponse.ok(taskService.getReportSummary(taskId));
-    }
-
     @GetMapping("/api/tasks/{taskId}/artifacts")
     public ApiResponse<List<ArtifactEntity>> listTaskArtifacts(@PathVariable Long taskId) {
         return ApiResponse.ok(taskService.listArtifacts(taskId));
@@ -71,5 +64,10 @@ public class TaskController {
     @GetMapping("/api/tasks/{taskId}/cases/{caseResultId}/artifacts")
     public ApiResponse<List<ArtifactEntity>> listCaseArtifacts(@PathVariable Long taskId, @PathVariable Long caseResultId) {
         return ApiResponse.ok(taskService.listArtifactsByCaseResult(caseResultId));
+    }
+
+    @GetMapping("/api/tasks/{taskId}/logs")
+    public ApiResponse<List<TaskStageLogResponse>> listTaskLogs(@PathVariable Long taskId) {
+        return ApiResponse.ok(taskService.listStageLogs(taskId));
     }
 }

@@ -1,9 +1,13 @@
 package com.example.platform.config;
 
+import com.example.platform.audit.model.PlatformAuditLogEntity;
 import com.example.platform.repository.model.TestRepositoryEntity;
+import com.example.platform.scene.model.SceneScheduleStateEntity;
 import com.example.platform.scene.model.SceneEntity;
 import com.example.platform.task.model.TaskEntity;
+import com.example.platform.task.model.TaskStageLogEntity;
 import jakarta.persistence.Column;
+import jakarta.persistence.Table;
 import java.lang.reflect.Field;
 import org.junit.jupiter.api.Test;
 
@@ -30,6 +34,7 @@ class EntitySchemaMappingTest {
         assertThat(columnOf(SceneEntity.class, "scheduleEnabled").nullable()).isFalse();
         assertThat(columnOf(SceneEntity.class, "cronExpression").name()).isEqualTo("cron_expression");
         assertThat(columnOf(SceneEntity.class, "cronExpression").length()).isEqualTo(64);
+        assertThat(columnOf(SceneEntity.class, "nextRunAt").name()).isEqualTo("next_run_at");
         assertThat(columnOf(SceneEntity.class, "lastRunAt").name()).isEqualTo("last_run_at");
         assertThat(columnOf(SceneEntity.class, "lastTaskStatus").name()).isEqualTo("last_task_status");
         assertThat(columnOf(SceneEntity.class, "lastTaskStatus").length()).isEqualTo(32);
@@ -64,6 +69,45 @@ class EntitySchemaMappingTest {
         assertThat(columnOf(TaskEntity.class, "resolvedMatchValue").name()).isEqualTo("resolved_match_value");
         assertThat(columnOf(TaskEntity.class, "resolvedTestRoot").name()).isEqualTo("resolved_test_root");
         assertThat(columnOf(TaskEntity.class, "resolvedRunCommand").name()).isEqualTo("resolved_run_command");
+    }
+
+    @Test
+    void shouldMapTaskRuntimeControlColumns() throws NoSuchFieldException {
+        assertThat(columnOf(TaskEntity.class, "queuedAt").name()).isEqualTo("queued_at");
+        assertThat(columnOf(TaskEntity.class, "currentStage").name()).isEqualTo("current_stage");
+        assertThat(columnOf(TaskEntity.class, "currentStage").length()).isEqualTo(32);
+        assertThat(columnOf(TaskEntity.class, "resultCode").name()).isEqualTo("result_code");
+        assertThat(columnOf(TaskEntity.class, "resultCode").length()).isEqualTo(32);
+        assertThat(columnOf(TaskEntity.class, "resultMessage").name()).isEqualTo("result_message");
+        assertThat(columnOf(TaskEntity.class, "resultMessage").length()).isEqualTo(1024);
+        assertThat(columnOf(TaskEntity.class, "cancelRequested").name()).isEqualTo("cancel_requested");
+        assertThat(columnOf(TaskEntity.class, "cancelRequested").columnDefinition()).isEqualTo("tinyint(1)");
+        assertThat(columnOf(TaskEntity.class, "cancelRequestedAt").name()).isEqualTo("cancel_requested_at");
+        assertThat(columnOf(TaskEntity.class, "cancelRequestedBy").name()).isEqualTo("cancel_requested_by");
+        assertThat(columnOf(TaskEntity.class, "cancelRequestedBy").length()).isEqualTo(64);
+        assertThat(columnOf(TaskEntity.class, "triggerReason").name()).isEqualTo("trigger_reason");
+        assertThat(columnOf(TaskEntity.class, "triggerReason").length()).isEqualTo(128);
+    }
+
+    @Test
+    void shouldMapTaskStageLogTable() {
+        Table table = TaskStageLogEntity.class.getAnnotation(Table.class);
+        assertThat(table).isNotNull();
+        assertThat(table.name()).isEqualTo("task_stage_log");
+    }
+
+    @Test
+    void shouldMapSceneScheduleStateTable() {
+        Table table = SceneScheduleStateEntity.class.getAnnotation(Table.class);
+        assertThat(table).isNotNull();
+        assertThat(table.name()).isEqualTo("scene_schedule_state");
+    }
+
+    @Test
+    void shouldMapPlatformAuditLogTable() {
+        Table table = PlatformAuditLogEntity.class.getAnnotation(Table.class);
+        assertThat(table).isNotNull();
+        assertThat(table.name()).isEqualTo("platform_audit_log");
     }
 
     private String columnDefinitionOf(Class<?> type, String fieldName) throws NoSuchFieldException {

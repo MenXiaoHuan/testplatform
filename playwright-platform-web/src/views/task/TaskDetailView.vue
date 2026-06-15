@@ -1,24 +1,56 @@
 <script setup lang="ts">
-import { ElMessage } from 'element-plus'
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useTaskStore } from '../../stores/task'
 import type { CaseArtifactLinkRecord, CaseResultRecord } from '../../types/report'
+import type { TaskStageLogRecord } from '../../types/task'
 import { toErrorMessage } from '../../utils/error'
+import { showAppToast } from '../../utils/ui-feedback'
+import {
+  caseFilterLabel,
+  caseStatusText,
+  caseStatusType,
+  taskStageText,
+  taskStatusText,
+  taskStatusType,
+} from '../../utils/task-display'
+import { useTaskDetailLoader } from './useTaskDetailLoader'
 
 const route = useRoute()
 const router = useRouter()
 const store = useTaskStore()
+const TRACE_VIEWER_BASE_URL = 'https://trace.playwright.dev/'
 
 const activeStatus = ref<'ALL' | 'FAILED' | 'PASSED' | 'SKIPPED'>('ALL')
 const expandedCaseIds = ref<number[]>([])
-const caseLogPreviewMap = ref<Record<number, string>>({})
-const caseLogLoadingMap = ref<Record<number, boolean>>({})
-const rawLogExpandedMap = ref<Record<number, boolean>>({})
+const stageLogContentMap = ref<Record<number, string>>({})
+const stageLogLoadingMap = ref<Record<number, boolean>>({})
 
 const task = computed(() => store.current)
-const reportSummary = computed(() => store.reportSummary)
 const caseResults = computed(() => store.caseResults)
+const stageLogs = computed(() => store.stageLogs)
+const cancelLoading = ref(false)
+const caseStatusFilters: Array<'ALL' | 'FAILED' | 'PASSED' | 'SKIPPED'> = ['ALL', 'FAILED', 'PASSED', 'SKIPPED']
+const caseSummary = computed(() => {
+  let passed = 0
+  let failed = 0
+  let skipped = 0
+  caseResults.value.forEach((item) => {
+    if (item.status === 'PASSED') {
+      passed += 1
+    } else if (item.status === 'FAILED') {
+      failed += 1
+    } else if (item.status === 'SKIPPED') {
+      skipped += 1
+    }
+  })
+  return {
+    total: caseResults.value.length,
+    passed,
+    failed,
+    skipped,
+  }
+})
 
 const filteredCaseResults = computed(() => {
   if (activeStatus.value === 'ALL') {
@@ -42,13 +74,6 @@ function findCaseArtifactUrl(
   return item?.artifacts?.find((artifact: CaseArtifactLinkRecord) => normalizeArtifactType(artifact.artifactType) === artifactType)?.url ?? null
 }
 
-function statusType(status: string) {
-  if (status === 'SUCCESS' || status === 'PASSED') return 'success'
-  if (status === 'FAILED') return 'danger'
-  if (status === 'RUNNING') return 'warning'
-  return 'info'
-}
-
 function formatDuration(durationMs: number | null | undefined) {
   const totalSeconds = Math.max(0, Math.floor((durationMs ?? 0) / 1000))
   const minutes = Math.floor(totalSeconds / 60)
@@ -56,11 +81,25 @@ function formatDuration(durationMs: number | null | undefined) {
   return `${String(minutes).padStart(2, '0')}min${String(seconds).padStart(2, '0')}s`
 }
 
-function reportStatusText(status?: string | null) {
-  if (status === 'READY') return '报告已就绪'
-  if (status === 'NOT_READY') return '报告暂未生成'
-  if (status === 'PARSE_FAILED') return '报告解析失败'
-  return '暂无报告'
+function caseDisplayTitle(item: CaseResultRecord) {
+  const storyName = item.storyName?.trim()
+  if (storyName) {
+    return storyName
+  }
+
+  const sections = item.fullName
+    .split(' / ')
+    .map((part: string) => part.trim())
+    .filter(Boolean)
+  const section = sections.length > 0 ? sections[sections.length - 1] : item.fullName
+
+  const leafParts = section
+    .split('::')
+    .map((part: string) => part.trim())
+    .filter(Boolean)
+  const leaf = leafParts.length > 0 ? leafParts[leafParts.length - 1] : ''
+
+  return leaf || section.trim()
 }
 
 function artifactUrlsByType(item: CaseResultRecord, artifactType: string) {
@@ -74,114 +113,62 @@ function uniqueUrls(urls: Array<string | null | undefined>) {
   return [...new Set(urls.filter((value): value is string => Boolean(value)))]
 }
 
-function normalizeLogText(value?: string | null) {
-  return (value ?? '').replace(/\r\n/g, '\n').trim()
-}
-
-function isHtmlLikeLog(value?: string | null) {
-  const text = normalizeLogText(value)
-  return /^<!doctype html>/i.test(text) || /^<html[\s>]/i.test(text)
-}
-
-function buildLogHighlights(value?: string | null) {
-  const text = normalizeLogText(value)
-  if (!text || isHtmlLikeLog(text)) {
-    return []
-  }
-
-  const lines = text.split('\n').map((line) => line.trim())
-  const highlights: string[] = []
-  let currentSection = ''
-
-  for (const line of lines) {
-    if (!line || line === '```' || line.startsWith('```')) {
-      continue
-    }
-
-    if (line.startsWith('#')) {
-      currentSection = line.replace(/^#+\s*/, '').trim().toLowerCase()
-      continue
-    }
-
-    if (currentSection === 'instructions') {
-      continue
-    }
-
-    if (
-      /^error:/i.test(line)
-      || /^expected:/i.test(line)
-      || /^received:/i.test(line)
-      || /^timeout:/i.test(line)
-      || /^location:/i.test(line)
-      || /^call log:/i.test(line)
-      || /^name:/i.test(line)
-      || /\.spec\.[tj]s:\d+:\d+$/i.test(line)
-      || line.includes('expect(')
-      || /^-\s+Expected/i.test(line)
-      || /^-\s+unexpected/i.test(line)
-    ) {
-      highlights.push(line)
-      continue
-    }
-
-    if (currentSection === 'error details' && highlights.length < 6) {
-      highlights.push(line)
-    }
-  }
-
-  if (highlights.length > 0) {
-    return [...new Set(highlights)].slice(0, 6)
-  }
-
-  return lines
-    .filter((line) => line && !line.startsWith('#') && !line.startsWith('```'))
-    .slice(0, 5)
-}
-
-function caseLogHighlights(item: CaseResultRecord) {
-  return buildLogHighlights(caseLogPreviewMap.value[item.id])
-}
-
-function caseReasonText(item: CaseResultRecord) {
-  return item.errorMessage ?? caseLogHighlights(item)[0] ?? null
-}
-
-function hasReadableLog(item: CaseResultRecord) {
-  const text = caseLogPreviewMap.value[item.id]
-  return Boolean(text && !isHtmlLikeLog(text))
-}
-
-function shouldShowRawLogToggle(item: CaseResultRecord) {
-  return hasReadableLog(item)
-}
-
-function isRawLogExpanded(itemId: number) {
-  return rawLogExpandedMap.value[itemId] === true
-}
-
-function toggleRawLog(itemId: number) {
-  rawLogExpandedMap.value = {
-    ...rawLogExpandedMap.value,
-    [itemId]: !rawLogExpandedMap.value[itemId],
-  }
-}
-
-async function loadDetail() {
-  const taskId = Number(route.params.id)
-  if (!Number.isFinite(taskId)) {
-    ElMessage.error('任务 ID 无效')
-    return
-  }
-  try {
-    await store.fetchTaskDetailPage(taskId)
-  } catch (error) {
-    ElMessage.error(toErrorMessage(error, '任务详情加载失败'))
-  }
-}
-
 function openUrl(url?: string | null) {
   if (url) {
     window.open(url, '_blank', 'noopener')
+  }
+}
+
+function openTraceViewer(traceUrl?: string | null) {
+  if (!traceUrl) {
+    return
+  }
+  const viewerUrl = `${TRACE_VIEWER_BASE_URL}?trace=${encodeURIComponent(traceUrl)}`
+  window.open(viewerUrl, '_blank', 'noopener')
+}
+
+function stageLogText(logId: number) {
+  return stageLogContentMap.value[logId] ?? '暂无日志内容'
+}
+
+async function loadStageLogContent(item: TaskStageLogRecord) {
+  if (stageLogContentMap.value[item.id] || stageLogLoadingMap.value[item.id]) {
+    return
+  }
+
+  if (!item.downloadUrl) {
+    stageLogContentMap.value = {
+      ...stageLogContentMap.value,
+      [item.id]: item.previewText || '暂无日志内容',
+    }
+    return
+  }
+
+  stageLogLoadingMap.value = {
+    ...stageLogLoadingMap.value,
+    [item.id]: true,
+  }
+
+  try {
+    const response = await fetch(item.downloadUrl)
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+    const text = (await response.text()).replace(/\r\n/g, '\n')
+    stageLogContentMap.value = {
+      ...stageLogContentMap.value,
+      [item.id]: text || item.previewText || '暂无日志内容',
+    }
+  } catch {
+    stageLogContentMap.value = {
+      ...stageLogContentMap.value,
+      [item.id]: item.previewText || '日志暂时无法加载，请使用下载日志查看完整内容。',
+    }
+  } finally {
+    stageLogLoadingMap.value = {
+      ...stageLogLoadingMap.value,
+      [item.id]: false,
+    }
   }
 }
 
@@ -192,10 +179,26 @@ async function rerunTask() {
   }
   try {
     await store.executeScene(sceneId, sceneId)
-    ElMessage.success('任务已触发')
+    showAppToast('任务已触发', 'success')
     void router.push(`/scenes/${sceneId}/tasks`)
   } catch (error) {
-    ElMessage.error(toErrorMessage(error, '任务执行失败'))
+    showAppToast(toErrorMessage(error, '任务执行失败'), 'error')
+  }
+}
+
+async function cancelTaskRun() {
+  const taskId = task.value?.id
+  if (typeof taskId !== 'number' || cancelLoading.value) {
+    return
+  }
+  cancelLoading.value = true
+  try {
+    await store.cancelCurrentTask(taskId)
+    showAppToast('已提交取消请求', 'success')
+  } catch (error) {
+    showAppToast(toErrorMessage(error, '取消任务失败'), 'error')
+  } finally {
+    cancelLoading.value = false
   }
 }
 
@@ -221,14 +224,6 @@ function caseTraceUrl(item: CaseResultRecord) {
   return findCaseArtifactUrl(item, 'TRACE', item.traceUrl)
 }
 
-function caseLogUrl(item: CaseResultRecord) {
-  return findCaseArtifactUrl(item, 'LOG', item.logUrl)
-}
-
-function caseReportUrl(item: CaseResultRecord) {
-  return findCaseArtifactUrl(item, 'REPORT')
-}
-
 function caseScreenshotUrls(item: CaseResultRecord) {
   return uniqueUrls([
     ...(item.screenshotUrls ?? []),
@@ -236,22 +231,14 @@ function caseScreenshotUrls(item: CaseResultRecord) {
   ])
 }
 
-function caseArtifactsCount(item: CaseResultRecord) {
-  return uniqueUrls([
-    caseVideoUrl(item),
-    caseTraceUrl(item),
-    caseLogUrl(item),
-    caseReportUrl(item),
-    ...caseScreenshotUrls(item),
-  ]).length
+function casePrimaryScreenshotUrl(item: CaseResultRecord) {
+  return caseScreenshotUrls(item)[0] ?? null
 }
 
 function hasCaseRuntime(item: CaseResultRecord) {
   return Boolean(
     caseVideoUrl(item)
       || caseTraceUrl(item)
-      || caseLogUrl(item)
-      || caseReportUrl(item)
       || caseScreenshotUrls(item).length,
   )
 }
@@ -260,65 +247,40 @@ function isCaseExpanded(itemId: number) {
   return expandedCaseIds.value.includes(itemId)
 }
 
-async function loadCaseLogPreview(item: CaseResultRecord) {
-  const previewUrl = caseLogUrl(item) ?? caseReportUrl(item)
-  if (!previewUrl || caseLogPreviewMap.value[item.id] || caseLogLoadingMap.value[item.id]) {
-    return
-  }
-
-  caseLogLoadingMap.value = {
-    ...caseLogLoadingMap.value,
-    [item.id]: true,
-  }
-
-  try {
-    const response = await fetch(previewUrl)
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`)
-    }
-    const text = await response.text()
-    caseLogPreviewMap.value = {
-      ...caseLogPreviewMap.value,
-      [item.id]: text.trim() || '暂无日志内容',
-    }
-  } catch {
-    caseLogPreviewMap.value = {
-      ...caseLogPreviewMap.value,
-      [item.id]: '日志暂时无法加载，请使用下方链接直接查看。',
-    }
-  } finally {
-    caseLogLoadingMap.value = {
-      ...caseLogLoadingMap.value,
-      [item.id]: false,
-    }
-  }
-}
-
 function toggleCaseRuntime(item: CaseResultRecord) {
   if (isCaseExpanded(item.id)) {
     expandedCaseIds.value = expandedCaseIds.value.filter((id) => id !== item.id)
-    rawLogExpandedMap.value = {
-      ...rawLogExpandedMap.value,
-      [item.id]: false,
-    }
     return
   }
 
   expandedCaseIds.value = [...expandedCaseIds.value, item.id]
-  void loadCaseLogPreview(item)
 }
 
 function setActiveStatus(status: 'ALL' | 'FAILED' | 'PASSED' | 'SKIPPED') {
   activeStatus.value = status
 }
 
-onMounted(() => {
-  void loadDetail()
+const routeTaskId = computed(() => {
+  const raw = route.params.id
+  return typeof raw === 'string' ? Number(raw) : Number.NaN
 })
 
-watch(() => route.params.id, () => {
-  void loadDetail()
+useTaskDetailLoader({
+  taskId: routeTaskId,
+  loadTaskDetailPage: store.fetchTaskDetailPage,
+  onInvalidTaskId: () => {
+    showAppToast('任务 ID 无效', 'error')
+  },
+  onLoadError: (error) => {
+    showAppToast(toErrorMessage(error, '任务详情加载失败'), 'error')
+  },
 })
+
+watch(stageLogs, (logs) => {
+  logs.forEach((item) => {
+    void loadStageLogContent(item)
+  })
+}, { immediate: true })
 </script>
 
 <template>
@@ -326,9 +288,17 @@ watch(() => route.params.id, () => {
     <div class="glass-card content-panel scene-panel task-detail-panel">
       <div class="content-panel__header">
         <div class="content-panel__header-left content-panel__header-side content-panel__header-side--left">
-          <el-button plain @click="backToPrevious">返回场景中心</el-button>
+          <el-button plain @click="backToPrevious">返回任务列表</el-button>
         </div>
         <div class="content-panel__header-right content-panel__header-side content-panel__header-side--right">
+          <el-button
+            v-if="task && (task.status === 'QUEUED' || task.status === 'RUNNING')"
+            plain
+            :loading="cancelLoading"
+            @click="cancelTaskRun"
+          >
+            取消任务
+          </el-button>
           <el-button type="primary" @click="rerunTask">重新执行</el-button>
         </div>
       </div>
@@ -338,27 +308,27 @@ watch(() => route.params.id, () => {
           <section class="task-detail-card task-detail-card--full">
             <div class="task-detail-card__header">
               <div>
-                <p class="eyebrow">Task Report</p>
+                <p class="eyebrow">Task Detail</p>
                 <h2>结果总览</h2>
               </div>
-              <el-tag :type="statusType(task.status)">{{ task.status }}</el-tag>
+              <el-tag :type="taskStatusType(task)">{{ taskStatusText(task) }}</el-tag>
             </div>
             <div class="task-summary-stats">
               <div class="task-summary-stat">
                 <span>总数</span>
-                <strong>{{ reportSummary?.caseSummary.total ?? 0 }}</strong>
+                <strong>{{ caseSummary.total }}</strong>
               </div>
               <div class="task-summary-stat">
                 <span>通过</span>
-                <strong>{{ reportSummary?.caseSummary.passed ?? 0 }}</strong>
+                <strong>{{ caseSummary.passed }}</strong>
               </div>
               <div class="task-summary-stat">
                 <span>失败</span>
-                <strong>{{ reportSummary?.caseSummary.failed ?? 0 }}</strong>
+                <strong>{{ caseSummary.failed }}</strong>
               </div>
               <div class="task-summary-stat">
                 <span>跳过</span>
-                <strong>{{ reportSummary?.caseSummary.skipped ?? 0 }}</strong>
+                <strong>{{ caseSummary.skipped }}</strong>
               </div>
             </div>
           </section>
@@ -371,14 +341,14 @@ watch(() => route.params.id, () => {
               </div>
               <div class="task-filter-group">
                 <el-button
-                  v-for="status in ['ALL', 'FAILED', 'PASSED', 'SKIPPED']"
+                  v-for="status in caseStatusFilters"
                   :key="status"
                   link
                   type="primary"
                   :class="{ 'task-filter-button--active': activeStatus === status }"
                   @click="setActiveStatus(status as 'ALL' | 'FAILED' | 'PASSED' | 'SKIPPED')"
                 >
-                  {{ status }}
+                  {{ caseFilterLabel(status) }}
                 </el-button>
               </div>
             </div>
@@ -386,102 +356,82 @@ watch(() => route.params.id, () => {
               <article v-for="item in filteredCaseResults" :key="item.id" class="task-case-card">
                 <div class="task-case-card__header">
                   <div>
-                    <h3>{{ item.fullName }}</h3>
-                    <p>{{ item.projectName ?? 'unknown project' }}</p>
+                    <h3>{{ caseDisplayTitle(item) }}</h3>
                   </div>
-                  <el-tag :type="statusType(item.status)">{{ item.status }}</el-tag>
+                  <el-tag :type="caseStatusType(item.status)">{{ caseStatusText(item.status) }}</el-tag>
                 </div>
                 <p v-if="item.errorMessage" class="task-case-card__error">{{ item.errorMessage }}</p>
                 <div class="task-case-card__meta">
+                  <span>{{ item.projectName ?? 'unknown project' }}</span>
                   <span>耗时 {{ formatDuration(item.durationMs) }}</span>
-                  <span>运行记录 {{ caseArtifactsCount(item) }}</span>
                 </div>
                 <div class="task-case-card__actions">
-                  <el-button
+                  <el-tooltip
                     v-if="hasCaseRuntime(item)"
-                    link
-                    type="primary"
-                    @click="toggleCaseRuntime(item)"
+                    content="点击查看过程"
+                    placement="top"
+                    effect="dark"
                   >
-                    {{ isCaseExpanded(item.id) ? '收起运行记录' : '查看运行记录' }}
-                  </el-button>
+                    <span class="table-action-trigger">
+                      <el-button
+                        link
+                        type="primary"
+                        @click="toggleCaseRuntime(item)"
+                      >
+                        {{ isCaseExpanded(item.id) ? '收起运行过程' : '查看运行过程' }}
+                      </el-button>
+                    </span>
+                  </el-tooltip>
                 </div>
                 <div v-if="isCaseExpanded(item.id)" class="task-case-runtime">
                   <div class="task-runtime-grid">
                     <section class="task-runtime-panel">
                       <div class="task-runtime-panel__header">
                         <strong class="task-runtime-section-title">截图 / 视频</strong>
-                        <div class="task-case-runtime__toolbar">
-                          <el-button link type="primary" :disabled="!caseVideoUrl(item)" @click="openUrl(caseVideoUrl(item))">视频</el-button>
-                        </div>
                       </div>
 
-                      <div v-if="caseScreenshotUrls(item).length" class="task-runtime-screenshot-group">
-                        <div class="task-runtime-screenshots">
+                      <div class="task-runtime-media-grid">
+                        <div class="task-runtime-media-panel">
                           <img
-                            v-for="(url, index) in caseScreenshotUrls(item)"
-                            :key="`${item.id}-${index}`"
+                            v-if="casePrimaryScreenshotUrl(item)"
                             class="task-runtime-screenshot"
-                            :src="url"
-                            :alt="`${item.fullName} 截图 ${index + 1}`"
+                            :src="casePrimaryScreenshotUrl(item) ?? undefined"
+                            :alt="`${item.fullName} 截图`"
                           >
+                          <div v-else class="page-empty-text task-runtime-log__empty">暂无截图</div>
+                        </div>
+
+                        <div class="task-runtime-media-panel">
+                          <video
+                            v-if="caseVideoUrl(item)"
+                            class="task-runtime-video"
+                            :src="caseVideoUrl(item) ?? undefined"
+                            controls
+                            preload="metadata"
+                          />
+                          <div v-else class="page-empty-text task-runtime-log__empty">暂无视频</div>
                         </div>
                       </div>
-
-                      <div v-if="caseVideoUrl(item)" class="task-runtime-video-wrap">
-                        <video
-                          class="task-runtime-video"
-                          :src="caseVideoUrl(item) ?? undefined"
-                          controls
-                          preload="metadata"
-                        />
-                      </div>
-
-                      <div v-else-if="!caseVideoUrl(item)" class="page-empty-text task-runtime-log__empty">暂无截图或视频</div>
                     </section>
 
                     <section class="task-runtime-panel task-runtime-panel--log">
                       <div class="task-runtime-panel__header">
-                        <strong class="task-runtime-section-title">Trace / 日志</strong>
+                        <strong class="task-runtime-section-title">执行轨迹</strong>
                         <div class="task-case-runtime__toolbar">
-                          <el-button link type="primary" :disabled="!caseTraceUrl(item)" @click="openUrl(caseTraceUrl(item))">Trace</el-button>
-                          <el-button
-                            link
-                            type="primary"
-                            :disabled="!caseLogUrl(item) && !caseReportUrl(item)"
-                            @click="openUrl(caseLogUrl(item) ?? caseReportUrl(item))"
-                          >
-                            日志
-                          </el-button>
+                          <el-button link type="primary" :disabled="!caseTraceUrl(item)" @click="openTraceViewer(caseTraceUrl(item))">查看 Trace</el-button>
                         </div>
                       </div>
 
                       <div class="task-runtime-log">
                         <div class="task-runtime-log__header">
-                          <strong>定位摘要</strong>
-                          <span class="muted">{{ reportStatusText(reportSummary?.reportStatus) }}</span>
+                          <strong>Trace Viewer</strong>
+                          <span class="muted">通过 Playwright 轨迹查看器查看完整执行过程</span>
                         </div>
-                        <div v-if="caseLogLoadingMap[item.id]" class="page-empty-text task-runtime-log__empty">日志加载中...</div>
-                        <ul v-else-if="caseLogHighlights(item).length" class="task-runtime-log__highlights">
-                          <li v-for="(line, index) in caseLogHighlights(item)" :key="`${item.id}-highlight-${index}`">
-                            {{ line }}
-                          </li>
-                        </ul>
-                        <div v-else-if="caseLogPreviewMap[item.id] && isHtmlLikeLog(caseLogPreviewMap[item.id])" class="page-empty-text task-runtime-log__empty">
-                          当前返回的是报告页面内容，建议直接使用上方入口查看完整报告或 Trace。
+                        <div v-if="caseTraceUrl(item)" class="task-runtime-log__viewer-hint">
+                          <span>点击右上角的“查看 Trace”后，将在新标签页打开 Playwright Trace Viewer。</span>
+                          <span>你可以查看时间线、页面快照、操作步骤、网络请求和控制台信息。</span>
                         </div>
-                        <div v-else class="page-empty-text task-runtime-log__empty">暂无可提炼的日志摘要</div>
-
-                        <div v-if="shouldShowRawLogToggle(item)" class="task-runtime-log__actions">
-                          <el-button link type="primary" @click="toggleRawLog(item.id)">
-                            {{ isRawLogExpanded(item.id) ? '收起原始日志' : '展开原始日志' }}
-                          </el-button>
-                        </div>
-
-                        <pre
-                          v-if="isRawLogExpanded(item.id) && hasReadableLog(item)"
-                          class="task-runtime-log__content"
-                        >{{ caseLogPreviewMap[item.id] }}</pre>
+                        <div v-else class="page-empty-text task-runtime-log__empty">暂无可查看的 Trace 轨迹</div>
                       </div>
                     </section>
                   </div>
@@ -489,6 +439,36 @@ watch(() => route.params.id, () => {
               </article>
             </div>
             <div v-else class="page-empty-text task-detail-empty">暂无用例结果</div>
+          </section>
+
+          <section class="task-detail-card task-detail-card--full">
+            <div class="task-detail-card__header">
+              <div>
+                <p class="eyebrow">Stage Logs</p>
+                <h2>阶段日志</h2>
+              </div>
+            </div>
+            <div v-if="stageLogs.length" class="task-stage-log-list">
+              <article v-for="item in stageLogs" :key="item.id" class="task-stage-log-card">
+                <div class="task-stage-log-card__header">
+                  <div>
+                    <h3>{{ taskStageText(item.stage) }}</h3>
+                    <p>{{ item.streamType }} · {{ item.lineCount }} 行</p>
+                  </div>
+                  <el-button
+                    link
+                    type="primary"
+                    :disabled="!item.downloadUrl"
+                    @click="openUrl(item.downloadUrl)"
+                  >
+                    下载日志
+                  </el-button>
+                </div>
+                <div v-if="stageLogLoadingMap[item.id]" class="page-empty-text task-stage-log-card__empty">日志加载中...</div>
+                <pre v-else class="task-stage-log-card__preview">{{ stageLogText(item.id) }}</pre>
+              </article>
+            </div>
+            <div v-else class="page-empty-text task-detail-empty">暂无阶段日志</div>
           </section>
         </div>
       </div>
@@ -689,25 +669,20 @@ watch(() => route.params.id, () => {
 
 .task-runtime-video {
   width: 100%;
-  max-width: 720px;
   border-radius: 16px;
   background: #000;
 }
 
-.task-runtime-video-wrap {
-  display: flex;
-  justify-content: center;
-}
-
-.task-runtime-screenshot-group {
+.task-runtime-media-grid {
   display: grid;
-  gap: 10px;
-}
-
-.task-runtime-screenshots {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
+}
+
+.task-runtime-media-panel {
+  display: grid;
+  align-items: start;
+  min-height: 220px;
 }
 
 .task-runtime-section-title {
@@ -717,6 +692,8 @@ watch(() => route.params.id, () => {
 
 .task-runtime-screenshot {
   width: 100%;
+  height: 100%;
+  object-fit: contain;
   border-radius: 16px;
   border: 1px solid var(--app-border);
   background: #fff;
@@ -754,19 +731,64 @@ watch(() => route.params.id, () => {
   padding: 0;
 }
 
-.task-runtime-log__highlights {
-  margin: 0;
-  padding: 0 0 0 18px;
+.task-runtime-log__viewer-hint {
   display: grid;
   gap: 8px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid var(--app-border);
+  background: #fff;
   color: var(--app-text-primary);
   font-size: 13px;
   line-height: 1.6;
 }
 
-.task-runtime-log__actions {
+.task-stage-log-list {
+  display: grid;
+  gap: 12px;
+}
+
+.task-stage-log-card {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 16px;
+  border: 1px solid var(--app-border);
+  background: #fff;
+}
+
+.task-stage-log-card__header {
   display: flex;
-  justify-content: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.task-stage-log-card__header h3 {
+  margin: 0;
+}
+
+.task-stage-log-card__header p {
+  margin: 6px 0 0;
+  color: var(--app-text-secondary);
+}
+
+.task-stage-log-card__preview {
+  margin: 0;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: var(--app-surface-muted);
+  color: var(--app-text-primary);
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 240px;
+  overflow: auto;
+}
+
+.task-stage-log-card__empty {
+  min-height: 56px;
+  padding: 0;
 }
 
 @media (max-width: 1080px) {
@@ -776,6 +798,10 @@ watch(() => route.params.id, () => {
 
   .task-runtime-panel--log {
     grid-column: auto;
+  }
+
+  .task-runtime-media-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>

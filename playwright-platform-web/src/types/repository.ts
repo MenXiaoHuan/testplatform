@@ -7,7 +7,8 @@ export interface RepositoryRecord {
   installCommand: string
   runCommandTemplate: string
   testRoot: string
-  reportRelativePath: string
+  resultsIndexRelativePath: string
+  artifactRootRelativePath: string
   enabled: boolean
 }
 
@@ -19,7 +20,8 @@ export interface RepositoryForm {
   installCommand: string
   runCommandTemplate: string
   testRoot: string
-  reportRelativePath: string
+  resultsIndexRelativePath: string
+  artifactRootRelativePath: string
   enabled: boolean
 }
 
@@ -31,6 +33,7 @@ export const createRepositoryForm = (): RepositoryForm => ({
   installCommand: 'npm install && npx playwright install',
   runCommandTemplate: 'npx playwright test',
   testRoot: 'tests',
-  reportRelativePath: 'reports/allure-report',
+  resultsIndexRelativePath: 'test-results/.playwright-results.json',
+  artifactRootRelativePath: '.playwright-artifacts',
   enabled: true,
 })

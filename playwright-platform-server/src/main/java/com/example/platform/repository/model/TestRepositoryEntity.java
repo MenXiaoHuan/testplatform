@@ -36,9 +36,6 @@ public class TestRepositoryEntity {
     @Column(name = "test_root", nullable = false, length = 256)
     private String testRoot;
 
-    @Column(name = "report_relative_path", nullable = false, length = 256)
-    private String reportRelativePath;
-
     @Column(name = "results_index_relative_path", nullable = false, length = 256)
     private String resultsIndexRelativePath = "test-results/.playwright-results.json";
 
@@ -70,8 +67,6 @@ public class TestRepositoryEntity {
     public void setRunCommandTemplate(String runCommandTemplate) { this.runCommandTemplate = runCommandTemplate; }
     public String getTestRoot() { return testRoot; }
     public void setTestRoot(String testRoot) { this.testRoot = testRoot; }
-    public String getReportRelativePath() { return reportRelativePath; }
-    public void setReportRelativePath(String reportRelativePath) { this.reportRelativePath = reportRelativePath; }
     public String getResultsIndexRelativePath() { return resultsIndexRelativePath; }
     public void setResultsIndexRelativePath(String resultsIndexRelativePath) { this.resultsIndexRelativePath = resultsIndexRelativePath; }
     public String getArtifactRootRelativePath() { return artifactRootRelativePath; }

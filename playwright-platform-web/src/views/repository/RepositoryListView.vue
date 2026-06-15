@@ -1,10 +1,11 @@
-<script setup lang="ts"> 
-import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
+<script setup lang="ts">
+import { type FormInstance, type FormRules } from 'element-plus'
 import { computed, onMounted, reactive, ref } from 'vue'
 import ListPageShell from '../../components/list/ListPageShell.vue'
 import { useRepositoryStore } from '../../stores/repository'
 import type { RepositoryForm, RepositoryRecord } from '../../types/repository'
 import { toErrorMessage } from '../../utils/error'
+import { confirmDangerAction, showAppToast } from '../../utils/ui-feedback'
 import { isRequired } from '../../utils/validators'
 
 const store = useRepositoryStore()
@@ -29,7 +30,8 @@ const repositoryFieldHelp = {
   runCommandTemplate:
     '默认使用 Playwright 原生命令，例如 npx playwright test；如仓库封装了脚本，也可以改成自定义执行命令。若使用 wrapper 模式，必须写成可透传参数的形式，例如 npm run test:e2e --，这样平台追加测试目标时才能继续向后透传。',
   testRoot: '相对工作目录填写测试目录，例如 tests。',
-  reportRelativePath: '相对工作目录填写报告目录，例如 reports/allure-report。',
+  resultsIndexRelativePath: '相对工作目录填写结果索引文件，例如 test-results/.playwright-results.json。',
+  artifactRootRelativePath: '相对工作目录填写运行产物目录，例如 .playwright-artifacts。',
 }
 const formRules: FormRules<RepositoryForm> = {
   name: [{ required: true, message: '请输入仓库名称', trigger: 'blur' }],
@@ -38,12 +40,37 @@ const formRules: FormRules<RepositoryForm> = {
   installCommand: [{ required: true, message: '请输入安装命令', trigger: 'blur' }],
   runCommandTemplate: [{ required: true, message: '请输入测试执行命令', trigger: 'blur' }],
   testRoot: [{ required: true, message: '请输入测试目录', trigger: 'blur' }],
-  reportRelativePath: [{ required: true, message: '请输入报告目录', trigger: 'blur' }],
+  resultsIndexRelativePath: [{ required: true, message: '请输入结果索引文件', trigger: 'blur' }],
+  artifactRootRelativePath: [{ required: true, message: '请输入运行产物目录', trigger: 'blur' }],
+}
+
+function toRepositoryPayload(): RepositoryForm {
+  return {
+    name: form.name,
+    gitUrl: form.gitUrl,
+    defaultBranch: form.defaultBranch,
+    workingDirectory: form.workingDirectory,
+    installCommand: form.installCommand,
+    runCommandTemplate: form.runCommandTemplate,
+    testRoot: form.testRoot,
+    resultsIndexRelativePath: form.resultsIndexRelativePath,
+    artifactRootRelativePath: form.artifactRootRelativePath,
+    enabled: form.enabled,
+  }
 }
 
 function openCreate() {
   editingId.value = null
   Object.assign(form, store.createEmptyForm())
+  dialogVisible.value = true
+}
+
+function openCopy(row: RepositoryRecord) {
+  editingId.value = null
+  Object.assign(form, store.createEmptyForm(), {
+    ...row,
+    workingDirectory: row.workingDirectory ?? '',
+  })
   dialogVisible.value = true
 }
 
@@ -53,27 +80,44 @@ function openEdit(row: RepositoryRecord) {
   dialogVisible.value = true
 }
 
+function isNameConflict(error: unknown) {
+  if (typeof error === 'object' && error !== null) {
+    const response = Reflect.get(error, 'response')
+    if (typeof response === 'object' && response !== null) {
+      const data = Reflect.get(response, 'data')
+      if (typeof data === 'object' && data !== null) {
+        return Reflect.get(data, 'code') === 'CONFLICT'
+      }
+    }
+  }
+  return false
+}
+
 async function submit() {
   if (formRef.value) {
     const valid = await formRef.value.validate().catch(() => false)
     if (!valid) {
-      ElMessage.warning('请先完善必填字段')
+      showAppToast('请先完善必填字段', 'warning')
       return
     }
   }
 
   if (!isRequired(form.name) || !isRequired(form.gitUrl)) {
-    ElMessage.warning('请完善仓库名称和 Git 地址')
+    showAppToast('请完善仓库名称和 Git 地址', 'warning')
     return
   }
 
   saving.value = true
   try {
-    await store.save(editingId.value, { ...form })
+    await store.save(editingId.value, toRepositoryPayload())
     dialogVisible.value = false
-    ElMessage.success(editingId.value === null ? '仓库已创建' : '仓库已更新')
+    showAppToast(editingId.value === null ? '仓库已创建' : '仓库已更新', 'success')
   } catch (error) {
-    ElMessage.error(toErrorMessage(error, '仓库保存失败'))
+    if (isNameConflict(error)) {
+      showAppToast(toErrorMessage(error, '仓库名称已存在，请更换后重试'), 'warning')
+      return
+    }
+    showAppToast(toErrorMessage(error, '仓库保存失败'), 'error')
   } finally {
     saving.value = false
   }
@@ -81,18 +125,18 @@ async function submit() {
 
 async function remove(row: RepositoryRecord) {
   try {
-    await ElMessageBox.confirm(`确认删除仓库“${row.name}”吗？`, '删除仓库', {
-      type: 'warning',
+    const confirmed = await confirmDangerAction({
+      title: '删除仓库',
+      message: `确认删除仓库“${row.name}”吗？`,
       confirmButtonText: '删除',
-      cancelButtonText: '取消',
     })
-    await store.remove(row.id)
-    ElMessage.success('仓库已删除')
-  } catch (error) {
-    if (error === 'cancel' || error === 'close') {
+    if (!confirmed) {
       return
     }
-    ElMessage.error(toErrorMessage(error, '仓库删除失败'))
+    await store.remove(row.id)
+    showAppToast('仓库已删除', 'success')
+  } catch (error) {
+    showAppToast(toErrorMessage(error, '仓库删除失败'), 'error')
   }
 }
 
@@ -104,9 +148,9 @@ async function toggleEnabled(row: RepositoryRecord, enabled: boolean) {
       workingDirectory: row.workingDirectory ?? '',
       enabled,
     })
-    ElMessage.success(enabled ? '仓库已启用' : '仓库已停用')
+    showAppToast(enabled ? '仓库已启用' : '仓库已停用', 'success')
   } catch (error) {
-    ElMessage.error(toErrorMessage(error, '仓库状态更新失败'))
+    showAppToast(toErrorMessage(error, '仓库状态更新失败'), 'error')
   } finally {
     togglingId.value = null
   }
@@ -114,7 +158,7 @@ async function toggleEnabled(row: RepositoryRecord, enabled: boolean) {
 
 onMounted(() => {
   void store.fetchAll().catch((error) => {
-    ElMessage.error(toErrorMessage(error, '仓库列表加载失败'))
+    showAppToast(toErrorMessage(error, '仓库列表加载失败'), 'error')
   })
 })
 
@@ -122,7 +166,7 @@ async function handlePageChange(page: number) {
   try {
     await store.fetchAll(page, store.size)
   } catch (error) {
-    ElMessage.error(toErrorMessage(error, '仓库列表加载失败'))
+    showAppToast(toErrorMessage(error, '仓库列表加载失败'), 'error')
   }
 }
 
@@ -130,7 +174,7 @@ async function handleSizeChange(size: number) {
   try {
     await store.fetchAll(1, size)
   } catch (error) {
-    ElMessage.error(toErrorMessage(error, '仓库列表加载失败'))
+    showAppToast(toErrorMessage(error, '仓库列表加载失败'), 'error')
   }
 }
 </script>
@@ -158,10 +202,11 @@ async function handleSizeChange(size: number) {
       <el-table-column prop="name" label="仓库名称" min-width="200" />
       <el-table-column prop="gitUrl" label="Git 地址" min-width="280" />
       <el-table-column prop="defaultBranch" label="默认分支" width="140" />
-      <el-table-column label="操作" width="180" fixed="right">
+      <el-table-column label="操作" width="220" fixed="right">
         <template #default="{ row }">
           <div class="table-actions">
             <el-button class="table-action-button" link type="primary" @click="openEdit(row)">编辑</el-button>
+            <el-button class="table-action-button" link type="primary" @click="openCopy(row)">复制</el-button>
             <el-button class="table-action-button" link type="danger" @click="remove(row)">删除</el-button>
           </div>
         </template>
@@ -218,16 +263,27 @@ async function handleSizeChange(size: number) {
           </template>
           <el-input v-model="form.testRoot" placeholder="tests" />
         </el-form-item>
-        <el-form-item prop="reportRelativePath" required>
+        <el-form-item prop="resultsIndexRelativePath" required>
           <template #label>
             <span class="form-label-with-help">
-              <span>报告目录</span>
-              <el-tooltip :content="repositoryFieldHelp.reportRelativePath" placement="top">
+              <span>结果索引文件</span>
+              <el-tooltip :content="repositoryFieldHelp.resultsIndexRelativePath" placement="top">
                 <span class="field-help-icon">?</span>
               </el-tooltip>
             </span>
           </template>
-          <el-input v-model="form.reportRelativePath" placeholder="reports/allure-report" />
+          <el-input v-model="form.resultsIndexRelativePath" placeholder="test-results/.playwright-results.json" />
+        </el-form-item>
+        <el-form-item prop="artifactRootRelativePath" required>
+          <template #label>
+            <span class="form-label-with-help">
+              <span>运行产物目录</span>
+              <el-tooltip :content="repositoryFieldHelp.artifactRootRelativePath" placement="top">
+                <span class="field-help-icon">?</span>
+              </el-tooltip>
+            </span>
+          </template>
+          <el-input v-model="form.artifactRootRelativePath" placeholder=".playwright-artifacts" />
         </el-form-item>
       </el-form>
       <template #footer>

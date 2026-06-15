@@ -13,13 +13,17 @@ public record TaskDetailResponse(
         boolean detailAvailable,
         String triggerType,
         String triggerUser,
+        String triggerReason,
         String branch,
         String commitSha,
+        String currentStage,
+        String resultCode,
+        boolean cancelRequested,
+        String cancelRequestedBy,
         LocalDateTime startedAt,
         LocalDateTime finishedAt,
         Long durationMs,
         String runnerName,
-        String reportUrl,
         String logUrl,
         String resolvedBranch,
         String resolvedBrowser,
@@ -29,8 +33,7 @@ public record TaskDetailResponse(
         String resolvedRunCommand,
         int environmentVariableCount,
         int artifactCount,
-        boolean hasArtifacts,
-        boolean reportReady) {
+        boolean hasArtifacts) {
 
     public static TaskDetailResponse from(
             TaskEntity task,
@@ -38,7 +41,6 @@ public record TaskDetailResponse(
             String repositoryName,
             int environmentVariableCount,
             int artifactCount) {
-        boolean reportReady = task.getReportUrl() != null && !task.getReportUrl().isBlank();
         return new TaskDetailResponse(
                 task.getId(),
                 task.getSceneId(),
@@ -46,16 +48,20 @@ public record TaskDetailResponse(
                 sceneName,
                 repositoryName,
                 task.getStatus(),
-                !"RUNNING".equalsIgnoreCase(task.getStatus()),
+                !"RUNNING".equalsIgnoreCase(task.getStatus()) && !"QUEUED".equalsIgnoreCase(task.getStatus()),
                 task.getTriggerType(),
                 task.getTriggerUser(),
+                task.getTriggerReason(),
                 task.getBranch(),
                 task.getCommitSha(),
+                task.getCurrentStage(),
+                task.getResultCode(),
+                Boolean.TRUE.equals(task.getCancelRequested()),
+                task.getCancelRequestedBy(),
                 task.getStartedAt(),
                 task.getFinishedAt(),
                 task.getDurationMs(),
                 task.getRunnerName(),
-                task.getReportUrl(),
                 task.getLogUrl(),
                 task.getResolvedBranch(),
                 task.getResolvedBrowser(),
@@ -65,7 +71,6 @@ public record TaskDetailResponse(
                 task.getResolvedRunCommand(),
                 environmentVariableCount,
                 artifactCount,
-                artifactCount > 0,
-                reportReady);
+                artifactCount > 0);
     }
 }

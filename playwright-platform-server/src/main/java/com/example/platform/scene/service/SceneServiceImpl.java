@@ -8,9 +8,11 @@ import com.example.platform.scene.model.SceneEntity;
 import com.example.platform.scene.model.SceneJpaRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.time.LocalDateTime;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
@@ -23,22 +25,39 @@ public class SceneServiceImpl implements SceneService {
     private final TestRepositoryJpaRepository repositoryJpaRepository;
     private final SceneCascadeDeleteService sceneCascadeDeleteService;
     private final ObjectMapper objectMapper;
+    private final SceneSchedulerService sceneSchedulerService;
+    private final SceneScheduleTimeResolver sceneScheduleTimeResolver = new SceneScheduleTimeResolver();
+
+    @Autowired
+    public SceneServiceImpl(
+            SceneJpaRepository repository,
+            TestRepositoryJpaRepository repositoryJpaRepository,
+            SceneCascadeDeleteService sceneCascadeDeleteService,
+            ObjectMapper objectMapper,
+            SceneSchedulerService sceneSchedulerService) {
+        this.repository = repository;
+        this.repositoryJpaRepository = repositoryJpaRepository;
+        this.sceneCascadeDeleteService = sceneCascadeDeleteService;
+        this.objectMapper = objectMapper;
+        this.sceneSchedulerService = sceneSchedulerService;
+    }
 
     public SceneServiceImpl(
             SceneJpaRepository repository,
             TestRepositoryJpaRepository repositoryJpaRepository,
             SceneCascadeDeleteService sceneCascadeDeleteService,
             ObjectMapper objectMapper) {
-        this.repository = repository;
-        this.repositoryJpaRepository = repositoryJpaRepository;
-        this.sceneCascadeDeleteService = sceneCascadeDeleteService;
-        this.objectMapper = objectMapper;
+        this(repository, repositoryJpaRepository, sceneCascadeDeleteService, objectMapper, null);
     }
 
     @Override
     public SceneEntity create(SceneEntity entity) {
         validateRepository(entity.getRepoId());
-        return repository.save(normalizeSelector(entity));
+        SceneEntity normalized = normalizeSelector(entity);
+        normalized.setName(normalizeName(normalized.getName()));
+        validateUniqueName(normalized.getName(), null);
+        normalized.setNextRunAt(resolveNextRunAt(normalized));
+        return repository.save(normalized);
     }
 
     @Override
@@ -63,8 +82,10 @@ public class SceneServiceImpl implements SceneService {
         SceneEntity existing = get(id);
         validateRepository(entity.getRepoId());
         SceneEntity normalized = normalizeSelector(entity);
+        String normalizedName = normalizeName(normalized.getName());
+        validateUniqueName(normalizedName, id);
         existing.setRepoId(entity.getRepoId());
-        existing.setName(entity.getName());
+        existing.setName(normalizedName);
         existing.setDescription(entity.getDescription());
         existing.setBranch(entity.getBranch());
         existing.setTestSelectorType(normalized.getTestSelectorType());
@@ -76,6 +97,7 @@ public class SceneServiceImpl implements SceneService {
         existing.setRunCommand(entity.getRunCommand());
         existing.setScheduleEnabled(entity.getScheduleEnabled());
         existing.setCronExpression(entity.getCronExpression());
+        existing.setNextRunAt(resolveNextRunAt(existing));
         return repository.save(existing);
     }
 
@@ -91,12 +113,16 @@ public class SceneServiceImpl implements SceneService {
 
     @Scheduled(fixedDelay = 60000)
     public void triggerScheduledScenes() {
-        repository.findAllByScheduleEnabledTrue().stream()
-                .filter(scene -> scene.getCronExpression() != null && !scene.getCronExpression().isBlank())
-                .forEach(scene -> log.info(
-                        "Scheduling hook scanned scene id={}, cron={}",
-                        scene.getId(),
-                        scene.getCronExpression()));
+        if (sceneSchedulerService == null) {
+            repository.findAllByScheduleEnabledTrue().stream()
+                    .filter(scene -> scene.getCronExpression() != null && !scene.getCronExpression().isBlank())
+                    .forEach(scene -> log.info(
+                            "Scheduling hook scanned scene id={}, cron={}",
+                            scene.getId(),
+                            scene.getCronExpression()));
+            return;
+        }
+        sceneSchedulerService.triggerDueScenes(java.time.LocalDateTime.now());
     }
 
     private SceneEntity normalizeSelector(SceneEntity entity) {
@@ -117,7 +143,18 @@ public class SceneServiceImpl implements SceneService {
             entity.setEnvJson(null);
         }
 
+        if (entity.getCronExpression() != null && entity.getCronExpression().isBlank()) {
+            entity.setCronExpression(null);
+        }
+
         return entity;
+    }
+
+    private LocalDateTime resolveNextRunAt(SceneEntity entity) {
+        return sceneScheduleTimeResolver.resolveNextRunAt(
+                entity.getScheduleEnabled(),
+                entity.getCronExpression(),
+                LocalDateTime.now());
     }
 
     private void validateRepository(Long repoId) {
@@ -162,6 +199,23 @@ public class SceneServiceImpl implements SceneService {
             return root.isObject() ? root.size() : 0;
         } catch (Exception exception) {
             return 0;
+        }
+    }
+
+    private String normalizeName(String name) {
+        String normalized = name == null ? "" : name.trim();
+        if (normalized.isEmpty()) {
+            throw new IllegalArgumentException("请输入场景名称");
+        }
+        return normalized;
+    }
+
+    private void validateUniqueName(String name, Long currentId) {
+        boolean duplicated = currentId == null
+                ? repository.existsByNameIgnoreCase(name)
+                : repository.existsByNameIgnoreCaseAndIdNot(name, currentId);
+        if (duplicated) {
+            throw new IllegalStateException("场景名称已存在，请更换后重试");
         }
     }
 }

@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
-import { fetchSceneTasks, getTask, getTaskReport, getTaskReportSummary, listArtifacts, listTaskCases, listTasks, runScene } from '../api/task'
-import type { CaseResultRecord, TaskReportSummary } from '../types/report'
-import type { ArtifactRecord, TaskRecord, TaskReport } from '../types/task'
+import { cancelTask, fetchSceneTasks, getTask, listArtifacts, listTaskCases, listTaskLogs, listTasks, runScene } from '../api/task'
+import type { CaseResultRecord } from '../types/report'
+import type { ArtifactRecord, TaskRecord, TaskStageLogRecord } from '../types/task'
 
 export const useTaskStore = defineStore('task', {
   state: () => ({
@@ -12,10 +12,9 @@ export const useTaskStore = defineStore('task', {
     total: 0,
     totalPages: 0,
     current: null as TaskRecord | null,
-    report: null as TaskReport | null,
-    reportSummary: null as TaskReportSummary | null,
     caseResults: [] as CaseResultRecord[],
     artifacts: [] as ArtifactRecord[],
+    stageLogs: [] as TaskStageLogRecord[],
   }),
   actions: {
     async fetchAll(page?: number, size?: number) {
@@ -86,25 +85,21 @@ export const useTaskStore = defineStore('task', {
       this.totalPages = 0
     },
     async fetchDetail(taskId: number) {
-      const [task, report, artifacts] = await Promise.all([
+      const [task, artifacts, stageLogs] = await Promise.all([
         getTask(taskId),
-        getTaskReport(taskId),
         listArtifacts(taskId),
+        listTaskLogs(taskId),
         ])
       this.current = task
-      this.report = report
       this.artifacts = artifacts
-    },
-    async fetchReportSummary(taskId: number) {
-      const summary = await getTaskReportSummary(taskId)
-      this.reportSummary = summary
-      return summary
+      this.stageLogs = stageLogs
     },
     async fetchTaskDetailPage(taskId: number) {
-      const [taskResult, summaryResult, caseResult] = await Promise.allSettled([
+      const [taskResult, artifactResult, caseResult, stageLogResult] = await Promise.allSettled([
         getTask(taskId),
-        getTaskReportSummary(taskId),
+        listArtifacts(taskId),
         listTaskCases(taskId),
+        listTaskLogs(taskId),
       ])
 
       if (taskResult.status === 'rejected') {
@@ -112,20 +107,9 @@ export const useTaskStore = defineStore('task', {
       }
 
       this.current = taskResult.value
-      this.report = {
-        taskId,
-        reportUrl: taskResult.value.reportUrl ?? null,
-      }
-
-      if (summaryResult.status === 'fulfilled') {
-        this.reportSummary = summaryResult.value
-        this.artifacts = summaryResult.value.artifacts
-        this.report = {
-          taskId,
-          reportUrl: summaryResult.value.reportUrl,
-        }
+      if (artifactResult.status === 'fulfilled') {
+        this.artifacts = artifactResult.value
       } else {
-        this.reportSummary = null
         this.artifacts = []
       }
 
@@ -134,6 +118,16 @@ export const useTaskStore = defineStore('task', {
       } else {
         this.caseResults = []
       }
+
+      if (stageLogResult.status === 'fulfilled') {
+        this.stageLogs = stageLogResult.value
+      } else {
+        this.stageLogs = []
+      }
+    },
+    async cancelCurrentTask(taskId: number) {
+      await cancelTask(taskId)
+      this.current = await getTask(taskId)
     },
   },
 })

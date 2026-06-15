@@ -278,4 +278,25 @@ class SceneControllerTest {
                 .andExpect(jsonPath("$.data").value(nullValue()))
                 .andExpect(jsonPath("$.msg").value("boom"));
     }
+
+    @Test
+    void shouldReturnConflictWhenSceneNameAlreadyExists() throws Exception {
+        Mockito.when(sceneService.create(Mockito.any(SceneEntity.class)))
+                .thenThrow(new IllegalStateException("场景名称已存在，请更换后重试"));
+
+        mockMvc.perform(post("/api/scenes")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "repoId": 1,
+                      "name": "nightly smoke",
+                      "browser": "chromium",
+                      "matchValue": "tests/login.spec.ts"
+                    }
+                    """))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CONFLICT"))
+                .andExpect(jsonPath("$.data").value(nullValue()))
+                .andExpect(jsonPath("$.msg").value("场景名称已存在，请更换后重试"));
+    }
 }

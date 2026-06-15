@@ -55,6 +55,9 @@ public class SceneEntity {
     @Column(name = "cron_expression", length = 64)
     private String cronExpression;
 
+    @Column(name = "next_run_at")
+    private LocalDateTime nextRunAt;
+
     @Column(name = "last_run_at")
     private LocalDateTime lastRunAt;
 
@@ -100,6 +103,8 @@ public class SceneEntity {
     public void setScheduleEnabled(Boolean scheduleEnabled) { this.scheduleEnabled = Boolean.TRUE.equals(scheduleEnabled); }
     public String getCronExpression() { return cronExpression; }
     public void setCronExpression(String cronExpression) { this.cronExpression = cronExpression; }
+    public LocalDateTime getNextRunAt() { return nextRunAt; }
+    public void setNextRunAt(LocalDateTime nextRunAt) { this.nextRunAt = nextRunAt; }
     public LocalDateTime getLastRunAt() { return lastRunAt; }
     public void setLastRunAt(LocalDateTime lastRunAt) { this.lastRunAt = lastRunAt; }
     public String getLastTaskStatus() { return lastTaskStatus; }
