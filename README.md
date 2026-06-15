@@ -1,124 +1,205 @@
-# Playwright Test Platform Workspace
+# Playwright Test Platform
 
-This repository combines the Playwright framework, the platform backend, and the platform frontend into one Git workspace.
+一个用于管理 Playwright 自动化测试仓库、执行场景任务、查看用例结果与运行产物的测试平台。
 
-## Workspace Structure
+当前仓库实际包含两个子项目：
 
-- `playwright_framework`: Playwright test framework and platform-facing test artifact producer
-- `playwright-platform-server`: Spring Boot backend for repository, scene, task, report, and artifact management
-- `playwright-platform-web`: Vue 3 frontend for platform management and task detail pages
+- `playwright-platform-server`：Spring Boot 后端
+- `playwright-platform-web`：Vue 3 + Vite 前端
 
-## Prerequisites
+## 功能概览
+
+- 管理测试仓库配置：Git 地址、默认分支、工作目录、安装命令、测试执行命令、测试目录等
+- 管理 E2E 场景：关联仓库、浏览器、测试选择器、环境变量、定时执行配置
+- 手动触发场景执行，按场景查看任务历史
+- 查看任务详情、阶段状态、阶段日志、用例结果
+- 展示运行产物，包括截图、视频、Trace 等
+- 支持任务取消和任务重新执行
+
+## 技术栈
+
+- 前端：Vue 3、TypeScript、Vite、Pinia、Element Plus、Vitest
+- 后端：Spring Boot 3.5、Spring Web、Spring Data JPA、Flyway
+- 存储与依赖：MySQL、MinIO
+
+## 目录结构
+
+```text
+.
+├── README.md
+├── playwright-platform-server
+│   ├── pom.xml
+│   └── src
+└── playwright-platform-web
+    ├── package.json
+    └── src
+```
+
+## 环境要求
 
 - Node.js 20+
 - npm
 - Java 21
 - Maven 3.9+
-- MySQL
+- MySQL 8+
 - MinIO
 
-## Git Usage
+## 快速开始
 
-Run Git commands from the workspace root:
-
-```bash
-cd /Users/bytedance/test_platform
-```
-
-Legacy nested Git metadata is backed up under `.tmp/git-boundary-backups/`.
-
-## Recommended Startup Order
-
-1. Start the backend.
-2. Start the frontend.
-3. Run framework tests from `playwright_framework` when you need to produce test runs or artifacts.
-
-## Start Services
-
-### Backend
+### 1. 克隆仓库
 
 ```bash
-./scripts/dev-server.sh
+git clone <your-repo-url>
+cd test_platform
 ```
 
-### Frontend
+### 2. 准备基础依赖
+
+先启动本地 MySQL 和 MinIO。
+
+后端默认配置来自 `playwright-platform-server/src/main/resources/application.yml`：
+
+- MySQL：`jdbc:mysql://localhost:3306/playwright_platform`
+- 用户名：`root`
+- 密码：`12345678`
+- MinIO：`http://127.0.0.1:9000`
+- Bucket：`qa-report`
+
+如需覆盖，使用环境变量：
 
 ```bash
-./scripts/dev-web.sh --host 0.0.0.0 --port 4173
+export PLATFORM_DB_URL='jdbc:mysql://localhost:3306/playwright_platform?useSSL=false&allowPublicKeyRetrieval=true&createDatabaseIfNotExist=true&serverTimezone=UTC'
+export PLATFORM_DB_USERNAME='root'
+export PLATFORM_DB_PASSWORD='12345678'
+export PLATFORM_MINIO_ENDPOINT='http://127.0.0.1:9000'
+export PLATFORM_MINIO_ACCESS_KEY='minioadmin'
+export PLATFORM_MINIO_SECRET_KEY='minioadmin'
+export PLATFORM_STORAGE_BUCKET='qa-report'
 ```
 
-## Run Tests
+### 3. 初始化数据库
 
-### Backend tests
+可使用仓库内的结构脚本初始化：
 
 ```bash
-./scripts/test-server.sh
+mysql -u root -p < playwright-platform-server/src/main/resources/db/schema/SCHEMA_OVERVIEW.sql
 ```
 
-### Backend runtime controls
+### 4. 安装前端依赖
 
-The backend now exposes task execution controls under `platform.task.execution`:
-
-```yaml
-platform:
-  task:
-    execution:
-      core-pool-size: 2
-      max-pool-size: 4
-      queue-capacity: 50
-      keep-alive-seconds: 60
-      install-timeout-seconds: 600
-      test-timeout-seconds: 1800
-      report-timeout-seconds: 300
+```bash
+cd playwright-platform-web
+npm install
+cd ..
 ```
 
-Tasks now keep additional runtime fields such as queued stage, current stage, cancel request state, and structured result code. The backend also exposes:
+### 5. 启动后端
 
+```bash
+cd playwright-platform-server
+mvn spring-boot:run
+```
+
+默认监听 `http://localhost:8080`。
+
+### 6. 启动前端
+
+```bash
+cd playwright-platform-web
+npm run dev
+```
+
+Vite 默认访问地址通常为 `http://localhost:5173`。如果需要固定端口，可以这样启动：
+
+```bash
+cd playwright-platform-web
+npm run dev -- --host 0.0.0.0 --port 4173
+```
+
+前端开发服务器会将 `/api` 代理到 `http://localhost:8080`。
+
+## 开发命令
+
+### 后端
+
+```bash
+cd playwright-platform-server
+mvn spring-boot:run
+mvn test
+```
+
+### 前端
+
+```bash
+cd playwright-platform-web
+npm install
+npm run dev
+npm run build
+npm test
+```
+
+## 核心页面与能力
+
+### 仓库管理
+
+- 新增、编辑、复制、删除测试仓库
+- 启用或停用仓库
+- 配置工作目录、安装命令、执行命令模板、测试目录、结果索引文件和产物目录
+
+### 场景管理
+
+- 创建和编辑 E2E 场景
+- 选择浏览器、分支、用例路径或目录
+- 配置环境变量 JSON
+- 配置定时执行 Cron 表达式
+
+### 任务管理
+
+- 手动触发场景执行
+- 查看任务列表、状态、阶段、耗时、结果归因
+- 查看任务详情、阶段日志、用例结果
+- 查看截图、视频、Trace 等产物
+- 取消运行中的任务，或对历史任务重新执行
+
+## 主要接口
+
+后端当前暴露的核心接口包括：
+
+- `GET /api/repos`
+- `POST /api/repos`
+- `GET /api/scenes`
+- `POST /api/scenes`
+- `POST /api/scenes/{sceneId}/run`
+- `GET /api/tasks`
+- `GET /api/scenes/{sceneId}/tasks`
+- `GET /api/tasks/{taskId}`
 - `POST /api/tasks/{taskId}/cancel`
 - `GET /api/tasks/{taskId}/logs`
 
-Scheduled scenes now create `SCHEDULED` tasks through the backend scheduler instead of only being scanned in memory.
+## 仓库接入说明
 
-### Frontend tests
+平台中的“测试仓库”指被平台拉取并执行的 Playwright 自动化项目。接入时建议使用以下约定：
 
-```bash
-./scripts/test-web.sh
-```
+- `工作目录`：单仓库项目可留空；Monorepo 可填写子目录
+- `安装命令`：例如 `npm install && npx playwright install`
+- `测试执行命令`：例如 `npx playwright test`
+- 如果使用 npm script 包装测试命令，必须保持参数透传，例如 `npm run test:e2e --`
+- `测试目录`：相对工作目录，例如 `tests`
+- `结果索引文件`：相对工作目录，例如 `test-results/.playwright-results.json`
+- `运行产物目录`：相对工作目录，例如 `.playwright-artifacts`
 
-## Framework Usage
-
-Framework commands continue to run from `playwright_framework`:
-
-```bash
-cd playwright_framework
-npm run test:e2e
-```
-
-If you wrap Playwright execution in an npm script and want the platform to append test targets or filters, keep the command in a pass-through form such as `npm run test:e2e --` so the extra arguments are forwarded correctly.
-
-Useful framework commands:
+## 测试
 
 ```bash
-npm run test:e2e
-npm run test:e2e:headed
-npm run report:open
-npm run test:e2e -- --grep @smoke
+cd playwright-platform-server
+mvn test
+
+cd ../playwright-platform-web
+npm test
 ```
 
-## Repository Configuration
+## 注意事项
 
-- `Git 地址`: point to the GitHub repository URL that the platform should clone
-- `工作目录`: optional; leave blank for root projects, use values like `playwright_framework` for monorepo subprojects
-- `安装命令`: defaults to Playwright native install, for example `npm install && npx playwright install`; if the repository wraps setup in its own script, you can override it
-- `测试执行命令`: defaults to Playwright native execution, for example `npx playwright test`; if the repository wraps execution in its own script, the command must stay in a pass-through form such as `npm run test:e2e --`, otherwise the platform cannot forward appended spec paths or filters
-- `测试目录`: relative to the working directory, for example `tests`
-- `报告目录`: relative to the working directory, for example `reports/allure-report`
-- `仓库启停`: disabled repositories stay hidden from scene creation choices, and scenes under them cannot be executed until the repository is enabled again
-
-## Scene Configuration
-
-- Scenes no longer have an enable/disable switch; creating a scene means it is always available as a configuration item
-- The scene list uses a single `执行` icon column for manual runs
-- The `执行` icon is disabled only when the linked repository is disabled
-- `用例路径/目录` is optional; leave it blank to run all tests under the repository test root
-- `启用定时` controls only scheduled execution; `Cron 表达式` appears only when scheduling is enabled
+- 前端项目内默认 `README.md` 仍是 Vite 模板文件，不代表当前平台说明
+- 本仓库当前并不包含 `playwright_framework` 子目录，相关旧说明已不适用
+- 后端任务执行依赖 MySQL、MinIO 以及可被拉取和执行的 Playwright 测试仓库
