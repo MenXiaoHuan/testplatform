@@ -138,6 +138,17 @@ npm run build
 npm test
 ```
 
+## CI
+
+项目使用 GitHub Actions 作为主干质量门禁。每次 `push` 和 `pull_request` 会自动执行：
+
+- 后端：`mvn test`
+- 前端：`npm ci`
+- 前端：`npm test`
+- 前端：`npm run build`
+
+这些检查用于确保主干代码始终可测试、依赖可复现安装，并且前端可以完成生产构建。
+
 ## 核心页面与能力
 
 ### 仓库管理
