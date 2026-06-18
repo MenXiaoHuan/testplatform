@@ -10,7 +10,9 @@ public interface RunnerExecutionService {
     int runTests(Path workingDirectory, String runCommand, Map<String, String> extraEnv);
     int generateReport(Path workingDirectory, String reportCommand, Map<String, String> extraEnv);
     RunnerCommandResult runStage(
+            Path workspaceRoot,
             Path workingDirectory,
+            String stageName,
             String command,
             Map<String, String> extraEnv,
             Duration timeout,

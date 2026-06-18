@@ -76,6 +76,7 @@ final class TaskExecutionOrchestrator {
             task = taskRepository.save(task);
             RunnerCommandResult installResult = runStageWithFallback(
                     task,
+                    workspace,
                     executionDirectory,
                     repository.getInstallCommand(),
                     platformEnv,
@@ -94,6 +95,7 @@ final class TaskExecutionOrchestrator {
                 task = taskRepository.save(task);
                 RunnerCommandResult testResult = runStageWithFallback(
                         task,
+                        workspace,
                         executionDirectory,
                         task.getResolvedRunCommand(),
                         platformEnv,
@@ -247,13 +249,16 @@ final class TaskExecutionOrchestrator {
 
     private RunnerCommandResult runStageWithFallback(
             TaskEntity task,
+            Path workspace,
             Path executionDirectory,
             String command,
             Map<String, String> platformEnv,
             Duration timeout,
             StageCommandType stageCommandType) {
         RunnerCommandResult stageResult = runnerExecutionService.runStage(
+                workspace,
                 executionDirectory,
+                stageCommandType.name(),
                 command,
                 platformEnv,
                 timeout,

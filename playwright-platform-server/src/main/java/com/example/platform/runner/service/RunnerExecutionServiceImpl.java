@@ -34,13 +34,17 @@ public class RunnerExecutionServiceImpl implements RunnerExecutionService {
 
     @Override
     public RunnerCommandResult runStage(
+            Path workspaceRoot,
             Path workingDirectory,
+            String stageName,
             String command,
             Map<String, String> extraEnv,
             Duration timeout,
             BooleanSupplier cancellationRequested) {
         return commandExecutor.execute(new RunnerCommandRequest(
+                workspaceRoot,
                 workingDirectory,
+                stageName,
                 command,
                 extraEnv,
                 timeout,
@@ -48,6 +52,6 @@ public class RunnerExecutionServiceImpl implements RunnerExecutionService {
     }
 
     private int runCommand(Path workingDirectory, String command, Map<String, String> extraEnv) {
-        return runStage(workingDirectory, command, extraEnv, DEFAULT_STAGE_TIMEOUT, () -> false).exitCode();
+        return runStage(workingDirectory, workingDirectory, "LEGACY", command, extraEnv, DEFAULT_STAGE_TIMEOUT, () -> false).exitCode();
     }
 }

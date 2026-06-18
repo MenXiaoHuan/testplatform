@@ -6,7 +6,9 @@ import java.util.Map;
 import java.util.function.BooleanSupplier;
 
 public record RunnerCommandRequest(
+        Path workspaceRoot,
         Path workingDirectory,
+        String stageName,
         String command,
         Map<String, String> extraEnv,
         Duration timeout,

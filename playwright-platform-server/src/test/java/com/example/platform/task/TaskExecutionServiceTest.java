@@ -222,6 +222,65 @@ class TaskExecutionServiceTest {
     }
 
     @Test
+    void shouldPassWorkspaceRootAndStageNamesToRunnerStages() {
+        TestContext context = new TestContext();
+        SceneEntity scene = context.scene();
+        TestRepositoryEntity repository = context.repository();
+        Path workspace = Path.of("/tmp/task-101");
+        Path executionDirectory = workspace.resolve("playwright_framework");
+        Map<String, String> platformEnv = Map.of("PLAYWRIGHT_PLATFORM_MODE", "true");
+
+        Mockito.when(context.sceneRepository.findById(11L)).thenReturn(Optional.of(scene));
+        Mockito.when(context.repositoryRepository.findById(21L)).thenReturn(Optional.of(repository));
+        context.mockSaveWithGeneratedId();
+        Mockito.when(context.workspaceService.prepareWorkspace("git@demo/repo.git", "main", 101L)).thenReturn(workspace);
+        Mockito.when(context.executionService.runStage(
+                Mockito.eq(workspace),
+                Mockito.eq(executionDirectory),
+                Mockito.eq("INSTALL"),
+                Mockito.eq("npm install"),
+                Mockito.eq(platformEnv),
+                Mockito.any(),
+                Mockito.any()))
+                .thenReturn(new RunnerCommandResult(0, false, false, 10L, null, 0));
+        Mockito.when(context.executionService.runStage(
+                Mockito.eq(workspace),
+                Mockito.eq(executionDirectory),
+                Mockito.eq("TEST"),
+                Mockito.eq("npm run test:e2e"),
+                Mockito.eq(platformEnv),
+                Mockito.any(),
+                Mockito.any()))
+                .thenReturn(new RunnerCommandResult(0, false, false, 10L, null, 0));
+        Mockito.when(context.taskCaseResultParseService.parse(
+                101L,
+                executionDirectory.resolve("test-results/.playwright-results.json"),
+                executionDirectory))
+                .thenReturn(new ParsedTaskResults(List.of(), List.of()));
+        Mockito.when(context.taskCaseResultPersistenceService.persist(Mockito.anyList())).thenReturn(Map.of());
+
+        TaskEntity result = context.service().createAndRun(11L);
+
+        assertThat(result.getStatus()).isEqualTo("SUCCESS");
+        Mockito.verify(context.executionService).runStage(
+                Mockito.eq(workspace),
+                Mockito.eq(executionDirectory),
+                Mockito.eq("INSTALL"),
+                Mockito.eq("npm install"),
+                Mockito.eq(platformEnv),
+                Mockito.any(),
+                Mockito.any());
+        Mockito.verify(context.executionService).runStage(
+                Mockito.eq(workspace),
+                Mockito.eq(executionDirectory),
+                Mockito.eq("TEST"),
+                Mockito.eq("npm run test:e2e"),
+                Mockito.eq(platformEnv),
+                Mockito.any(),
+                Mockito.any());
+    }
+
+    @Test
     void shouldKeepSceneSummaryAlignedWithNewestTask() {
         TestContext context = new TestContext();
         SceneEntity scene = context.scene();
@@ -356,6 +415,8 @@ class TaskExecutionServiceTest {
         RunnerCommandExecutor executor = new LocalRunnerCommandExecutor();
         RunnerCommandRequest request = new RunnerCommandRequest(
                 tempDir,
+                tempDir,
+                "TEST",
                 "printf 'line1\\nline2\\n'",
                 Map.of(),
                 Duration.ofSeconds(5),
@@ -477,7 +538,14 @@ class TaskExecutionServiceTest {
         Mockito.when(context.repositoryRepository.findById(21L)).thenReturn(Optional.of(context.repository()));
         context.mockSaveWithGeneratedId();
         Mockito.when(context.workspaceService.prepareWorkspace("git@demo/repo.git", "main", 101L)).thenReturn(tempDir);
-        Mockito.when(context.executionService.runStage(Mockito.any(), Mockito.anyString(), Mockito.anyMap(), Mockito.any(), Mockito.any()))
+        Mockito.when(context.executionService.runStage(
+                Mockito.any(),
+                Mockito.any(),
+                Mockito.anyString(),
+                Mockito.anyString(),
+                Mockito.anyMap(),
+                Mockito.any(),
+                Mockito.any()))
                 .thenReturn(new RunnerCommandResult(1, false, false, 10L, installLog, 1));
 
         TaskEntity result = context.service(taskStageLogService).createAndRun(11L);
