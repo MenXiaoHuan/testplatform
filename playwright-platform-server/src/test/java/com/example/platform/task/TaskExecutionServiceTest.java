@@ -49,7 +49,6 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mockito;
-import org.springframework.stereotype.Service;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.web.server.ResponseStatusException;
@@ -457,10 +456,9 @@ class TaskExecutionServiceTest {
     }
 
     @Test
-    void shouldNotRegisterLegacyRunnerCommandExecutorImplAsSpringBean() throws Exception {
-        Class<?> legacyExecutor = Class.forName("com.example.platform.runner.service.RunnerCommandExecutorImpl");
-
-        assertThat(legacyExecutor.getAnnotation(Service.class)).isNull();
+    void shouldRemoveLegacyRunnerCommandExecutorImpl() {
+        assertThatThrownBy(() -> Class.forName("com.example.platform.runner.service.RunnerCommandExecutorImpl"))
+                .isInstanceOf(ClassNotFoundException.class);
     }
 
     @Test
