@@ -2,52 +2,83 @@ package com.example.platform.config;
 
 import com.example.platform.audit.model.PlatformAuditLogEntity;
 import com.example.platform.repository.model.TestRepositoryEntity;
-import com.example.platform.scene.model.SceneScheduleStateEntity;
 import com.example.platform.scene.model.SceneEntity;
+import com.example.platform.scene.model.SceneScheduleStateEntity;
+import com.example.platform.task.model.ArtifactEntity;
+import com.example.platform.task.model.CaseResultEntity;
 import com.example.platform.task.model.TaskEntity;
 import com.example.platform.task.model.TaskStageLogEntity;
-import jakarta.persistence.Column;
-import jakarta.persistence.Table;
+import java.io.IOException;
+import java.lang.annotation.Annotation;
 import java.lang.reflect.Field;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 class EntitySchemaMappingTest {
+    private static final Path INIT_SCHEMA = Path.of("src/main/resources/db/migration/V1__init_schema.sql");
+    private static final List<Class<?>> ENTITY_TYPES = List.of(
+            TestRepositoryEntity.class,
+            SceneEntity.class,
+            TaskEntity.class,
+            CaseResultEntity.class,
+            ArtifactEntity.class,
+            TaskStageLogEntity.class,
+            SceneScheduleStateEntity.class,
+            PlatformAuditLogEntity.class
+    );
+
     @Test
-    void shouldMapRepositoryEnabledFlagToMysqlTinyintColumn() throws NoSuchFieldException {
-        assertThat(columnDefinitionOf(TestRepositoryEntity.class, "enabled")).isEqualTo("tinyint(1)");
+    void shouldKeepEntitiesFreeOfJpaAnnotations() {
+        for (Class<?> type : ENTITY_TYPES) {
+            assertThat(hasJpaAnnotation(type.getAnnotations()))
+                    .as("%s class annotations", type.getSimpleName())
+                    .isFalse();
+            for (Field field : type.getDeclaredFields()) {
+                assertThat(hasJpaAnnotation(field.getAnnotations()))
+                        .as("%s.%s field annotations", type.getSimpleName(), field.getName())
+                        .isFalse();
+            }
+        }
     }
 
     @Test
-    void shouldExposeRepositoryWorkingDirectoryField() throws NoSuchFieldException {
-        assertThat(columnOf(TestRepositoryEntity.class, "workingDirectory").name()).isEqualTo("working_directory");
-        assertThat(columnOf(TestRepositoryEntity.class, "workingDirectory").length()).isEqualTo(256);
-        assertThat(columnOf(TestRepositoryEntity.class, "workingDirectory").nullable()).isTrue();
+    void shouldDefineRepositorySchemaInFlyway() throws Exception {
+        String schema = normalizedSchema();
+
+        assertThat(schema).contains("create table test_repository");
+        assertThat(schema).contains("working_directory varchar(256) null");
+        assertThat(schema).contains("enabled tinyint not null default 1");
+        assertThat(fieldOf(TestRepositoryEntity.class, "workingDirectory").getType()).isEqualTo(String.class);
+        assertThat(fieldOf(TestRepositoryEntity.class, "enabled").getType()).isEqualTo(Boolean.class);
     }
 
     @Test
-    void shouldExposeSceneExecutionMvpFields() throws NoSuchFieldException {
-        assertThat(columnOf(SceneEntity.class, "description").length()).isEqualTo(512);
-        assertThat(columnOf(SceneEntity.class, "scheduleEnabled").name()).isEqualTo("schedule_enabled");
-        assertThat(columnOf(SceneEntity.class, "scheduleEnabled").columnDefinition()).isEqualTo("tinyint(1)");
-        assertThat(columnOf(SceneEntity.class, "scheduleEnabled").nullable()).isFalse();
-        assertThat(columnOf(SceneEntity.class, "cronExpression").name()).isEqualTo("cron_expression");
-        assertThat(columnOf(SceneEntity.class, "cronExpression").length()).isEqualTo(64);
-        assertThat(columnOf(SceneEntity.class, "nextRunAt").name()).isEqualTo("next_run_at");
-        assertThat(columnOf(SceneEntity.class, "lastRunAt").name()).isEqualTo("last_run_at");
-        assertThat(columnOf(SceneEntity.class, "lastTaskStatus").name()).isEqualTo("last_task_status");
-        assertThat(columnOf(SceneEntity.class, "lastTaskStatus").length()).isEqualTo(32);
-        assertThat(columnOf(TaskEntity.class, "createdAt").name()).isEqualTo("created_at");
-        assertThat(columnOf(TaskEntity.class, "createdAt").insertable()).isFalse();
-        assertThat(columnOf(TaskEntity.class, "createdAt").updatable()).isFalse();
-        assertThat(columnOf(TaskEntity.class, "updatedAt").name()).isEqualTo("updated_at");
-        assertThat(columnOf(TaskEntity.class, "updatedAt").insertable()).isFalse();
-        assertThat(columnOf(TaskEntity.class, "updatedAt").updatable()).isFalse();
+    void shouldDefineSceneAndTaskSchemaInFlyway() throws Exception {
+        String schema = normalizedSchema();
+
+        assertThat(schema).contains("create table scene");
+        assertThat(schema).contains("description varchar(512) null");
+        assertThat(schema).contains("schedule_enabled tinyint not null default 0");
+        assertThat(schema).contains("cron_expression varchar(64) null");
+        assertThat(schema).contains("next_run_at datetime null");
+        assertThat(schema).contains("last_run_at datetime null");
+        assertThat(schema).contains("last_task_status varchar(32) null");
+        assertThat(schema).contains("create table task");
+        assertThat(schema).contains("created_at datetime not null default current_timestamp");
+        assertThat(schema).contains("updated_at datetime not null default current_timestamp on update current_timestamp");
+        assertThat(fieldOf(SceneEntity.class, "description").getType()).isEqualTo(String.class);
+        assertThat(fieldOf(SceneEntity.class, "scheduleEnabled").getType()).isEqualTo(Boolean.class);
+        assertThat(fieldOf(TaskEntity.class, "createdAt").getType().getSimpleName()).isEqualTo("LocalDateTime");
+        assertThat(fieldOf(TaskEntity.class, "updatedAt").getType().getSimpleName()).isEqualTo("LocalDateTime");
     }
 
     @Test
-    void shouldExposeTaskExecutionSnapshotFields() throws NoSuchFieldException {
+    void shouldExposeTaskExecutionSnapshotFields() throws Exception {
+        String schema = normalizedSchema();
         TaskEntity entity = new TaskEntity();
 
         entity.setResolvedBranch("main");
@@ -63,61 +94,77 @@ class EntitySchemaMappingTest {
         assertThat(entity.getResolvedMatchValue()).isEqualTo("login.spec.ts");
         assertThat(entity.getResolvedTestRoot()).isEqualTo("tests");
         assertThat(entity.getResolvedRunCommand()).contains("--target login.spec.ts");
-        assertThat(columnOf(TaskEntity.class, "resolvedBranch").name()).isEqualTo("resolved_branch");
-        assertThat(columnOf(TaskEntity.class, "resolvedBrowser").name()).isEqualTo("resolved_browser");
-        assertThat(columnOf(TaskEntity.class, "resolvedEnvJson").name()).isEqualTo("resolved_env_json");
-        assertThat(columnOf(TaskEntity.class, "resolvedMatchValue").name()).isEqualTo("resolved_match_value");
-        assertThat(columnOf(TaskEntity.class, "resolvedTestRoot").name()).isEqualTo("resolved_test_root");
-        assertThat(columnOf(TaskEntity.class, "resolvedRunCommand").name()).isEqualTo("resolved_run_command");
+        assertThat(schema).contains("resolved_branch varchar(128) null");
+        assertThat(schema).contains("resolved_browser varchar(32) null");
+        assertThat(schema).contains("resolved_env_json text null");
+        assertThat(schema).contains("resolved_match_value varchar(256) null");
+        assertThat(schema).contains("resolved_test_root varchar(256) null");
+        assertThat(schema).contains("resolved_run_command varchar(1024) null");
+        assertThat(fieldOf(TaskEntity.class, "resolvedBranch").getType()).isEqualTo(String.class);
+        assertThat(fieldOf(TaskEntity.class, "resolvedBrowser").getType()).isEqualTo(String.class);
+        assertThat(fieldOf(TaskEntity.class, "resolvedEnvJson").getType()).isEqualTo(String.class);
     }
 
     @Test
-    void shouldMapTaskRuntimeControlColumns() throws NoSuchFieldException {
-        assertThat(columnOf(TaskEntity.class, "queuedAt").name()).isEqualTo("queued_at");
-        assertThat(columnOf(TaskEntity.class, "currentStage").name()).isEqualTo("current_stage");
-        assertThat(columnOf(TaskEntity.class, "currentStage").length()).isEqualTo(32);
-        assertThat(columnOf(TaskEntity.class, "resultCode").name()).isEqualTo("result_code");
-        assertThat(columnOf(TaskEntity.class, "resultCode").length()).isEqualTo(32);
-        assertThat(columnOf(TaskEntity.class, "resultMessage").name()).isEqualTo("result_message");
-        assertThat(columnOf(TaskEntity.class, "resultMessage").length()).isEqualTo(1024);
-        assertThat(columnOf(TaskEntity.class, "cancelRequested").name()).isEqualTo("cancel_requested");
-        assertThat(columnOf(TaskEntity.class, "cancelRequested").columnDefinition()).isEqualTo("tinyint(1)");
-        assertThat(columnOf(TaskEntity.class, "cancelRequestedAt").name()).isEqualTo("cancel_requested_at");
-        assertThat(columnOf(TaskEntity.class, "cancelRequestedBy").name()).isEqualTo("cancel_requested_by");
-        assertThat(columnOf(TaskEntity.class, "cancelRequestedBy").length()).isEqualTo(64);
-        assertThat(columnOf(TaskEntity.class, "triggerReason").name()).isEqualTo("trigger_reason");
-        assertThat(columnOf(TaskEntity.class, "triggerReason").length()).isEqualTo(128);
+    void shouldDefineTaskRuntimeControlColumnsInFlyway() throws Exception {
+        String schema = normalizedSchema();
+
+        assertThat(schema).contains("queued_at datetime null");
+        assertThat(schema).contains("current_stage varchar(32) null");
+        assertThat(schema).contains("result_code varchar(32) null");
+        assertThat(schema).contains("result_message varchar(1024) null");
+        assertThat(schema).contains("cancel_requested tinyint(1) not null default 0");
+        assertThat(schema).contains("cancel_requested_at datetime null");
+        assertThat(schema).contains("cancel_requested_by varchar(64) null");
+        assertThat(schema).contains("trigger_reason varchar(128) null");
+        assertThat(fieldOf(TaskEntity.class, "cancelRequested").getType()).isEqualTo(Boolean.class);
+        assertThat(fieldOf(TaskEntity.class, "currentStage").getType()).isEqualTo(String.class);
     }
 
     @Test
-    void shouldMapTaskStageLogTable() {
-        Table table = TaskStageLogEntity.class.getAnnotation(Table.class);
-        assertThat(table).isNotNull();
-        assertThat(table.name()).isEqualTo("task_stage_log");
+    void shouldDefineTaskStageLogTableInFlyway() throws Exception {
+        String schema = normalizedSchema();
+
+        assertThat(schema).contains("create table task_stage_log");
+        assertThat(schema).contains("task_id bigint not null");
+        assertThat(schema).contains("stage varchar(32) not null");
+        assertThat(fieldOf(TaskStageLogEntity.class, "taskId").getType()).isEqualTo(Long.class);
     }
 
     @Test
-    void shouldMapSceneScheduleStateTable() {
-        Table table = SceneScheduleStateEntity.class.getAnnotation(Table.class);
-        assertThat(table).isNotNull();
-        assertThat(table.name()).isEqualTo("scene_schedule_state");
+    void shouldDefineSceneScheduleStateTableInFlyway() throws Exception {
+        String schema = normalizedSchema();
+
+        assertThat(schema).contains("create table scene_schedule_state");
+        assertThat(schema).contains("scene_id bigint primary key");
+        assertThat(schema).contains("version bigint not null default 0");
+        assertThat(fieldOf(SceneScheduleStateEntity.class, "sceneId").getType()).isEqualTo(Long.class);
     }
 
     @Test
-    void shouldMapPlatformAuditLogTable() {
-        Table table = PlatformAuditLogEntity.class.getAnnotation(Table.class);
-        assertThat(table).isNotNull();
-        assertThat(table.name()).isEqualTo("platform_audit_log");
+    void shouldDefinePlatformAuditLogTableInFlyway() throws Exception {
+        String schema = normalizedSchema();
+
+        assertThat(schema).contains("create table platform_audit_log");
+        assertThat(schema).contains("entity_type varchar(32) not null");
+        assertThat(schema).contains("detail_json json null");
+        assertThat(fieldOf(PlatformAuditLogEntity.class, "detailJson").getType()).isEqualTo(String.class);
     }
 
-    private String columnDefinitionOf(Class<?> type, String fieldName) throws NoSuchFieldException {
-        return columnOf(type, fieldName).columnDefinition();
+    private String normalizedSchema() throws IOException {
+        return Files.readString(INIT_SCHEMA).toLowerCase();
     }
 
-    private Column columnOf(Class<?> type, String fieldName) throws NoSuchFieldException {
-        Field field = type.getDeclaredField(fieldName);
-        Column column = field.getAnnotation(Column.class);
-        assertThat(column).isNotNull();
-        return column;
+    private Field fieldOf(Class<?> type, String fieldName) throws NoSuchFieldException {
+        return type.getDeclaredField(fieldName);
+    }
+
+    private boolean hasJpaAnnotation(Annotation[] annotations) {
+        for (Annotation annotation : annotations) {
+            if (annotation.annotationType().getPackageName().startsWith("jakarta" + ".persistence")) {
+                return true;
+            }
+        }
+        return false;
     }
 }

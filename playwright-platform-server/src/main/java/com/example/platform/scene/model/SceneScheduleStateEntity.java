@@ -1,37 +1,22 @@
 package com.example.platform.scene.model;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
 import java.time.LocalDateTime;
 
-@Entity
-@Table(name = "scene_schedule_state")
 public class SceneScheduleStateEntity {
-    @Id
-    @Column(name = "scene_id")
     private Long sceneId;
 
-    @Column(name = "last_planned_fire_at")
     private LocalDateTime lastPlannedFireAt;
 
-    @Column(name = "last_triggered_at")
     private LocalDateTime lastTriggeredAt;
 
-    @Column(name = "last_task_id")
     private Long lastTaskId;
 
-    @Column(name = "lease_owner", length = 128)
     private String leaseOwner;
 
-    @Column(name = "lease_until")
     private LocalDateTime leaseUntil;
 
-    @Column(nullable = false)
     private Long version = 0L;
 
-    @Column(name = "updated_at", insertable = false, updatable = false)
     private LocalDateTime updatedAt;
 
     public Long getSceneId() { return sceneId; }

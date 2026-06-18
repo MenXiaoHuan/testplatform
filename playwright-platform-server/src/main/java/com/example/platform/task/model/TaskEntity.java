@@ -1,106 +1,70 @@
 package com.example.platform.task.model;
 
-import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
-@Entity
-@Table(name = "task")
 public class TaskEntity {
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "scene_id", nullable = false)
     private Long sceneId;
 
-    @Column(name = "repo_id", nullable = false)
     private Long repoId;
 
-    @Column(nullable = false, length = 32)
     private String status;
 
-    @Column(name = "trigger_type", nullable = false, length = 32)
     private String triggerType;
 
-    @Column(name = "trigger_reason", length = 128)
     private String triggerReason;
 
-    @Column(name = "trigger_user", length = 64)
     private String triggerUser;
 
-    @Column(name = "queued_at")
     private LocalDateTime queuedAt;
 
-    @Column(nullable = false, length = 128)
     private String branch;
 
-    @Column(name = "commit_sha", length = 128)
     private String commitSha;
 
-    @Column(name = "started_at")
     private LocalDateTime startedAt;
 
-    @Column(name = "finished_at")
     private LocalDateTime finishedAt;
 
-    @Column(name = "duration_ms")
     private Long durationMs;
 
-    @Column(name = "runner_name", length = 128)
     private String runnerName;
 
-    @Column(name = "current_stage", length = 32)
     private String currentStage;
 
-    @Column(name = "result_code", length = 32)
     private String resultCode;
 
-    @Column(name = "result_message", length = 1024)
     private String resultMessage;
 
-    @Column(name = "cancel_requested", nullable = false, columnDefinition = "tinyint(1)")
     private Boolean cancelRequested = false;
 
-    @Column(name = "cancel_requested_at")
     private LocalDateTime cancelRequestedAt;
 
-    @Column(name = "cancel_requested_by", length = 64)
     private String cancelRequestedBy;
 
-    @Column(name = "log_url", length = 1024)
     private String logUrl;
 
-    @Column(name = "resolved_branch", length = 128)
     private String resolvedBranch;
 
-    @Column(name = "resolved_browser", length = 32)
     private String resolvedBrowser;
 
-    @Column(name = "resolved_env_json", columnDefinition = "TEXT")
     private String resolvedEnvJson;
 
-    @Column(name = "resolved_match_value", length = 256)
     private String resolvedMatchValue;
 
-    @Column(name = "resolved_test_root", length = 256)
     private String resolvedTestRoot;
 
-    @Column(name = "resolved_run_command", length = 1024)
     private String resolvedRunCommand;
 
-    @Column(name = "created_at", insertable = false, updatable = false)
     private LocalDateTime createdAt;
 
-    @Column(name = "updated_at", insertable = false, updatable = false)
     private LocalDateTime updatedAt;
 
-    @Transient
     private int passedCount;
 
-    @Transient
     private int failedCount;
 
-    @Transient
     private int skippedCount;
 
     public Long getId() { return id; }

@@ -1,73 +1,44 @@
 package com.example.platform.scene.model;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
-import jakarta.persistence.Transient;
 import java.time.LocalDateTime;
 
-@Entity
-@Table(name = "scene")
 public class SceneEntity {
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "repo_id", nullable = false)
     private Long repoId;
 
-    @Column(nullable = false, length = 128)
     private String name;
 
-    @Column(length = 512)
     private String description;
 
-    @Column(nullable = false, length = 128)
     private String branch;
 
-    @Column(name = "test_selector_type", nullable = false, length = 32)
     private String testSelectorType;
 
-    @Column(name = "test_selector_value", nullable = false, length = 512)
     private String testSelectorValue;
 
-    @Transient
     private String matchValue;
 
-    @Column(name = "project_name", length = 64)
     private String projectName;
 
-    @Column(length = 64)
     private String browser;
 
-    @Column(name = "env_json", columnDefinition = "json")
     private String envJson;
 
-    @Column(name = "run_command", nullable = false, length = 512)
     private String runCommand;
 
-    @Column(name = "schedule_enabled", nullable = false, columnDefinition = "tinyint(1)")
     private Boolean scheduleEnabled = false;
 
-    @Column(name = "cron_expression", length = 64)
     private String cronExpression;
 
-    @Column(name = "next_run_at")
     private LocalDateTime nextRunAt;
 
-    @Column(name = "last_run_at")
     private LocalDateTime lastRunAt;
 
-    @Column(name = "last_task_status", length = 32)
     private String lastTaskStatus;
 
-    @Column(name = "created_at", insertable = false, updatable = false)
     private LocalDateTime createdAt;
 
-    @Column(name = "updated_at", insertable = false, updatable = false)
     private LocalDateTime updatedAt;
 
     public Long getId() { return id; }

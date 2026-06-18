@@ -1,36 +1,23 @@
 package com.example.platform.task.model;
 
-import jakarta.persistence.*;
 
-@Entity
-@Table(name = "artifact")
 public class ArtifactEntity {
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "task_id", nullable = false)
     private Long taskId;
 
-    @Column(name = "case_result_id")
     private Long caseResultId;
 
-    @Column(name = "artifact_type", nullable = false, length = 32)
     private String artifactType;
 
-    @Column(nullable = false, length = 128)
     private String bucket;
 
-    @Column(name = "object_key", nullable = false, length = 512)
     private String objectKey;
 
-    @Column(name = "content_type", length = 128)
     private String contentType;
 
-    @Column
     private Long size;
 
-    @Column(length = 1024)
     private String url;
 
     public Long getId() { return id; }

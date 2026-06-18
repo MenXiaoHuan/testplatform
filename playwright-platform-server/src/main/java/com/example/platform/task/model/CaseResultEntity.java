@@ -1,42 +1,27 @@
 package com.example.platform.task.model;
 
-import jakarta.persistence.*;
 
-@Entity
-@Table(name = "case_result")
 public class CaseResultEntity {
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "task_id", nullable = false)
     private Long taskId;
 
-    @Column(name = "history_id", length = 256)
     private String historyId;
 
-    @Column(name = "full_name", nullable = false, length = 512)
     private String fullName;
 
-    @Column(name = "suite_name", length = 256)
     private String suiteName;
 
-    @Column(name = "story_name", length = 256)
     private String storyName;
 
-    @Column(nullable = false, length = 32)
     private String status;
 
-    @Column(name = "duration_ms")
     private Long durationMs;
 
-    @Column(name = "owner_name", length = 128)
     private String ownerName;
 
-    @Column(length = 64)
     private String severity;
 
-    @Column(name = "project_name", length = 64)
     private String projectName;
 
     public Long getId() { return id; }

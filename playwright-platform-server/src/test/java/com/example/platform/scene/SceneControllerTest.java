@@ -8,6 +8,10 @@ import com.example.platform.scene.mapper.SceneMapper;
 import com.example.platform.scene.mapper.SceneScheduleStateMapper;
 import com.example.platform.scene.model.SceneEntity;
 import com.example.platform.scene.service.SceneService;
+import com.example.platform.task.mapper.ArtifactMapper;
+import com.example.platform.task.mapper.CaseResultMapper;
+import com.example.platform.task.mapper.TaskMapper;
+import com.example.platform.task.mapper.TaskStageLogMapper;
 import java.time.LocalDateTime;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -45,6 +49,18 @@ class SceneControllerTest {
 
     @MockBean
     private SceneScheduleStateMapper sceneScheduleStateMapper;
+
+    @MockBean
+    private TaskMapper taskMapper;
+
+    @MockBean
+    private ArtifactMapper artifactMapper;
+
+    @MockBean
+    private CaseResultMapper caseResultMapper;
+
+    @MockBean
+    private TaskStageLogMapper taskStageLogMapper;
 
     @Test
     void shouldCreateAndListScene() throws Exception {

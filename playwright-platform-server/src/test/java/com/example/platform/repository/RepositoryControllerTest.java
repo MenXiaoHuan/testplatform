@@ -7,6 +7,10 @@ import com.example.platform.repository.model.TestRepositoryEntity;
 import com.example.platform.repository.service.RepositoryService;
 import com.example.platform.scene.mapper.SceneMapper;
 import com.example.platform.scene.mapper.SceneScheduleStateMapper;
+import com.example.platform.task.mapper.ArtifactMapper;
+import com.example.platform.task.mapper.CaseResultMapper;
+import com.example.platform.task.mapper.TaskMapper;
+import com.example.platform.task.mapper.TaskStageLogMapper;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -43,6 +47,18 @@ class RepositoryControllerTest {
 
     @MockBean
     private SceneScheduleStateMapper sceneScheduleStateMapper;
+
+    @MockBean
+    private TaskMapper taskMapper;
+
+    @MockBean
+    private ArtifactMapper artifactMapper;
+
+    @MockBean
+    private CaseResultMapper caseResultMapper;
+
+    @MockBean
+    private TaskStageLogMapper taskStageLogMapper;
 
     @Test
     void shouldCreateAndListRepository() throws Exception {

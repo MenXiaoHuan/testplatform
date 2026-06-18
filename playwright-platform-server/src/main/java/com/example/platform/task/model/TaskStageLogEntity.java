@@ -1,45 +1,26 @@
 package com.example.platform.task.model;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
 import java.time.LocalDateTime;
 
-@Entity
-@Table(name = "task_stage_log")
 public class TaskStageLogEntity {
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "task_id", nullable = false)
     private Long taskId;
 
-    @Column(nullable = false, length = 32)
     private String stage;
 
-    @Column(name = "stream_type", nullable = false, length = 16)
     private String streamType;
 
-    @Column(name = "object_key", nullable = false, length = 512)
     private String objectKey;
 
-    @Column(name = "content_type", nullable = false, length = 128)
     private String contentType;
 
-    @Column(nullable = false)
     private Long size;
 
-    @Column(name = "line_count", nullable = false)
     private Integer lineCount;
 
-    @Column(name = "preview_text", length = 512)
     private String previewText;
 
-    @Column(name = "created_at", insertable = false, updatable = false)
     private LocalDateTime createdAt;
 
     public Long getId() { return id; }

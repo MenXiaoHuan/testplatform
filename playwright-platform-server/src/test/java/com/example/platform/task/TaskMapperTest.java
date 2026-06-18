@@ -67,7 +67,7 @@ class TaskMapperTest {
     }
 
     @Test
-    void shouldCoverJpaRepositoryQueryMethods() {
+    void shouldCoverLegacyTaskQueryMethods() {
         Long repoId = TaskMapperTestSupport.insertRepository(repositoryMapper, "task-query-repo");
         Long sceneId = TaskMapperTestSupport.insertScene(repositoryMapper, sceneMapper, "task-query-scene-repo", "task-query-scene");
         TaskEntity queued = TaskMapperTestSupport.task(repoId, sceneId, "QUEUED", "main",
