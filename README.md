@@ -22,6 +22,10 @@
 - 后端：Spring Boot 3.5、Spring Web、Spring Data JPA、Flyway
 - 存储与依赖：MySQL、MinIO
 
+### Persistence Layer
+
+The backend currently uses Flyway-managed schema migrations. Repository, scene, schedule-state, and audit persistence use MyBatis XML mappers. Task, artifact, case-result, and task-stage-log persistence still use Spring Data JPA during the phased migration, so both `spring-boot-starter-data-jpa` and MyBatis remain enabled.
+
 ## 目录结构
 
 ```text
