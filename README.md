@@ -44,6 +44,40 @@
 - MySQL 8+
 - MinIO
 
+## Docker Compose 开发环境
+
+本地已安装 Docker 后，可以使用 Compose 一键启动 MySQL、MinIO、后端和前端：
+
+```bash
+docker compose up --build
+```
+
+启动后可访问：
+
+- 前端：`http://localhost:5173`
+- 后端：`http://localhost:8080`
+- MinIO Console：`http://localhost:9001`
+
+默认开发账号与本地配置保持一致：
+
+- MySQL：`root` / `12345678`
+- MinIO：`minioadmin` / `minioadmin`
+- Bucket：`qa-report`
+
+停止服务：
+
+```bash
+docker compose down
+```
+
+如需同时清理 MySQL、MinIO 和依赖缓存数据卷：
+
+```bash
+docker compose down -v
+```
+
+该 Compose 配置用于本地开发。生产环境配置、弱口令清理和多环境 profile 将在后续阶段处理。
+
 ## 快速开始
 
 ### 1. 克隆仓库
