@@ -3,6 +3,7 @@ package com.example.platform.task;
 import com.example.platform.common.PageResponse;
 import com.example.platform.repository.model.TestRepositoryEntity;
 import com.example.platform.repository.model.TestRepositoryJpaRepository;
+import com.example.platform.runner.service.DockerRunnerCommandExecutor;
 import com.example.platform.runner.service.DockerRunnerProperties;
 import com.example.platform.runner.service.LocalRunnerCommandExecutor;
 import com.example.platform.runner.service.RunnerCommandExecutor;
@@ -443,14 +444,16 @@ class TaskExecutionServiceTest {
     }
 
     @Test
-    void shouldTemporarilyUseLocalRunnerCommandExecutorForDockerMode() {
+    void shouldCreateDockerRunnerCommandExecutorForDockerMode() {
         RunnerProperties runnerProperties = new RunnerProperties();
         runnerProperties.setMode(RunnerMode.DOCKER);
+        runnerProperties.setWorkspaceRoot(Path.of("/tmp/playwright-platform/workspaces"));
+        runnerProperties.setHostWorkspaceRoot(Path.of("/tmp/playwright-platform/workspaces"));
         RunnerCommandExecutorConfig config = new RunnerCommandExecutorConfig();
 
         RunnerCommandExecutor executor = config.runnerCommandExecutor(runnerProperties, new DockerRunnerProperties());
 
-        assertThat(executor).isInstanceOf(LocalRunnerCommandExecutor.class);
+        assertThat(executor).isInstanceOf(DockerRunnerCommandExecutor.class);
     }
 
     @Test

@@ -12,7 +12,11 @@ public class RunnerCommandExecutorConfig {
             RunnerProperties runnerProperties,
             DockerRunnerProperties dockerRunnerProperties) {
         if (runnerProperties.getMode() == RunnerMode.DOCKER) {
-            return new LocalRunnerCommandExecutor();
+            return new DockerRunnerCommandExecutor(
+                    dockerRunnerProperties,
+                    runnerProperties,
+                    new DockerCommandBuilder(dockerRunnerProperties, runnerProperties),
+                    new DockerContainerNameFactory());
         }
         return new LocalRunnerCommandExecutor();
     }
