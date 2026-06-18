@@ -4,6 +4,8 @@ spring:
     username: ${PLATFORM_DB_USERNAME:root}
     password: ${PLATFORM_DB_PASSWORD:12345678}
 platform:
+  runner:
+    mode: ${PLATFORM_RUNNER_MODE:local}
   storage:
     minio:
       endpoint: ${PLATFORM_MINIO_ENDPOINT:http://127.0.0.1:9000}

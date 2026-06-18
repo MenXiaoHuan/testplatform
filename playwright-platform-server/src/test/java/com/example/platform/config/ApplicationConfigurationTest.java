@@ -47,4 +47,19 @@ class ApplicationConfigurationTest {
         assertThat(applicationYaml).contains("test-timeout-seconds: 1800");
         assertThat(applicationYaml).contains("monitor-log-interval-seconds: 30");
     }
+
+    @Test
+    void shouldExposeRunnerDefaults() throws IOException {
+        String applicationYaml = Files.readString(Path.of("src/main/resources/application.yml"));
+
+        assertThat(applicationYaml).contains("runner:");
+        assertThat(applicationYaml).contains("mode: ${PLATFORM_RUNNER_MODE:local}");
+        assertThat(applicationYaml).contains("workspace-root: ${PLATFORM_RUNNER_WORKSPACE_ROOT:${java.io.tmpdir}/playwright-platform/workspaces}");
+        assertThat(applicationYaml).contains("host-workspace-root: ${PLATFORM_RUNNER_HOST_WORKSPACE_ROOT:${platform.runner.workspace-root}}");
+        assertThat(applicationYaml).contains("image: ${PLATFORM_RUNNER_DOCKER_IMAGE:mcr.microsoft.com/playwright:v1.44.0-jammy}");
+        assertThat(applicationYaml).contains("network: ${PLATFORM_RUNNER_DOCKER_NETWORK:bridge}");
+        assertThat(applicationYaml).contains("memory: ${PLATFORM_RUNNER_DOCKER_MEMORY:2g}");
+        assertThat(applicationYaml).contains("cpus: ${PLATFORM_RUNNER_DOCKER_CPUS:2}");
+        assertThat(applicationYaml).contains("container-workspace-root: ${PLATFORM_RUNNER_DOCKER_CONTAINER_WORKSPACE_ROOT:/workspace/task}");
+    }
 }

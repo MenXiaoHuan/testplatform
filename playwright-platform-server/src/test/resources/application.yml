@@ -9,3 +9,6 @@ spring:
       ddl-auto: validate
   flyway:
     enabled: true
+platform:
+  runner:
+    mode: local

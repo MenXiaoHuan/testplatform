@@ -25,7 +25,16 @@ platform:
       test-timeout-seconds: 1800
       monitor-log-interval-seconds: 30
   runner:
+    mode: ${PLATFORM_RUNNER_MODE:local}
     workspace-root: ${PLATFORM_RUNNER_WORKSPACE_ROOT:${java.io.tmpdir}/playwright-platform/workspaces}
+    host-workspace-root: ${PLATFORM_RUNNER_HOST_WORKSPACE_ROOT:${platform.runner.workspace-root}}
+    docker:
+      image: ${PLATFORM_RUNNER_DOCKER_IMAGE:mcr.microsoft.com/playwright:v1.44.0-jammy}
+      network: ${PLATFORM_RUNNER_DOCKER_NETWORK:bridge}
+      memory: ${PLATFORM_RUNNER_DOCKER_MEMORY:2g}
+      cpus: ${PLATFORM_RUNNER_DOCKER_CPUS:2}
+      container-workspace-root: ${PLATFORM_RUNNER_DOCKER_CONTAINER_WORKSPACE_ROOT:/workspace/task}
+      remove-container: ${PLATFORM_RUNNER_DOCKER_REMOVE_CONTAINER:true}
   storage:
     bucket: ${PLATFORM_STORAGE_BUCKET:qa-report}
     minio:
