@@ -79,6 +79,18 @@ docker compose down -v
 
 该 Compose 配置用于本地开发，会启用后端 `dev` profile。生产环境请显式注入敏感配置，不要使用 `dev` profile。
 
+### Docker Runner
+
+Compose 开发环境默认启用 `PLATFORM_RUNNER_MODE=docker`。后端会通过 Docker socket 启动短生命周期 Runner 容器来执行安装和测试命令，任务工作区位于 `.runner-workspaces/`。
+
+该模式会把宿主机 `/var/run/docker.sock` 挂载给 server 容器。Docker socket 具备较高权限，仅建议用于本地开发或受控环境。Runner 容器本身不会挂载 Docker socket，只挂载当前任务 workspace。
+
+如需回退到本地执行模式，在 `.env` 中设置：
+
+```bash
+PLATFORM_RUNNER_MODE=local
+```
+
 ## 快速开始
 
 ### 1. 克隆仓库
