@@ -19,12 +19,12 @@
 ## 技术栈
 
 - 前端：Vue 3、TypeScript、Vite、Pinia、Element Plus、Vitest
-- 后端：Spring Boot 3.5、Spring Web、Spring Data JPA、Flyway
+- 后端：Spring Boot 3.5、Spring Web、注解式 MyBatis、Flyway
 - 存储与依赖：MySQL、MinIO
 
 ### 持久层
 
-后端当前使用 Flyway 管理数据库 schema。仓库、场景、调度状态和审计持久层已迁移到 MyBatis XML mapper；任务、产物、用例结果和任务阶段日志仍在分阶段迁移期间使用 Spring Data JPA，因此当前会同时保留 `spring-boot-starter-data-jpa` 和 MyBatis。
+后端只使用注解式 MyBatis，Flyway 管理 schema，无 JPA/XML mapper。
 
 ## 目录结构
 
