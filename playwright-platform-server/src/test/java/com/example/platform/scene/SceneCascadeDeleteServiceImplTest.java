@@ -5,12 +5,12 @@ import com.example.platform.scene.mapper.SceneMapper;
 import com.example.platform.scene.service.SceneCascadeDeleteServiceImpl;
 import com.example.platform.storage.service.ObjectStorageService;
 import com.example.platform.task.model.ArtifactEntity;
-import com.example.platform.task.model.ArtifactJpaRepository;
-import com.example.platform.task.model.CaseResultJpaRepository;
+import com.example.platform.task.mapper.ArtifactMapper;
+import com.example.platform.task.mapper.CaseResultMapper;
 import com.example.platform.task.model.TaskEntity;
-import com.example.platform.task.model.TaskJpaRepository;
+import com.example.platform.task.mapper.TaskMapper;
 import com.example.platform.task.model.TaskStageLogEntity;
-import com.example.platform.task.model.TaskStageLogJpaRepository;
+import com.example.platform.task.mapper.TaskStageLogMapper;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -20,10 +20,10 @@ class SceneCascadeDeleteServiceImplTest {
     @Test
     void shouldDeleteSceneGraphAndStorageObjects() {
         SceneMapper sceneRepository = Mockito.mock(SceneMapper.class);
-        TaskJpaRepository taskRepository = Mockito.mock(TaskJpaRepository.class);
-        CaseResultJpaRepository caseResultRepository = Mockito.mock(CaseResultJpaRepository.class);
-        ArtifactJpaRepository artifactRepository = Mockito.mock(ArtifactJpaRepository.class);
-        TaskStageLogJpaRepository taskStageLogRepository = Mockito.mock(TaskStageLogJpaRepository.class);
+        TaskMapper taskRepository = Mockito.mock(TaskMapper.class);
+        CaseResultMapper caseResultRepository = Mockito.mock(CaseResultMapper.class);
+        ArtifactMapper artifactRepository = Mockito.mock(ArtifactMapper.class);
+        TaskStageLogMapper taskStageLogRepository = Mockito.mock(TaskStageLogMapper.class);
         ObjectStorageService objectStorageService = Mockito.mock(ObjectStorageService.class);
 
         SceneEntity scene = new SceneEntity();
@@ -71,10 +71,10 @@ class SceneCascadeDeleteServiceImplTest {
     @Test
     void shouldDeleteSceneWithoutTasks() {
         SceneMapper sceneRepository = Mockito.mock(SceneMapper.class);
-        TaskJpaRepository taskRepository = Mockito.mock(TaskJpaRepository.class);
-        CaseResultJpaRepository caseResultRepository = Mockito.mock(CaseResultJpaRepository.class);
-        ArtifactJpaRepository artifactRepository = Mockito.mock(ArtifactJpaRepository.class);
-        TaskStageLogJpaRepository taskStageLogRepository = Mockito.mock(TaskStageLogJpaRepository.class);
+        TaskMapper taskRepository = Mockito.mock(TaskMapper.class);
+        CaseResultMapper caseResultRepository = Mockito.mock(CaseResultMapper.class);
+        ArtifactMapper artifactRepository = Mockito.mock(ArtifactMapper.class);
+        TaskStageLogMapper taskStageLogRepository = Mockito.mock(TaskStageLogMapper.class);
         ObjectStorageService objectStorageService = Mockito.mock(ObjectStorageService.class);
 
         SceneEntity scene = new SceneEntity();

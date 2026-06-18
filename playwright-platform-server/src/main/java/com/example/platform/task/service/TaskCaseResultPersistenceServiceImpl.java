@@ -1,7 +1,7 @@
 package com.example.platform.task.service;
 
 import com.example.platform.task.model.CaseResultEntity;
-import com.example.platform.task.model.CaseResultJpaRepository;
+import com.example.platform.task.mapper.CaseResultMapper;
 import com.example.platform.task.parser.ParsedCaseResult;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -10,9 +10,9 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class TaskCaseResultPersistenceServiceImpl implements TaskCaseResultPersistenceService {
-    private final CaseResultJpaRepository repository;
+    private final CaseResultMapper repository;
 
-    public TaskCaseResultPersistenceServiceImpl(CaseResultJpaRepository repository) {
+    public TaskCaseResultPersistenceServiceImpl(CaseResultMapper repository) {
         this.repository = repository;
     }
 
@@ -29,8 +29,8 @@ public class TaskCaseResultPersistenceServiceImpl implements TaskCaseResultPersi
             entity.setStatus(parsedCaseResult.status());
             entity.setDurationMs(parsedCaseResult.durationMs());
             entity.setProjectName(parsedCaseResult.projectName());
-            CaseResultEntity saved = repository.save(entity);
-            idsByHistoryId.put(parsedCaseResult.historyId(), saved.getId());
+            repository.insert(entity);
+            idsByHistoryId.put(parsedCaseResult.historyId(), entity.getId());
         }
         return idsByHistoryId;
     }

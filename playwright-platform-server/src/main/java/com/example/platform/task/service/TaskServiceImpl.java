@@ -13,11 +13,11 @@ import com.example.platform.task.dto.CaseResultResponse;
 import com.example.platform.task.dto.TaskDetailResponse;
 import com.example.platform.task.dto.TaskStageLogResponse;
 import com.example.platform.task.model.ArtifactEntity;
-import com.example.platform.task.model.ArtifactJpaRepository;
+import com.example.platform.task.mapper.ArtifactMapper;
 import com.example.platform.task.model.CaseResultEntity;
-import com.example.platform.task.model.CaseResultJpaRepository;
+import com.example.platform.task.mapper.CaseResultMapper;
 import com.example.platform.task.model.TaskEntity;
-import com.example.platform.task.model.TaskJpaRepository;
+import com.example.platform.task.mapper.TaskMapper;
 import com.example.platform.task.model.TaskStageLogEntity;
 import java.lang.reflect.Field;
 import java.nio.file.Path;
@@ -31,8 +31,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.http.HttpStatus;
@@ -44,9 +42,9 @@ public class TaskServiceImpl implements TaskService {
 
     private final SceneMapper sceneRepository;
     private final TestRepositoryMapper repositoryRepository;
-    private final TaskJpaRepository taskRepository;
-    private final ArtifactJpaRepository artifactRepository;
-    private final CaseResultJpaRepository caseResultRepository;
+    private final TaskMapper taskRepository;
+    private final ArtifactMapper artifactRepository;
+    private final CaseResultMapper caseResultRepository;
     private final Executor taskExecutionExecutor;
     private final TaskStageLogService taskStageLogService;
     private final TaskExecutionOrchestrator taskExecutionOrchestrator;
@@ -57,9 +55,9 @@ public class TaskServiceImpl implements TaskService {
     public TaskServiceImpl(
             SceneMapper sceneRepository,
             TestRepositoryMapper repositoryRepository,
-            TaskJpaRepository taskRepository,
-            ArtifactJpaRepository artifactRepository,
-            CaseResultJpaRepository caseResultRepository,
+            TaskMapper taskRepository,
+            ArtifactMapper artifactRepository,
+            CaseResultMapper caseResultRepository,
             RunnerWorkspaceService runnerWorkspaceService,
             RunnerExecutionService runnerExecutionService,
             TaskArtifactArchiveService taskArtifactArchiveService,
@@ -102,9 +100,9 @@ public class TaskServiceImpl implements TaskService {
     public TaskServiceImpl(
             SceneMapper sceneRepository,
             TestRepositoryMapper repositoryRepository,
-            TaskJpaRepository taskRepository,
-            ArtifactJpaRepository artifactRepository,
-            CaseResultJpaRepository caseResultRepository,
+            TaskMapper taskRepository,
+            ArtifactMapper artifactRepository,
+            CaseResultMapper caseResultRepository,
             RunnerWorkspaceService runnerWorkspaceService,
             RunnerExecutionService runnerExecutionService,
             TaskArtifactArchiveService taskArtifactArchiveService,
@@ -139,9 +137,9 @@ public class TaskServiceImpl implements TaskService {
     public TaskServiceImpl(
             SceneMapper sceneRepository,
             TestRepositoryMapper repositoryRepository,
-            TaskJpaRepository taskRepository,
-            ArtifactJpaRepository artifactRepository,
-            CaseResultJpaRepository caseResultRepository,
+            TaskMapper taskRepository,
+            ArtifactMapper artifactRepository,
+            CaseResultMapper caseResultRepository,
             RunnerWorkspaceService runnerWorkspaceService,
             RunnerExecutionService runnerExecutionService,
             TaskArtifactArchiveService taskArtifactArchiveService,
@@ -176,9 +174,9 @@ public class TaskServiceImpl implements TaskService {
     public TaskServiceImpl(
             SceneMapper sceneRepository,
             TestRepositoryMapper repositoryRepository,
-            TaskJpaRepository taskRepository,
-            ArtifactJpaRepository artifactRepository,
-            CaseResultJpaRepository caseResultRepository,
+            TaskMapper taskRepository,
+            ArtifactMapper artifactRepository,
+            CaseResultMapper caseResultRepository,
             RunnerWorkspaceService runnerWorkspaceService,
             RunnerExecutionService runnerExecutionService,
             TaskArtifactArchiveService taskArtifactArchiveService,
@@ -212,9 +210,9 @@ public class TaskServiceImpl implements TaskService {
     public TaskServiceImpl(
             SceneMapper sceneRepository,
             TestRepositoryMapper repositoryRepository,
-            TaskJpaRepository taskRepository,
-            ArtifactJpaRepository artifactRepository,
-            CaseResultJpaRepository caseResultRepository,
+            TaskMapper taskRepository,
+            ArtifactMapper artifactRepository,
+            CaseResultMapper caseResultRepository,
             RunnerWorkspaceService runnerWorkspaceService,
             RunnerExecutionService runnerExecutionService,
             TaskArtifactArchiveService taskArtifactArchiveService,
@@ -248,9 +246,9 @@ public class TaskServiceImpl implements TaskService {
     public TaskServiceImpl(
             SceneMapper sceneRepository,
             TestRepositoryMapper repositoryRepository,
-            TaskJpaRepository taskRepository,
-            ArtifactJpaRepository artifactRepository,
-            CaseResultJpaRepository caseResultRepository,
+            TaskMapper taskRepository,
+            ArtifactMapper artifactRepository,
+            CaseResultMapper caseResultRepository,
             RunnerWorkspaceService runnerWorkspaceService,
             RunnerExecutionService runnerExecutionService,
             TaskArtifactArchiveService taskArtifactArchiveService,
@@ -339,7 +337,7 @@ public class TaskServiceImpl implements TaskService {
         if (task.getQueuedAt() != null) {
             task.setDurationMs(java.time.Duration.between(task.getQueuedAt(), task.getFinishedAt()).toMillis());
         }
-        taskRepository.save(task);
+        taskRepository.update(task);
         SceneEntity scene = sceneRepository.findById(task.getSceneId()).orElse(null);
         if (scene == null) {
             return;
@@ -361,11 +359,10 @@ public class TaskServiceImpl implements TaskService {
     public PageResponse<SceneTaskListResponse> list(int page, int size) {
         int normalizedPage = normalizePage(page);
         int normalizedSize = normalizeSize(size);
-        var pageData = taskRepository.findAll(PageRequest.of(
-                normalizedPage - 1,
-                normalizedSize,
-                Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id"))));
-        return PageResponse.from(pageData, normalizedPage, normalizedSize)
+        int offset = (normalizedPage - 1) * normalizedSize;
+        List<TaskEntity> tasks = taskRepository.findPage(normalizedSize, offset);
+        long total = taskRepository.countAll();
+        return PageResponse.of(tasks, total, normalizedPage, normalizedSize)
                 .map(taskQueryViewService::toSceneTaskListResponse);
     }
 
@@ -376,13 +373,10 @@ public class TaskServiceImpl implements TaskService {
         }
         int normalizedPage = normalizePage(page);
         int normalizedSize = normalizeSize(size);
-        var pageData = taskRepository.findAllBySceneId(
-                sceneId,
-                PageRequest.of(
-                        normalizedPage - 1,
-                        normalizedSize,
-                        Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id"))));
-        return PageResponse.from(pageData, normalizedPage, normalizedSize)
+        int offset = (normalizedPage - 1) * normalizedSize;
+        List<TaskEntity> tasks = taskRepository.findBySceneIdPage(sceneId, normalizedSize, offset);
+        long total = taskRepository.countBySceneId(sceneId);
+        return PageResponse.of(tasks, total, normalizedPage, normalizedSize)
                 .map(taskQueryViewService::toSceneTaskListResponse);
     }
 
@@ -434,7 +428,7 @@ public class TaskServiceImpl implements TaskService {
         task.setCancelRequested(true);
         task.setCancelRequestedAt(LocalDateTime.now());
         task.setCancelRequestedBy(operatorName);
-        taskRepository.save(task);
+        taskRepository.update(task);
     }
 
     @Override

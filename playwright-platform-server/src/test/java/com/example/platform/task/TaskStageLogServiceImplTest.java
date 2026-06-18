@@ -2,7 +2,7 @@ package com.example.platform.task;
 
 import com.example.platform.storage.service.ObjectStorageService;
 import com.example.platform.task.model.TaskStageLogEntity;
-import com.example.platform.task.model.TaskStageLogJpaRepository;
+import com.example.platform.task.mapper.TaskStageLogMapper;
 import com.example.platform.task.service.TaskStageLogServiceImpl;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -18,14 +18,13 @@ class TaskStageLogServiceImplTest {
 
     @Test
     void shouldTruncatePreviewTextToFitDatabaseColumn() throws Exception {
-        TaskStageLogJpaRepository repository = Mockito.mock(TaskStageLogJpaRepository.class);
+        TaskStageLogMapper repository = Mockito.mock(TaskStageLogMapper.class);
         ObjectStorageService objectStorageService = Mockito.mock(ObjectStorageService.class);
 
         Path logFile = tempDir.resolve("testing.log");
         Files.writeString(logFile, "x".repeat(700));
 
-        Mockito.when(repository.save(Mockito.any(TaskStageLogEntity.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
+        Mockito.when(repository.insert(Mockito.any(TaskStageLogEntity.class))).thenReturn(1);
 
         TaskStageLogServiceImpl service = new TaskStageLogServiceImpl(repository, objectStorageService, "qa-report");
 

@@ -12,7 +12,7 @@ import com.example.platform.task.dto.TaskDetailResponse;
 import com.example.platform.task.dto.TaskStageLogResponse;
 import com.example.platform.task.model.ArtifactEntity;
 import com.example.platform.task.model.CaseResultEntity;
-import com.example.platform.task.model.CaseResultJpaRepository;
+import com.example.platform.task.mapper.CaseResultMapper;
 import com.example.platform.task.model.TaskEntity;
 import com.example.platform.task.model.TaskStageLogEntity;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -31,14 +31,14 @@ final class TaskQueryViewService {
 
     private final SceneMapper sceneMapper;
     private final TestRepositoryMapper repositoryMapper;
-    private final CaseResultJpaRepository caseResultRepository;
+    private final CaseResultMapper caseResultRepository;
     private final ObjectStorageService objectStorageService;
     private final String storageBucket;
 
     TaskQueryViewService(
             SceneMapper sceneMapper,
             TestRepositoryMapper repositoryMapper,
-            CaseResultJpaRepository caseResultRepository,
+            CaseResultMapper caseResultRepository,
             ObjectStorageService objectStorageService,
             String storageBucket) {
         this.sceneMapper = sceneMapper;

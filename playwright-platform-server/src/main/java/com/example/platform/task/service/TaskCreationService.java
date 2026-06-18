@@ -5,7 +5,7 @@ import com.example.platform.repository.model.TestRepositoryEntity;
 import com.example.platform.scene.mapper.SceneMapper;
 import com.example.platform.scene.model.SceneEntity;
 import com.example.platform.task.model.TaskEntity;
-import com.example.platform.task.model.TaskJpaRepository;
+import com.example.platform.task.mapper.TaskMapper;
 import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
@@ -18,13 +18,13 @@ public class TaskCreationService {
 
     private final SceneMapper sceneMapper;
     private final TestRepositoryMapper repositoryMapper;
-    private final TaskJpaRepository taskRepository;
+    private final TaskMapper taskRepository;
     private final TaskCommandBuilder taskCommandBuilder;
 
     public TaskCreationService(
             SceneMapper sceneMapper,
             TestRepositoryMapper repositoryMapper,
-            TaskJpaRepository taskRepository,
+            TaskMapper taskRepository,
             TaskCommandBuilder taskCommandBuilder) {
         this.sceneMapper = sceneMapper;
         this.repositoryMapper = repositoryMapper;
@@ -67,7 +67,7 @@ public class TaskCreationService {
         task.setResolvedTestRoot(repository.getTestRoot());
         task.setResolvedRunCommand(resolvedRunCommand);
         task.setQueuedAt(LocalDateTime.now());
-        task = taskRepository.save(task);
+        taskRepository.insert(task);
 
         scene.setLastTaskStatus(task.getStatus());
         scene.setLastRunAt(task.getQueuedAt());

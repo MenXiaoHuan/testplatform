@@ -3,12 +3,12 @@ package com.example.platform.scene.service;
 import com.example.platform.scene.mapper.SceneMapper;
 import com.example.platform.storage.service.ObjectStorageService;
 import com.example.platform.task.model.ArtifactEntity;
-import com.example.platform.task.model.ArtifactJpaRepository;
-import com.example.platform.task.model.CaseResultJpaRepository;
+import com.example.platform.task.mapper.ArtifactMapper;
+import com.example.platform.task.mapper.CaseResultMapper;
 import com.example.platform.task.model.TaskEntity;
-import com.example.platform.task.model.TaskJpaRepository;
+import com.example.platform.task.mapper.TaskMapper;
 import com.example.platform.task.model.TaskStageLogEntity;
-import com.example.platform.task.model.TaskStageLogJpaRepository;
+import com.example.platform.task.mapper.TaskStageLogMapper;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -17,19 +17,19 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class SceneCascadeDeleteServiceImpl implements SceneCascadeDeleteService {
     private final SceneMapper sceneMapper;
-    private final TaskJpaRepository taskRepository;
-    private final CaseResultJpaRepository caseResultRepository;
-    private final ArtifactJpaRepository artifactRepository;
-    private final TaskStageLogJpaRepository taskStageLogRepository;
+    private final TaskMapper taskRepository;
+    private final CaseResultMapper caseResultRepository;
+    private final ArtifactMapper artifactRepository;
+    private final TaskStageLogMapper taskStageLogRepository;
     private final ObjectStorageService objectStorageService;
     private final String storageBucket;
 
     public SceneCascadeDeleteServiceImpl(
             SceneMapper sceneMapper,
-            TaskJpaRepository taskRepository,
-            CaseResultJpaRepository caseResultRepository,
-            ArtifactJpaRepository artifactRepository,
-            TaskStageLogJpaRepository taskStageLogRepository,
+            TaskMapper taskRepository,
+            CaseResultMapper caseResultRepository,
+            ArtifactMapper artifactRepository,
+            TaskStageLogMapper taskStageLogRepository,
             ObjectStorageService objectStorageService,
             @Value("${platform.storage.bucket}") String storageBucket) {
         this.sceneMapper = sceneMapper;

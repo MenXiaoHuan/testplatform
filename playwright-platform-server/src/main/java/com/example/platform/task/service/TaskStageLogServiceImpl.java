@@ -2,7 +2,7 @@ package com.example.platform.task.service;
 
 import com.example.platform.storage.service.ObjectStorageService;
 import com.example.platform.task.model.TaskStageLogEntity;
-import com.example.platform.task.model.TaskStageLogJpaRepository;
+import com.example.platform.task.mapper.TaskStageLogMapper;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -15,12 +15,12 @@ import org.springframework.stereotype.Service;
 public class TaskStageLogServiceImpl implements TaskStageLogService {
     private static final int PREVIEW_TEXT_MAX_LENGTH = 512;
 
-    private final TaskStageLogJpaRepository repository;
+    private final TaskStageLogMapper repository;
     private final ObjectStorageService objectStorageService;
     private final String storageBucket;
 
     public TaskStageLogServiceImpl(
-            TaskStageLogJpaRepository repository,
+            TaskStageLogMapper repository,
             ObjectStorageService objectStorageService,
             @Value("${platform.storage.bucket}") String storageBucket) {
         this.repository = repository;
@@ -45,7 +45,8 @@ public class TaskStageLogServiceImpl implements TaskStageLogService {
         entity.setSize(resolveSize(logFile));
         entity.setLineCount(lineCount);
         entity.setPreviewText(readPreview(logFile));
-        return repository.save(entity);
+        repository.insert(entity);
+        return entity;
     }
 
     @Override

@@ -2,7 +2,7 @@ package com.example.platform.task;
 
 import com.example.platform.storage.service.ObjectStorageService;
 import com.example.platform.task.model.ArtifactEntity;
-import com.example.platform.task.model.ArtifactJpaRepository;
+import com.example.platform.task.mapper.ArtifactMapper;
 import com.example.platform.task.service.TaskArtifactArchiveServiceImpl;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -23,7 +23,7 @@ class TaskArtifactArchiveServiceTest {
     @Test
     void shouldUploadArtifactsAndBindMatchedCaseResult() throws Exception {
         ObjectStorageService objectStorageService = Mockito.mock(ObjectStorageService.class);
-        ArtifactJpaRepository artifactRepository = Mockito.mock(ArtifactJpaRepository.class);
+        ArtifactMapper artifactRepository = Mockito.mock(ArtifactMapper.class);
 
         Path workspace = tempDir.resolve("workspace");
         Path reportDir = workspace.resolve("playwright-report");
@@ -38,7 +38,7 @@ class TaskArtifactArchiveServiceTest {
                     String objectKey = invocation.getArgument(1, String.class);
                     return "http://minio/" + objectKey;
                 });
-        Mockito.when(artifactRepository.save(Mockito.any(ArtifactEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        Mockito.when(artifactRepository.insert(Mockito.any(ArtifactEntity.class))).thenReturn(1);
 
         TaskArtifactArchiveServiceImpl service = new TaskArtifactArchiveServiceImpl(
                 objectStorageService,
@@ -67,7 +67,7 @@ class TaskArtifactArchiveServiceTest {
                 .containsExactlyInAnyOrder(1001L, null);
 
         ArgumentCaptor<ArtifactEntity> captor = ArgumentCaptor.forClass(ArtifactEntity.class);
-        Mockito.verify(artifactRepository, Mockito.times(2)).save(captor.capture());
+        Mockito.verify(artifactRepository, Mockito.times(2)).insert(captor.capture());
         assertThat(captor.getAllValues())
                 .extracting(ArtifactEntity::getTaskId)
                 .containsOnly(101L);
@@ -76,7 +76,7 @@ class TaskArtifactArchiveServiceTest {
     @Test
     void shouldReturnEmptyWhenReportDirectoryMissing() {
         ObjectStorageService objectStorageService = Mockito.mock(ObjectStorageService.class);
-        ArtifactJpaRepository artifactRepository = Mockito.mock(ArtifactJpaRepository.class);
+        ArtifactMapper artifactRepository = Mockito.mock(ArtifactMapper.class);
 
         TaskArtifactArchiveServiceImpl service = new TaskArtifactArchiveServiceImpl(
                 objectStorageService,
@@ -92,7 +92,7 @@ class TaskArtifactArchiveServiceTest {
     @Test
     void shouldFailWhenUploadFails() throws Exception {
         ObjectStorageService objectStorageService = Mockito.mock(ObjectStorageService.class);
-        ArtifactJpaRepository artifactRepository = Mockito.mock(ArtifactJpaRepository.class);
+        ArtifactMapper artifactRepository = Mockito.mock(ArtifactMapper.class);
 
         Path workspace = tempDir.resolve("workspace");
         Path reportDir = workspace.resolve("playwright-report");

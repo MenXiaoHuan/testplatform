@@ -9,6 +9,10 @@ import com.example.platform.task.dto.CaseResultResponse;
 import com.example.platform.task.dto.SceneTaskListResponse;
 import com.example.platform.task.dto.TaskDetailResponse;
 import com.example.platform.task.dto.TaskStageLogResponse;
+import com.example.platform.task.mapper.ArtifactMapper;
+import com.example.platform.task.mapper.CaseResultMapper;
+import com.example.platform.task.mapper.TaskMapper;
+import com.example.platform.task.mapper.TaskStageLogMapper;
 import com.example.platform.task.model.ArtifactEntity;
 import com.example.platform.task.model.TaskEntity;
 import com.example.platform.task.service.TaskService;
@@ -48,6 +52,18 @@ class TaskControllerTest {
 
     @MockBean
     private SceneScheduleStateMapper sceneScheduleStateMapper;
+
+    @MockBean
+    private TaskMapper taskMapper;
+
+    @MockBean
+    private ArtifactMapper artifactMapper;
+
+    @MockBean
+    private CaseResultMapper caseResultMapper;
+
+    @MockBean
+    private TaskStageLogMapper taskStageLogMapper;
 
     @Test
     void shouldExposeTaskDetailAndArtifacts() throws Exception {

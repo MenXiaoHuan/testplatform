@@ -21,10 +21,10 @@ import com.example.platform.storage.service.ObjectStorageService;
 import com.example.platform.task.dto.SceneTaskListResponse;
 import com.example.platform.task.dto.TaskStageLogResponse;
 import com.example.platform.task.model.ArtifactEntity;
-import com.example.platform.task.model.ArtifactJpaRepository;
-import com.example.platform.task.model.CaseResultJpaRepository;
+import com.example.platform.task.mapper.ArtifactMapper;
+import com.example.platform.task.mapper.CaseResultMapper;
 import com.example.platform.task.model.TaskEntity;
-import com.example.platform.task.model.TaskJpaRepository;
+import com.example.platform.task.mapper.TaskMapper;
 import com.example.platform.task.model.TaskStageLogEntity;
 import com.example.platform.task.parser.ParsedArtifactBinding;
 import com.example.platform.task.parser.ParsedCaseResult;
@@ -49,8 +49,6 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mockito;
-import org.springframework.data.domain.PageImpl;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.web.server.ResponseStatusException;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -468,7 +466,7 @@ class TaskExecutionServiceTest {
         task.setId(101L);
         task.setStatus("RUNNING");
         Mockito.when(context.taskRepository.findById(101L)).thenReturn(Optional.of(task));
-        Mockito.when(context.taskRepository.save(Mockito.any(TaskEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        Mockito.when(context.taskRepository.update(Mockito.any(TaskEntity.class))).thenReturn(1);
 
         context.service().cancelTask(101L, "demo-user");
 
@@ -506,14 +504,18 @@ class TaskExecutionServiceTest {
 
         Mockito.when(context.sceneRepository.findById(11L)).thenReturn(Optional.of(scene));
         Mockito.when(context.repositoryRepository.findById(21L)).thenReturn(Optional.of(repository));
-        Mockito.when(context.taskRepository.save(Mockito.any(TaskEntity.class))).thenAnswer(invocation -> {
+        Mockito.doAnswer(invocation -> {
             TaskEntity task = invocation.getArgument(0);
             if (task.getId() == null) {
                 task.setId(101L);
             }
             savedTaskRef[0] = task;
-            return task;
-        });
+            return 1;
+        }).when(context.taskRepository).insert(Mockito.any(TaskEntity.class));
+        Mockito.doAnswer(invocation -> {
+            savedTaskRef[0] = invocation.getArgument(0);
+            return 1;
+        }).when(context.taskRepository).update(Mockito.any(TaskEntity.class));
         Mockito.when(context.taskRepository.findById(101L)).thenAnswer(invocation -> Optional.ofNullable(savedTaskRef[0]));
 
         assertThatThrownBy(() -> context.service(rejectingExecutor).createAndStart(11L))
@@ -594,8 +596,8 @@ class TaskExecutionServiceTest {
         artifact.setObjectKey("runs/101/artifacts/trace.zip");
         artifact.setUrl("http://minio/qa-report/runs/101/artifacts/trace.zip");
 
-        Mockito.when(context.taskRepository.findAll(Mockito.any(PageRequest.class)))
-                .thenReturn(new PageImpl<>(List.of(task), PageRequest.of(0, 10), 1));
+        Mockito.when(context.taskRepository.findPage(10, 0)).thenReturn(List.of(task));
+        Mockito.when(context.taskRepository.countAll()).thenReturn(1L);
         Mockito.when(context.artifactRepository.findAllByTaskIdOrderByIdAsc(101L)).thenReturn(List.of(artifact));
         Mockito.when(context.caseResultRepository.findAllByTaskIdOrderByIdAsc(101L)).thenReturn(List.of());
         Mockito.when(context.objectStorageService.createPresignedGetUrl("qa-report", "runs/101/artifacts/trace.zip"))
@@ -750,9 +752,9 @@ class TaskExecutionServiceTest {
     private static final class TestContext {
         private final SceneMapper sceneRepository = Mockito.mock(SceneMapper.class);
         private final TestRepositoryMapper repositoryRepository = Mockito.mock(TestRepositoryMapper.class);
-        private final TaskJpaRepository taskRepository = Mockito.mock(TaskJpaRepository.class);
-        private final ArtifactJpaRepository artifactRepository = Mockito.mock(ArtifactJpaRepository.class);
-        private final CaseResultJpaRepository caseResultRepository = Mockito.mock(CaseResultJpaRepository.class);
+        private final TaskMapper taskRepository = Mockito.mock(TaskMapper.class);
+        private final ArtifactMapper artifactRepository = Mockito.mock(ArtifactMapper.class);
+        private final CaseResultMapper caseResultRepository = Mockito.mock(CaseResultMapper.class);
         private final RunnerWorkspaceService workspaceService = Mockito.mock(RunnerWorkspaceService.class);
         private final RunnerExecutionService executionService = Mockito.mock(RunnerExecutionService.class);
         private final TaskArtifactArchiveService taskArtifactArchiveService = Mockito.mock(TaskArtifactArchiveService.class);
@@ -790,13 +792,14 @@ class TaskExecutionServiceTest {
         }
 
         private void mockSaveWithGeneratedId() {
-            Mockito.when(taskRepository.save(Mockito.any(TaskEntity.class))).thenAnswer(invocation -> {
+            Mockito.doAnswer(invocation -> {
                 TaskEntity task = invocation.getArgument(0);
                 if (task.getId() == null) {
                     task.setId(101L);
                 }
-                return task;
-            });
+                return 1;
+            }).when(taskRepository).insert(Mockito.any(TaskEntity.class));
+            Mockito.when(taskRepository.update(Mockito.any(TaskEntity.class))).thenReturn(1);
         }
 
         private TaskServiceImpl service() {

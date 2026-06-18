@@ -9,7 +9,7 @@ import com.example.platform.scene.model.SceneEntity;
 import com.example.platform.task.parser.ParsedArtifactBinding;
 import com.example.platform.task.parser.ParsedTaskResults;
 import com.example.platform.task.model.TaskEntity;
-import com.example.platform.task.model.TaskJpaRepository;
+import com.example.platform.task.mapper.TaskMapper;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -24,7 +24,7 @@ import org.slf4j.LoggerFactory;
 final class TaskExecutionOrchestrator {
     private static final Logger log = LoggerFactory.getLogger(TaskExecutionOrchestrator.class);
 
-    private final TaskJpaRepository taskRepository;
+    private final TaskMapper taskRepository;
     private final SceneMapper sceneMapper;
     private final RunnerWorkspaceService runnerWorkspaceService;
     private final RunnerExecutionService runnerExecutionService;
@@ -35,7 +35,7 @@ final class TaskExecutionOrchestrator {
     private final TaskExecutionProperties taskExecutionProperties;
 
     TaskExecutionOrchestrator(
-            TaskJpaRepository taskRepository,
+            TaskMapper taskRepository,
             SceneMapper sceneMapper,
             RunnerWorkspaceService runnerWorkspaceService,
             RunnerExecutionService runnerExecutionService,
@@ -64,7 +64,7 @@ final class TaskExecutionOrchestrator {
             }
             task.setStatus("RUNNING");
             task.setCurrentStage("PREPARING");
-            task = taskRepository.save(task);
+            taskRepository.update(task);
             Path workspace = runnerWorkspaceService.prepareWorkspace(
                     repository.getGitUrl(),
                     task.getResolvedBranch(),
@@ -73,7 +73,7 @@ final class TaskExecutionOrchestrator {
             Map<String, String> platformEnv = platformEnv();
             ResolvedExecutionPaths executionPaths = resolveExecutionPaths(executionDirectory, repository);
             task.setCurrentStage("INSTALLING");
-            task = taskRepository.save(task);
+            taskRepository.update(task);
             RunnerCommandResult installResult = runStageWithFallback(
                     task,
                     workspace,
@@ -92,7 +92,7 @@ final class TaskExecutionOrchestrator {
             }
             if (installStatus == 0) {
                 task.setCurrentStage("TESTING");
-                task = taskRepository.save(task);
+                taskRepository.update(task);
                 RunnerCommandResult testResult = runStageWithFallback(
                         task,
                         workspace,
@@ -110,7 +110,7 @@ final class TaskExecutionOrchestrator {
                     return finalizeTask(task, scene, "TIMEOUT", "TIMEOUT", "TESTING 阶段超时");
                 }
                 task.setCurrentStage("ARCHIVING");
-                task = taskRepository.save(task);
+                taskRepository.update(task);
                 continuePostProcessing(task, executionDirectory, executionPaths, runStatus == 0);
             } else {
                 task.setResultCode("INSTALL_FAILED");
@@ -137,9 +137,9 @@ final class TaskExecutionOrchestrator {
             task.setResultCode("TEST_FAILED");
             task.setResultMessage("测试执行失败");
         }
-        TaskEntity savedTask = taskRepository.save(task);
-        refreshSceneSummary(scene, savedTask);
-        return savedTask;
+        taskRepository.update(task);
+        refreshSceneSummary(scene, task);
+        return task;
     }
 
     private void continuePostProcessing(
@@ -309,9 +309,9 @@ final class TaskExecutionOrchestrator {
         if (task.getStartedAt() != null) {
             task.setDurationMs(Duration.between(task.getStartedAt(), task.getFinishedAt()).toMillis());
         }
-        TaskEntity saved = taskRepository.save(task);
-        refreshSceneSummary(scene, saved);
-        return saved;
+        taskRepository.update(task);
+        refreshSceneSummary(scene, task);
+        return task;
     }
 
     private void appendLogMessage(TaskEntity task, String message) {

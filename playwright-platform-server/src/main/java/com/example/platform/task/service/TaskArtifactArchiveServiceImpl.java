@@ -2,7 +2,7 @@ package com.example.platform.task.service;
 
 import com.example.platform.storage.service.ObjectStorageService;
 import com.example.platform.task.model.ArtifactEntity;
-import com.example.platform.task.model.ArtifactJpaRepository;
+import com.example.platform.task.mapper.ArtifactMapper;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -17,12 +17,12 @@ import org.springframework.stereotype.Service;
 @Service
 public class TaskArtifactArchiveServiceImpl implements TaskArtifactArchiveService {
     private final ObjectStorageService objectStorageService;
-    private final ArtifactJpaRepository artifactRepository;
+    private final ArtifactMapper artifactRepository;
     private final String storageBucket;
 
     public TaskArtifactArchiveServiceImpl(
             ObjectStorageService objectStorageService,
-            ArtifactJpaRepository artifactRepository,
+            ArtifactMapper artifactRepository,
             @Value("${platform.storage.bucket}") String storageBucket) {
         this.objectStorageService = objectStorageService;
         this.artifactRepository = artifactRepository;
@@ -84,7 +84,8 @@ public class TaskArtifactArchiveServiceImpl implements TaskArtifactArchiveServic
         artifact.setContentType(probeContentType(file));
         artifact.setSize(readFileSize(file));
         artifact.setUrl(url);
-        return artifactRepository.save(artifact);
+        artifactRepository.insert(artifact);
+        return artifact;
     }
 
     private String buildObjectKey(Long taskId, String relativePath, ArtifactBindingTarget bindingTarget) {

@@ -3,7 +3,7 @@ package com.example.platform.task.service;
 import com.example.platform.scene.mapper.SceneMapper;
 import com.example.platform.scene.model.SceneEntity;
 import com.example.platform.task.model.TaskEntity;
-import com.example.platform.task.model.TaskJpaRepository;
+import com.example.platform.task.mapper.TaskMapper;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Collection;
@@ -22,12 +22,12 @@ public class TaskRecoveryService {
     private static final Logger log = LoggerFactory.getLogger(TaskRecoveryService.class);
     private static final Collection<String> RECOVERABLE_STATUSES = List.of("QUEUED", "RUNNING");
 
-    private final TaskJpaRepository taskRepository;
+    private final TaskMapper taskRepository;
     private final SceneMapper sceneMapper;
     private final TaskServiceImpl taskService;
 
     public TaskRecoveryService(
-            TaskJpaRepository taskRepository,
+            TaskMapper taskRepository,
             SceneMapper sceneMapper,
             TaskServiceImpl taskService) {
         this.taskRepository = taskRepository;
@@ -86,7 +86,7 @@ public class TaskRecoveryService {
         if (task.getStartedAt() != null) {
             task.setDurationMs(Duration.between(task.getStartedAt(), finishedAt).toMillis());
         }
-        taskRepository.save(task);
+        taskRepository.update(task);
     }
 
     private void markRecoveredQueuedCancellation(TaskEntity task, LocalDateTime finishedAt) {
@@ -98,7 +98,7 @@ public class TaskRecoveryService {
         if (task.getQueuedAt() != null) {
             task.setDurationMs(Duration.between(task.getQueuedAt(), finishedAt).toMillis());
         }
-        taskRepository.save(task);
+        taskRepository.update(task);
     }
 
     private void refreshSceneSummaries(Set<Long> sceneIds) {

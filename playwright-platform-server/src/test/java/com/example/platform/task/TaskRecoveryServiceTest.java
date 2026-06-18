@@ -3,7 +3,7 @@ package com.example.platform.task;
 import com.example.platform.scene.mapper.SceneMapper;
 import com.example.platform.scene.model.SceneEntity;
 import com.example.platform.task.model.TaskEntity;
-import com.example.platform.task.model.TaskJpaRepository;
+import com.example.platform.task.mapper.TaskMapper;
 import com.example.platform.task.service.TaskRecoveryService;
 import com.example.platform.task.service.TaskServiceImpl;
 import java.time.LocalDateTime;
@@ -17,7 +17,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class TaskRecoveryServiceTest {
     @Test
     void shouldAbortRunningTaskAndRedispatchQueuedTaskOnStartupRecovery() {
-        TaskJpaRepository taskRepository = Mockito.mock(TaskJpaRepository.class);
+        TaskMapper taskRepository = Mockito.mock(TaskMapper.class);
         SceneMapper sceneRepository = Mockito.mock(SceneMapper.class);
         TaskServiceImpl taskService = Mockito.mock(TaskServiceImpl.class);
         TaskRecoveryService service = new TaskRecoveryService(taskRepository, sceneRepository, taskService);
@@ -41,7 +41,6 @@ class TaskRecoveryServiceTest {
 
         Mockito.when(taskRepository.findAllByStatusInOrderByCreatedAtAscIdAsc(List.of("QUEUED", "RUNNING")))
                 .thenReturn(List.of(runningTask, queuedTask));
-        Mockito.when(taskRepository.save(Mockito.any(TaskEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
         Mockito.when(taskRepository.findFirstBySceneIdOrderByCreatedAtDescIdDesc(11L)).thenReturn(Optional.of(runningTask));
         Mockito.when(taskRepository.findFirstBySceneIdOrderByCreatedAtDescIdDesc(12L)).thenReturn(Optional.of(queuedTask));
         Mockito.when(sceneRepository.findById(11L)).thenReturn(Optional.of(runningScene));
@@ -59,7 +58,7 @@ class TaskRecoveryServiceTest {
 
     @Test
     void shouldMarkCanceledQueuedTaskWithoutRedispatch() {
-        TaskJpaRepository taskRepository = Mockito.mock(TaskJpaRepository.class);
+        TaskMapper taskRepository = Mockito.mock(TaskMapper.class);
         SceneMapper sceneRepository = Mockito.mock(SceneMapper.class);
         TaskServiceImpl taskService = Mockito.mock(TaskServiceImpl.class);
         TaskRecoveryService service = new TaskRecoveryService(taskRepository, sceneRepository, taskService);
@@ -76,7 +75,6 @@ class TaskRecoveryServiceTest {
 
         Mockito.when(taskRepository.findAllByStatusInOrderByCreatedAtAscIdAsc(List.of("QUEUED", "RUNNING")))
                 .thenReturn(List.of(queuedTask));
-        Mockito.when(taskRepository.save(Mockito.any(TaskEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
         Mockito.when(taskRepository.findFirstBySceneIdOrderByCreatedAtDescIdDesc(21L)).thenReturn(Optional.of(queuedTask));
         Mockito.when(sceneRepository.findById(21L)).thenReturn(Optional.of(scene));
 
