@@ -7,15 +7,17 @@ node_modules/
 dist/
 dist-ssr/
 *.local
+playwright-platform-web/coverage/
 
 # Java / backend
 target/
 .mvn/
+playwright-platform-server/target/
 
 # Editor / IDE
 .idea/
 *.iml
-.vscode/*
+*.vscode/*
 !.vscode/extensions.json
 *.suo
 *.ntvs*

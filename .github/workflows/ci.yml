@@ -6,7 +6,7 @@ on:
 
 jobs:
   backend:
-    name: Backend Tests
+    name: Backend Tests and Coverage
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -22,11 +22,19 @@ jobs:
           java-version: '21'
           cache: maven
 
-      - name: Run backend tests
+      - name: Run backend tests with JaCoCo coverage
         run: mvn test
 
+      - name: Upload backend coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: playwright-platform-server/target/site/jacoco/
+          retention-days: 7
+
   frontend:
-    name: Frontend Tests And Build
+    name: Frontend Tests, Build and Coverage
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -45,8 +53,20 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      - name: Run frontend tests
-        run: npm test
+      - name: Run frontend tests with coverage
+        run: npm test -- --coverage
+
+      - name: Upload frontend coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage
+          path: playwright-platform-web/coverage/
+          retention-days: 7
 
       - name: Build frontend
         run: npm run build
+
+      - name: npm audit (informational)
+        run: npm audit --audit-level=high
+        continue-on-error: true

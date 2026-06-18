@@ -187,12 +187,27 @@ npm test
 
 项目使用 GitHub Actions 作为主干质量门禁。每次 `push` 和 `pull_request` 会自动执行：
 
-- 后端：`mvn test`
+- 后端：`mvn test`（同步生成 JaCoCo 覆盖率报告）
 - 前端：`npm ci`
-- 前端：`npm test`
+- 前端：`npm test -- --coverage`（生成 Vitest v8 覆盖率报告）
 - 前端：`npm run build`
+- 前端：`npm audit --audit-level=high`（信息性检查，不阻塞构建）
 
-这些检查用于确保主干代码始终可测试、依赖可复现安装，并且前端可以完成生产构建。
+运行结束后，覆盖率报告会通过 GitHub Actions artifact 上传，可在 CI 运行详情中下载查看。
+
+### 覆盖率报告
+
+**后端（JaCoCo）**
+
+运行 `mvn test` 后，报告位于 `playwright-platform-server/target/site/jacoco/index.html`。
+
+**前端（Vitest + v8）**
+
+运行 `npm test -- --coverage` 后，报告位于 `playwright-platform-web/coverage/index.html`。同时生成 `lcov.info` 便于后续对接代码覆盖率平台。
+
+### TypeScript 严格模式
+
+前端 `tsconfig.app.json` 已启用 `"strict": true`，确保所有新增代码在类型层面被严格检查。`npm run build` 使用 `vue-tsc -b` 进行类型检查。
 
 ## 核心页面与能力
 

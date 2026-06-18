@@ -58,5 +58,10 @@ export default defineConfig({
         inline: ['element-plus'],
       },
     },
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'html', 'lcov'],
+      reportsDirectory: 'coverage',
+    },
   },
 })

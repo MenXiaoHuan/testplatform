@@ -32,7 +32,6 @@ services:
       timeout: 5s
       retries: 10
       start_period: 10s
-
   minio-init:
     image: minio/mc:RELEASE.2025-04-16T18-13-26Z
     depends_on:
@@ -40,6 +39,11 @@ services:
         condition: service_healthy
     entrypoint: >
       /bin/sh -c "
+      # 循环等待域名解析成功
+      until nslookup minio; do
+        echo '等待minio DNS就绪...'
+        sleep 1
+      done
       mc alias set local http://minio:9000 $${PLATFORM_MINIO_ACCESS_KEY:-minioadmin} $${PLATFORM_MINIO_SECRET_KEY:-minioadmin} &&
       mc mb --ignore-existing local/$${PLATFORM_STORAGE_BUCKET:-qa-report}
       "
