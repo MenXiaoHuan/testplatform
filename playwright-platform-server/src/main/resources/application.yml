@@ -10,7 +10,7 @@ spring:
     redis:
       host: ${PLATFORM_REDIS_HOST:localhost}
       port: ${PLATFORM_REDIS_PORT:6379}
-      password: ${PLATFORM_REDIS_PASSWORD:}
+      password: ${PLATFORM_REDIS_PASSWORD}
       timeout: ${PLATFORM_REDIS_TIMEOUT:2s}
   flyway:
     enabled: true

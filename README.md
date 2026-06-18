@@ -64,11 +64,11 @@ docker compose up --build
 - 后端：`http://localhost:8080`
 - MinIO Console：`http://localhost:9001`
 
-默认开发账号与本地配置保持一致：
+本地 Compose 会读取 `.env`。仓库只提交 `.env.example` 模板，不提交真实账号或密码；首次启动前请复制并替换其中的 `change-me-*` 占位值：
 
-- MySQL：`root` / `12345678`
-- Redis：`localhost:6379`，无密码
-- MinIO：`minioadmin` / `minioadmin`
+- MySQL：账号和密码来自 `PLATFORM_DB_USERNAME`、`PLATFORM_DB_PASSWORD`
+- Redis：`localhost:6379`，密码来自 `PLATFORM_REDIS_PASSWORD`
+- MinIO：账号和密码来自 `PLATFORM_MINIO_ACCESS_KEY`、`PLATFORM_MINIO_SECRET_KEY`
 - Bucket：`qa-report`
 
 停止服务：
@@ -113,9 +113,9 @@ cd test_platform
 本地开发可启用后端 `dev` profile，示例配置来自 `playwright-platform-server/src/main/resources/application-dev.yml`：
 
 - MySQL：`jdbc:mysql://localhost:3306/playwright_platform`
-- 用户名：`root`
-- 密码：`12345678`
-- Redis：`localhost:6379`
+- 用户名：通过 `PLATFORM_DB_USERNAME` 注入
+- 密码：通过 `PLATFORM_DB_PASSWORD` 注入
+- Redis：`localhost:6379`，密码通过 `PLATFORM_REDIS_PASSWORD` 注入
 - MinIO：`http://127.0.0.1:9000`
 - Bucket：`qa-report`
 
@@ -123,14 +123,14 @@ cd test_platform
 
 ```bash
 export PLATFORM_DB_URL='jdbc:mysql://localhost:3306/playwright_platform?useSSL=false&allowPublicKeyRetrieval=true&createDatabaseIfNotExist=true&serverTimezone=UTC'
-export PLATFORM_DB_USERNAME='root'
-export PLATFORM_DB_PASSWORD='12345678'
+export PLATFORM_DB_USERNAME='<your-db-username>'
+export PLATFORM_DB_PASSWORD='<your-db-password>'
 export PLATFORM_REDIS_HOST='127.0.0.1'
 export PLATFORM_REDIS_PORT='6379'
-export PLATFORM_REDIS_PASSWORD=''
+export PLATFORM_REDIS_PASSWORD='<your-redis-password>'
 export PLATFORM_MINIO_ENDPOINT='http://127.0.0.1:9000'
-export PLATFORM_MINIO_ACCESS_KEY='minioadmin'
-export PLATFORM_MINIO_SECRET_KEY='minioadmin'
+export PLATFORM_MINIO_ACCESS_KEY='<your-minio-access-key>'
+export PLATFORM_MINIO_SECRET_KEY='<your-minio-secret-key>'
 export PLATFORM_STORAGE_BUCKET='qa-report'
 ```
 

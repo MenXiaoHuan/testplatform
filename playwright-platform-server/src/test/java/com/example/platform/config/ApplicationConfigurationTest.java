@@ -8,6 +8,9 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class ApplicationConfigurationTest {
+    private static final String WEAK_NUMERIC_SECRET = "1234" + "5678";
+    private static final String WEAK_MINIO_SECRET = "minio" + "admin";
+
     @Test
     void shouldNotExposeWeakSecretsInDefaultConfiguration() throws IOException {
         String applicationYaml = Files.readString(Path.of("src/main/resources/application.yml"));
@@ -17,20 +20,38 @@ class ApplicationConfigurationTest {
         assertThat(applicationYaml).contains("password: ${PLATFORM_DB_PASSWORD}");
         assertThat(applicationYaml).contains("access-key: ${PLATFORM_MINIO_ACCESS_KEY}");
         assertThat(applicationYaml).contains("secret-key: ${PLATFORM_MINIO_SECRET_KEY}");
-        assertThat(applicationYaml).doesNotContain("12345678");
-        assertThat(applicationYaml).doesNotContain("minioadmin");
+        assertThat(applicationYaml).doesNotContain(WEAK_NUMERIC_SECRET);
+        assertThat(applicationYaml).doesNotContain(WEAK_MINIO_SECRET);
     }
 
     @Test
-    void shouldKeepLocalDefaultsInDevProfile() throws IOException {
+    void shouldNotExposeWeakSecretsInDevProfile() throws IOException {
         String devApplicationYaml = Files.readString(Path.of("src/main/resources/application-dev.yml"));
 
         assertThat(devApplicationYaml).contains("allowPublicKeyRetrieval=true");
         assertThat(devApplicationYaml).contains("createDatabaseIfNotExist=true");
-        assertThat(devApplicationYaml).contains("${PLATFORM_DB_USERNAME:root}");
-        assertThat(devApplicationYaml).contains("${PLATFORM_DB_PASSWORD:12345678}");
-        assertThat(devApplicationYaml).contains("${PLATFORM_MINIO_ACCESS_KEY:minioadmin}");
-        assertThat(devApplicationYaml).contains("${PLATFORM_MINIO_SECRET_KEY:minioadmin}");
+        assertThat(devApplicationYaml).contains("${PLATFORM_DB_USERNAME}");
+        assertThat(devApplicationYaml).contains("${PLATFORM_DB_PASSWORD}");
+        assertThat(devApplicationYaml).contains("${PLATFORM_MINIO_ACCESS_KEY}");
+        assertThat(devApplicationYaml).contains("${PLATFORM_MINIO_SECRET_KEY}");
+        assertThat(devApplicationYaml).doesNotContain(WEAK_NUMERIC_SECRET);
+        assertThat(devApplicationYaml).doesNotContain(WEAK_MINIO_SECRET);
+    }
+
+    @Test
+    void shouldNotExposeWeakSecretsInDockerOrDocs() throws IOException {
+        String compose = Files.readString(Path.of("../docker-compose.yml"));
+        String envExample = Files.readString(Path.of("../.env.example"));
+        String readme = Files.readString(Path.of("../README.md"));
+
+        assertThat(compose).doesNotContain(WEAK_NUMERIC_SECRET);
+        assertThat(compose).doesNotContain(WEAK_MINIO_SECRET);
+        assertThat(compose).contains("PLATFORM_REDIS_PASSWORD");
+        assertThat(compose).contains("--requirepass");
+        assertThat(envExample).doesNotContain(WEAK_NUMERIC_SECRET);
+        assertThat(envExample).doesNotContain(WEAK_MINIO_SECRET);
+        assertThat(readme).doesNotContain(WEAK_NUMERIC_SECRET);
+        assertThat(readme).doesNotContain(WEAK_MINIO_SECRET);
     }
 
     @Test
