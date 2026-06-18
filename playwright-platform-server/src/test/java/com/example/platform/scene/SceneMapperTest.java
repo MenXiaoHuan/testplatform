@@ -14,7 +14,7 @@ import org.springframework.test.context.ActiveProfiles;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@MybatisTest(properties = "mybatis.mapper-locations=classpath*:mapper/**/*.xml")
+@MybatisTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @ActiveProfiles("test")
 class SceneMapperTest {
