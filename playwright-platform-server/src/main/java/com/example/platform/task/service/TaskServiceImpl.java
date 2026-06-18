@@ -2,11 +2,11 @@ package com.example.platform.task.service;
 
 import com.example.platform.common.PageResponse;
 import com.example.platform.repository.model.TestRepositoryEntity;
-import com.example.platform.repository.model.TestRepositoryJpaRepository;
+import com.example.platform.repository.mapper.TestRepositoryMapper;
 import com.example.platform.runner.service.RunnerExecutionService;
 import com.example.platform.runner.service.RunnerWorkspaceService;
 import com.example.platform.scene.model.SceneEntity;
-import com.example.platform.scene.model.SceneJpaRepository;
+import com.example.platform.scene.mapper.SceneMapper;
 import com.example.platform.storage.service.ObjectStorageService;
 import com.example.platform.task.dto.SceneTaskListResponse;
 import com.example.platform.task.dto.CaseResultResponse;
@@ -42,8 +42,8 @@ public class TaskServiceImpl implements TaskService {
     private static final Logger log = LoggerFactory.getLogger(TaskServiceImpl.class);
     private static final Field TASK_CREATED_AT_FIELD = initTaskCreatedAtField();
 
-    private final SceneJpaRepository sceneRepository;
-    private final TestRepositoryJpaRepository repositoryRepository;
+    private final SceneMapper sceneRepository;
+    private final TestRepositoryMapper repositoryRepository;
     private final TaskJpaRepository taskRepository;
     private final ArtifactJpaRepository artifactRepository;
     private final CaseResultJpaRepository caseResultRepository;
@@ -55,8 +55,8 @@ public class TaskServiceImpl implements TaskService {
 
     @Autowired
     public TaskServiceImpl(
-            SceneJpaRepository sceneRepository,
-            TestRepositoryJpaRepository repositoryRepository,
+            SceneMapper sceneRepository,
+            TestRepositoryMapper repositoryRepository,
             TaskJpaRepository taskRepository,
             ArtifactJpaRepository artifactRepository,
             CaseResultJpaRepository caseResultRepository,
@@ -100,8 +100,8 @@ public class TaskServiceImpl implements TaskService {
     }
 
     public TaskServiceImpl(
-            SceneJpaRepository sceneRepository,
-            TestRepositoryJpaRepository repositoryRepository,
+            SceneMapper sceneRepository,
+            TestRepositoryMapper repositoryRepository,
             TaskJpaRepository taskRepository,
             ArtifactJpaRepository artifactRepository,
             CaseResultJpaRepository caseResultRepository,
@@ -137,8 +137,8 @@ public class TaskServiceImpl implements TaskService {
     }
 
     public TaskServiceImpl(
-            SceneJpaRepository sceneRepository,
-            TestRepositoryJpaRepository repositoryRepository,
+            SceneMapper sceneRepository,
+            TestRepositoryMapper repositoryRepository,
             TaskJpaRepository taskRepository,
             ArtifactJpaRepository artifactRepository,
             CaseResultJpaRepository caseResultRepository,
@@ -174,8 +174,8 @@ public class TaskServiceImpl implements TaskService {
     }
 
     public TaskServiceImpl(
-            SceneJpaRepository sceneRepository,
-            TestRepositoryJpaRepository repositoryRepository,
+            SceneMapper sceneRepository,
+            TestRepositoryMapper repositoryRepository,
             TaskJpaRepository taskRepository,
             ArtifactJpaRepository artifactRepository,
             CaseResultJpaRepository caseResultRepository,
@@ -210,8 +210,8 @@ public class TaskServiceImpl implements TaskService {
     }
 
     public TaskServiceImpl(
-            SceneJpaRepository sceneRepository,
-            TestRepositoryJpaRepository repositoryRepository,
+            SceneMapper sceneRepository,
+            TestRepositoryMapper repositoryRepository,
             TaskJpaRepository taskRepository,
             ArtifactJpaRepository artifactRepository,
             CaseResultJpaRepository caseResultRepository,
@@ -246,8 +246,8 @@ public class TaskServiceImpl implements TaskService {
     }
 
     public TaskServiceImpl(
-            SceneJpaRepository sceneRepository,
-            TestRepositoryJpaRepository repositoryRepository,
+            SceneMapper sceneRepository,
+            TestRepositoryMapper repositoryRepository,
             TaskJpaRepository taskRepository,
             ArtifactJpaRepository artifactRepository,
             CaseResultJpaRepository caseResultRepository,
@@ -346,7 +346,7 @@ public class TaskServiceImpl implements TaskService {
         }
         scene.setLastTaskStatus(task.getStatus());
         scene.setLastRunAt(task.getFinishedAt());
-        sceneRepository.save(scene);
+        sceneRepository.update(scene);
     }
 
     private int normalizePage(int page) {
@@ -371,7 +371,7 @@ public class TaskServiceImpl implements TaskService {
 
     @Override
     public PageResponse<SceneTaskListResponse> listByScene(Long sceneId, int page, int size) {
-        if (!sceneRepository.existsById(sceneId)) {
+        if (!sceneRepository.findById(sceneId).isPresent()) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Scene not found: " + sceneId);
         }
         int normalizedPage = normalizePage(page);

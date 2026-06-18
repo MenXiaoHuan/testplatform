@@ -1,7 +1,6 @@
 package com.example.platform.scene.service;
 
-import com.example.platform.scene.model.SceneEntity;
-import com.example.platform.scene.model.SceneJpaRepository;
+import com.example.platform.scene.mapper.SceneMapper;
 import com.example.platform.storage.service.ObjectStorageService;
 import com.example.platform.task.model.ArtifactEntity;
 import com.example.platform.task.model.ArtifactJpaRepository;
@@ -17,7 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class SceneCascadeDeleteServiceImpl implements SceneCascadeDeleteService {
-    private final SceneJpaRepository sceneRepository;
+    private final SceneMapper sceneMapper;
     private final TaskJpaRepository taskRepository;
     private final CaseResultJpaRepository caseResultRepository;
     private final ArtifactJpaRepository artifactRepository;
@@ -26,14 +25,14 @@ public class SceneCascadeDeleteServiceImpl implements SceneCascadeDeleteService 
     private final String storageBucket;
 
     public SceneCascadeDeleteServiceImpl(
-            SceneJpaRepository sceneRepository,
+            SceneMapper sceneMapper,
             TaskJpaRepository taskRepository,
             CaseResultJpaRepository caseResultRepository,
             ArtifactJpaRepository artifactRepository,
             TaskStageLogJpaRepository taskStageLogRepository,
             ObjectStorageService objectStorageService,
             @Value("${platform.storage.bucket}") String storageBucket) {
-        this.sceneRepository = sceneRepository;
+        this.sceneMapper = sceneMapper;
         this.taskRepository = taskRepository;
         this.caseResultRepository = caseResultRepository;
         this.artifactRepository = artifactRepository;
@@ -45,7 +44,7 @@ public class SceneCascadeDeleteServiceImpl implements SceneCascadeDeleteService 
     @Override
     @Transactional
     public void deleteSceneGraph(Long sceneId) {
-        SceneEntity scene = sceneRepository.findById(sceneId)
+        sceneMapper.findById(sceneId)
                 .orElseThrow(() -> new IllegalArgumentException("Scene not found: " + sceneId));
 
         List<TaskEntity> tasks = taskRepository.findAllBySceneIdOrderByIdAsc(sceneId);
@@ -61,7 +60,7 @@ public class SceneCascadeDeleteServiceImpl implements SceneCascadeDeleteService 
         }
 
         taskRepository.deleteAllBySceneId(sceneId);
-        sceneRepository.delete(scene);
+        sceneMapper.deleteById(sceneId);
     }
 
     private void deleteArtifactObjects(List<Long> taskIds) {

@@ -1,9 +1,9 @@
 package com.example.platform.task.service;
 
+import com.example.platform.repository.mapper.TestRepositoryMapper;
 import com.example.platform.repository.model.TestRepositoryEntity;
-import com.example.platform.repository.model.TestRepositoryJpaRepository;
+import com.example.platform.scene.mapper.SceneMapper;
 import com.example.platform.scene.model.SceneEntity;
-import com.example.platform.scene.model.SceneJpaRepository;
 import com.example.platform.storage.service.ObjectStorageService;
 import com.example.platform.task.dto.CaseArtifactLinkResponse;
 import com.example.platform.task.dto.CaseResultResponse;
@@ -29,20 +29,20 @@ final class TaskQueryViewService {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final Field TASK_CREATED_AT_FIELD = initTaskCreatedAtField();
 
-    private final SceneJpaRepository sceneRepository;
-    private final TestRepositoryJpaRepository repositoryRepository;
+    private final SceneMapper sceneMapper;
+    private final TestRepositoryMapper repositoryMapper;
     private final CaseResultJpaRepository caseResultRepository;
     private final ObjectStorageService objectStorageService;
     private final String storageBucket;
 
     TaskQueryViewService(
-            SceneJpaRepository sceneRepository,
-            TestRepositoryJpaRepository repositoryRepository,
+            SceneMapper sceneMapper,
+            TestRepositoryMapper repositoryMapper,
             CaseResultJpaRepository caseResultRepository,
             ObjectStorageService objectStorageService,
             String storageBucket) {
-        this.sceneRepository = sceneRepository;
-        this.repositoryRepository = repositoryRepository;
+        this.sceneMapper = sceneMapper;
+        this.repositoryMapper = repositoryMapper;
         this.caseResultRepository = caseResultRepository;
         this.objectStorageService = objectStorageService;
         this.storageBucket = storageBucket;
@@ -54,10 +54,10 @@ final class TaskQueryViewService {
     }
 
     TaskDetailResponse toTaskDetailResponse(TaskEntity task, int artifactCount) {
-        String sceneName = sceneRepository.findById(task.getSceneId())
+        String sceneName = sceneMapper.findById(task.getSceneId())
                 .map(SceneEntity::getName)
                 .orElse(null);
-        String repositoryName = repositoryRepository.findById(task.getRepoId())
+        String repositoryName = repositoryMapper.findById(task.getRepoId())
                 .map(TestRepositoryEntity::getName)
                 .orElse(null);
         return TaskDetailResponse.from(

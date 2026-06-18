@@ -4,8 +4,8 @@ import com.example.platform.repository.model.TestRepositoryEntity;
 import com.example.platform.runner.service.RunnerCommandResult;
 import com.example.platform.runner.service.RunnerExecutionService;
 import com.example.platform.runner.service.RunnerWorkspaceService;
+import com.example.platform.scene.mapper.SceneMapper;
 import com.example.platform.scene.model.SceneEntity;
-import com.example.platform.scene.model.SceneJpaRepository;
 import com.example.platform.task.parser.ParsedArtifactBinding;
 import com.example.platform.task.parser.ParsedTaskResults;
 import com.example.platform.task.model.TaskEntity;
@@ -25,7 +25,7 @@ final class TaskExecutionOrchestrator {
     private static final Logger log = LoggerFactory.getLogger(TaskExecutionOrchestrator.class);
 
     private final TaskJpaRepository taskRepository;
-    private final SceneJpaRepository sceneRepository;
+    private final SceneMapper sceneMapper;
     private final RunnerWorkspaceService runnerWorkspaceService;
     private final RunnerExecutionService runnerExecutionService;
     private final TaskArtifactArchiveService taskArtifactArchiveService;
@@ -36,7 +36,7 @@ final class TaskExecutionOrchestrator {
 
     TaskExecutionOrchestrator(
             TaskJpaRepository taskRepository,
-            SceneJpaRepository sceneRepository,
+            SceneMapper sceneMapper,
             RunnerWorkspaceService runnerWorkspaceService,
             RunnerExecutionService runnerExecutionService,
             TaskArtifactArchiveService taskArtifactArchiveService,
@@ -45,7 +45,7 @@ final class TaskExecutionOrchestrator {
             TaskStageLogService taskStageLogService,
             TaskExecutionProperties taskExecutionProperties) {
         this.taskRepository = taskRepository;
-        this.sceneRepository = sceneRepository;
+        this.sceneMapper = sceneMapper;
         this.runnerWorkspaceService = runnerWorkspaceService;
         this.runnerExecutionService = runnerExecutionService;
         this.taskArtifactArchiveService = taskArtifactArchiveService;
@@ -330,7 +330,7 @@ final class TaskExecutionOrchestrator {
                 .orElse(task);
         scene.setLastRunAt(summarySource.getFinishedAt());
         scene.setLastTaskStatus(summarySource.getStatus());
-        sceneRepository.save(scene);
+        sceneMapper.update(scene);
     }
 
     private record ResolvedExecutionPaths(

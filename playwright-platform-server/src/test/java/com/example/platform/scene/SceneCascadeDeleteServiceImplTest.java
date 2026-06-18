@@ -1,7 +1,7 @@
 package com.example.platform.scene;
 
 import com.example.platform.scene.model.SceneEntity;
-import com.example.platform.scene.model.SceneJpaRepository;
+import com.example.platform.scene.mapper.SceneMapper;
 import com.example.platform.scene.service.SceneCascadeDeleteServiceImpl;
 import com.example.platform.storage.service.ObjectStorageService;
 import com.example.platform.task.model.ArtifactEntity;
@@ -19,7 +19,7 @@ import org.mockito.Mockito;
 class SceneCascadeDeleteServiceImplTest {
     @Test
     void shouldDeleteSceneGraphAndStorageObjects() {
-        SceneJpaRepository sceneRepository = Mockito.mock(SceneJpaRepository.class);
+        SceneMapper sceneRepository = Mockito.mock(SceneMapper.class);
         TaskJpaRepository taskRepository = Mockito.mock(TaskJpaRepository.class);
         CaseResultJpaRepository caseResultRepository = Mockito.mock(CaseResultJpaRepository.class);
         ArtifactJpaRepository artifactRepository = Mockito.mock(ArtifactJpaRepository.class);
@@ -65,12 +65,12 @@ class SceneCascadeDeleteServiceImplTest {
         Mockito.verify(artifactRepository).deleteAllByTaskIdIn(List.of(101L));
         Mockito.verify(taskStageLogRepository).deleteAllByTaskIdIn(List.of(101L));
         Mockito.verify(taskRepository).deleteAllBySceneId(11L);
-        Mockito.verify(sceneRepository).delete(scene);
+        Mockito.verify(sceneRepository).deleteById(11L);
     }
 
     @Test
     void shouldDeleteSceneWithoutTasks() {
-        SceneJpaRepository sceneRepository = Mockito.mock(SceneJpaRepository.class);
+        SceneMapper sceneRepository = Mockito.mock(SceneMapper.class);
         TaskJpaRepository taskRepository = Mockito.mock(TaskJpaRepository.class);
         CaseResultJpaRepository caseResultRepository = Mockito.mock(CaseResultJpaRepository.class);
         ArtifactJpaRepository artifactRepository = Mockito.mock(ArtifactJpaRepository.class);
@@ -99,6 +99,6 @@ class SceneCascadeDeleteServiceImplTest {
         Mockito.verify(artifactRepository, Mockito.never()).deleteAllByTaskIdIn(Mockito.anyList());
         Mockito.verify(taskStageLogRepository, Mockito.never()).deleteAllByTaskIdIn(Mockito.anyList());
         Mockito.verify(taskRepository).deleteAllBySceneId(12L);
-        Mockito.verify(sceneRepository).delete(scene);
+        Mockito.verify(sceneRepository).deleteById(12L);
     }
 }

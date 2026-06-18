@@ -1,6 +1,10 @@
 package com.example.platform.task;
 
 import com.example.platform.common.PageResponse;
+import com.example.platform.audit.mapper.PlatformAuditLogMapper;
+import com.example.platform.repository.mapper.TestRepositoryMapper;
+import com.example.platform.scene.mapper.SceneMapper;
+import com.example.platform.scene.mapper.SceneScheduleStateMapper;
 import com.example.platform.task.dto.CaseResultResponse;
 import com.example.platform.task.dto.SceneTaskListResponse;
 import com.example.platform.task.dto.TaskDetailResponse;
@@ -32,6 +36,18 @@ class TaskControllerTest {
 
     @MockBean
     private TaskService taskService;
+
+    @MockBean
+    private PlatformAuditLogMapper platformAuditLogMapper;
+
+    @MockBean
+    private TestRepositoryMapper testRepositoryMapper;
+
+    @MockBean
+    private SceneMapper sceneMapper;
+
+    @MockBean
+    private SceneScheduleStateMapper sceneScheduleStateMapper;
 
     @Test
     void shouldExposeTaskDetailAndArtifacts() throws Exception {

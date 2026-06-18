@@ -13,6 +13,8 @@ public interface SceneMapper {
 
     Optional<SceneEntity> findById(@Param("id") Long id);
 
+    Optional<SceneEntity> findByIdForUpdate(@Param("id") Long id);
+
     List<SceneEntity> findPage(@Param("limit") int limit, @Param("offset") int offset);
 
     long countAll();

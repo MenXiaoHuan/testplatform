@@ -1,8 +1,12 @@
 package com.example.platform.repository;
 
 import com.example.platform.common.PageResponse;
+import com.example.platform.audit.mapper.PlatformAuditLogMapper;
+import com.example.platform.repository.mapper.TestRepositoryMapper;
 import com.example.platform.repository.model.TestRepositoryEntity;
 import com.example.platform.repository.service.RepositoryService;
+import com.example.platform.scene.mapper.SceneMapper;
+import com.example.platform.scene.mapper.SceneScheduleStateMapper;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -27,6 +31,18 @@ class RepositoryControllerTest {
 
     @MockBean
     private RepositoryService repositoryService;
+
+    @MockBean
+    private PlatformAuditLogMapper platformAuditLogMapper;
+
+    @MockBean
+    private TestRepositoryMapper testRepositoryMapper;
+
+    @MockBean
+    private SceneMapper sceneMapper;
+
+    @MockBean
+    private SceneScheduleStateMapper sceneScheduleStateMapper;
 
     @Test
     void shouldCreateAndListRepository() throws Exception {

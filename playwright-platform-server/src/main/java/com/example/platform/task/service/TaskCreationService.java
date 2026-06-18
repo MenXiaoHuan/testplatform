@@ -1,9 +1,9 @@
 package com.example.platform.task.service;
 
+import com.example.platform.repository.mapper.TestRepositoryMapper;
 import com.example.platform.repository.model.TestRepositoryEntity;
-import com.example.platform.repository.model.TestRepositoryJpaRepository;
+import com.example.platform.scene.mapper.SceneMapper;
 import com.example.platform.scene.model.SceneEntity;
-import com.example.platform.scene.model.SceneJpaRepository;
 import com.example.platform.task.model.TaskEntity;
 import com.example.platform.task.model.TaskJpaRepository;
 import java.time.LocalDateTime;
@@ -16,28 +16,28 @@ import org.springframework.transaction.annotation.Transactional;
 public class TaskCreationService {
     private static final Collection<String> ACTIVE_TASK_STATUSES = List.of("QUEUED", "RUNNING");
 
-    private final SceneJpaRepository sceneRepository;
-    private final TestRepositoryJpaRepository repositoryRepository;
+    private final SceneMapper sceneMapper;
+    private final TestRepositoryMapper repositoryMapper;
     private final TaskJpaRepository taskRepository;
     private final TaskCommandBuilder taskCommandBuilder;
 
     public TaskCreationService(
-            SceneJpaRepository sceneRepository,
-            TestRepositoryJpaRepository repositoryRepository,
+            SceneMapper sceneMapper,
+            TestRepositoryMapper repositoryMapper,
             TaskJpaRepository taskRepository,
             TaskCommandBuilder taskCommandBuilder) {
-        this.sceneRepository = sceneRepository;
-        this.repositoryRepository = repositoryRepository;
+        this.sceneMapper = sceneMapper;
+        this.repositoryMapper = repositoryMapper;
         this.taskRepository = taskRepository;
         this.taskCommandBuilder = taskCommandBuilder;
     }
 
     @Transactional
     public TaskEntity createTask(Long sceneId, String triggerType, String triggerReason, String triggerUser) {
-        SceneEntity scene = sceneRepository.findByIdForUpdate(sceneId)
-                .or(() -> sceneRepository.findById(sceneId))
+        SceneEntity scene = sceneMapper.findByIdForUpdate(sceneId)
+                .or(() -> sceneMapper.findById(sceneId))
                 .orElseThrow(() -> new IllegalArgumentException("Scene not found: " + sceneId));
-        TestRepositoryEntity repository = repositoryRepository.findById(scene.getRepoId())
+        TestRepositoryEntity repository = repositoryMapper.findById(scene.getRepoId())
                 .orElseThrow(() -> new IllegalArgumentException("Repository not found: " + scene.getRepoId()));
         if (!Boolean.TRUE.equals(repository.getEnabled())) {
             throw new IllegalArgumentException("所属仓库已停用，请先启用仓库");
@@ -71,7 +71,7 @@ public class TaskCreationService {
 
         scene.setLastTaskStatus(task.getStatus());
         scene.setLastRunAt(task.getQueuedAt());
-        sceneRepository.save(scene);
+        sceneMapper.update(scene);
         return task;
     }
 }

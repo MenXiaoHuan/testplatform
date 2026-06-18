@@ -1,7 +1,7 @@
 package com.example.platform.task.service;
 
+import com.example.platform.scene.mapper.SceneMapper;
 import com.example.platform.scene.model.SceneEntity;
-import com.example.platform.scene.model.SceneJpaRepository;
 import com.example.platform.task.model.TaskEntity;
 import com.example.platform.task.model.TaskJpaRepository;
 import java.time.Duration;
@@ -23,15 +23,15 @@ public class TaskRecoveryService {
     private static final Collection<String> RECOVERABLE_STATUSES = List.of("QUEUED", "RUNNING");
 
     private final TaskJpaRepository taskRepository;
-    private final SceneJpaRepository sceneRepository;
+    private final SceneMapper sceneMapper;
     private final TaskServiceImpl taskService;
 
     public TaskRecoveryService(
             TaskJpaRepository taskRepository,
-            SceneJpaRepository sceneRepository,
+            SceneMapper sceneMapper,
             TaskServiceImpl taskService) {
         this.taskRepository = taskRepository;
-        this.sceneRepository = sceneRepository;
+        this.sceneMapper = sceneMapper;
         this.taskService = taskService;
     }
 
@@ -104,13 +104,13 @@ public class TaskRecoveryService {
     private void refreshSceneSummaries(Set<Long> sceneIds) {
         for (Long sceneId : sceneIds) {
             TaskEntity summarySource = taskRepository.findFirstBySceneIdOrderByCreatedAtDescIdDesc(sceneId).orElse(null);
-            SceneEntity scene = sceneRepository.findById(sceneId).orElse(null);
+            SceneEntity scene = sceneMapper.findById(sceneId).orElse(null);
             if (summarySource == null || scene == null) {
                 continue;
             }
             scene.setLastTaskStatus(summarySource.getStatus());
             scene.setLastRunAt(summarySource.getFinishedAt() != null ? summarySource.getFinishedAt() : summarySource.getQueuedAt());
-            sceneRepository.save(scene);
+            sceneMapper.update(scene);
         }
     }
 }

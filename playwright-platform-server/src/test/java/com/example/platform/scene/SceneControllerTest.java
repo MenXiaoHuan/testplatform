@@ -1,7 +1,11 @@
 package com.example.platform.scene;
 
 import com.example.platform.common.PageResponse;
+import com.example.platform.audit.mapper.PlatformAuditLogMapper;
+import com.example.platform.repository.mapper.TestRepositoryMapper;
 import com.example.platform.scene.dto.SceneCardResponse;
+import com.example.platform.scene.mapper.SceneMapper;
+import com.example.platform.scene.mapper.SceneScheduleStateMapper;
 import com.example.platform.scene.model.SceneEntity;
 import com.example.platform.scene.service.SceneService;
 import java.time.LocalDateTime;
@@ -29,6 +33,18 @@ class SceneControllerTest {
 
     @MockBean
     private SceneService sceneService;
+
+    @MockBean
+    private PlatformAuditLogMapper platformAuditLogMapper;
+
+    @MockBean
+    private TestRepositoryMapper testRepositoryMapper;
+
+    @MockBean
+    private SceneMapper sceneMapper;
+
+    @MockBean
+    private SceneScheduleStateMapper sceneScheduleStateMapper;
 
     @Test
     void shouldCreateAndListScene() throws Exception {

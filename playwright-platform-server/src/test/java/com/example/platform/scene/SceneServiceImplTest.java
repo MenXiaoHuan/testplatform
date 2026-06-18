@@ -5,7 +5,6 @@ import com.example.platform.repository.mapper.TestRepositoryMapper;
 import com.example.platform.repository.model.TestRepositoryEntity;
 import com.example.platform.scene.mapper.SceneMapper;
 import com.example.platform.scene.model.SceneEntity;
-import com.example.platform.scene.model.SceneJpaRepository;
 import com.example.platform.scene.service.SceneCascadeDeleteService;
 import com.example.platform.scene.service.SceneScheduleLeaseService;
 import com.example.platform.scene.service.SceneSchedulerServiceImpl;
@@ -85,7 +84,7 @@ class SceneServiceImplTest {
 
     @Test
     void shouldCreateScheduledTaskWhenCronIsDueAndLeaseAcquired() {
-        SceneJpaRepository repository = Mockito.mock(SceneJpaRepository.class);
+        SceneMapper repository = Mockito.mock(SceneMapper.class);
         FakeSceneScheduleLeaseService leaseService = new FakeSceneScheduleLeaseService(true);
         FakeTaskService taskService = new FakeTaskService();
         SceneSchedulerServiceImpl service = new SceneSchedulerServiceImpl(repository, leaseService, taskService);
@@ -99,7 +98,7 @@ class SceneServiceImplTest {
         Mockito.when(repository.findAllByScheduleEnabledTrueAndNextRunAtIsNullOrderByIdAsc()).thenReturn(List.of());
         Mockito.when(repository.findDueScheduledScenes(LocalDateTime.of(2026, 6, 13, 10, 0, 30)))
                 .thenReturn(List.of(scheduled));
-        Mockito.when(repository.save(scheduled)).thenReturn(scheduled);
+        Mockito.when(repository.update(scheduled)).thenReturn(1);
 
         service.triggerDueScenes(LocalDateTime.of(2026, 6, 13, 10, 0, 30));
 
@@ -114,7 +113,7 @@ class SceneServiceImplTest {
 
     @Test
     void shouldSkipScheduledTaskWhenLeaseIsRejected() {
-        SceneJpaRepository repository = Mockito.mock(SceneJpaRepository.class);
+        SceneMapper repository = Mockito.mock(SceneMapper.class);
         FakeSceneScheduleLeaseService leaseService = new FakeSceneScheduleLeaseService(false);
         FakeTaskService taskService = new FakeTaskService();
         SceneSchedulerServiceImpl service = new SceneSchedulerServiceImpl(repository, leaseService, taskService);
@@ -134,7 +133,7 @@ class SceneServiceImplTest {
         assertThat(leaseService.sceneId).isEqualTo(11L);
         assertThat(leaseService.plannedFireAt).isEqualTo(LocalDateTime.of(2026, 6, 13, 10, 0));
         assertThat(taskService.scheduledTaskCount).isZero();
-        Mockito.verify(repository, Mockito.never()).save(Mockito.any(SceneEntity.class));
+        Mockito.verify(repository, Mockito.never()).update(Mockito.any(SceneEntity.class));
     }
 
     @Test
@@ -275,7 +274,7 @@ class SceneServiceImplTest {
 
     @Test
     void shouldInitializeNextRunAtForLegacyScheduledScene() {
-        SceneJpaRepository repository = Mockito.mock(SceneJpaRepository.class);
+        SceneMapper repository = Mockito.mock(SceneMapper.class);
         FakeSceneScheduleLeaseService leaseService = new FakeSceneScheduleLeaseService(true);
         FakeTaskService taskService = new FakeTaskService();
         SceneSchedulerServiceImpl service = new SceneSchedulerServiceImpl(repository, leaseService, taskService);
@@ -288,12 +287,12 @@ class SceneServiceImplTest {
         Mockito.when(repository.findAllByScheduleEnabledTrueAndNextRunAtIsNullOrderByIdAsc()).thenReturn(List.of(legacyScene));
         Mockito.when(repository.findDueScheduledScenes(LocalDateTime.of(2026, 6, 13, 10, 0, 30)))
                 .thenReturn(List.of());
-        Mockito.when(repository.save(legacyScene)).thenReturn(legacyScene);
+        Mockito.when(repository.update(legacyScene)).thenReturn(1);
 
         service.triggerDueScenes(LocalDateTime.of(2026, 6, 13, 10, 0, 30));
 
         assertThat(legacyScene.getNextRunAt()).isEqualTo(LocalDateTime.of(2026, 6, 13, 10, 10));
-        Mockito.verify(repository).save(legacyScene);
+        Mockito.verify(repository).update(legacyScene);
     }
 
     @Test

@@ -69,6 +69,13 @@
         where id = #{id}
     </select>
 
+    <select id="findByIdForUpdate" resultMap="SceneResultMap">
+        select <include refid="SceneColumns"/>
+        from scene
+        where id = #{id}
+        for update
+    </select>
+
     <select id="findPage" resultMap="SceneResultMap">
         select <include refid="SceneColumns"/>
         from scene

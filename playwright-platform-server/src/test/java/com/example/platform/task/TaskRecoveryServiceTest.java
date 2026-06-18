@@ -1,7 +1,7 @@
 package com.example.platform.task;
 
+import com.example.platform.scene.mapper.SceneMapper;
 import com.example.platform.scene.model.SceneEntity;
-import com.example.platform.scene.model.SceneJpaRepository;
 import com.example.platform.task.model.TaskEntity;
 import com.example.platform.task.model.TaskJpaRepository;
 import com.example.platform.task.service.TaskRecoveryService;
@@ -18,7 +18,7 @@ class TaskRecoveryServiceTest {
     @Test
     void shouldAbortRunningTaskAndRedispatchQueuedTaskOnStartupRecovery() {
         TaskJpaRepository taskRepository = Mockito.mock(TaskJpaRepository.class);
-        SceneJpaRepository sceneRepository = Mockito.mock(SceneJpaRepository.class);
+        SceneMapper sceneRepository = Mockito.mock(SceneMapper.class);
         TaskServiceImpl taskService = Mockito.mock(TaskServiceImpl.class);
         TaskRecoveryService service = new TaskRecoveryService(taskRepository, sceneRepository, taskService);
 
@@ -60,7 +60,7 @@ class TaskRecoveryServiceTest {
     @Test
     void shouldMarkCanceledQueuedTaskWithoutRedispatch() {
         TaskJpaRepository taskRepository = Mockito.mock(TaskJpaRepository.class);
-        SceneJpaRepository sceneRepository = Mockito.mock(SceneJpaRepository.class);
+        SceneMapper sceneRepository = Mockito.mock(SceneMapper.class);
         TaskServiceImpl taskService = Mockito.mock(TaskServiceImpl.class);
         TaskRecoveryService service = new TaskRecoveryService(taskRepository, sceneRepository, taskService);
 

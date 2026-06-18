@@ -1,8 +1,8 @@
 package com.example.platform.task;
 
 import com.example.platform.common.PageResponse;
+import com.example.platform.repository.mapper.TestRepositoryMapper;
 import com.example.platform.repository.model.TestRepositoryEntity;
-import com.example.platform.repository.model.TestRepositoryJpaRepository;
 import com.example.platform.runner.service.DockerRunnerCommandExecutor;
 import com.example.platform.runner.service.DockerRunnerProperties;
 import com.example.platform.runner.service.LocalRunnerCommandExecutor;
@@ -15,8 +15,8 @@ import com.example.platform.runner.service.RunnerExecutionServiceImpl;
 import com.example.platform.runner.service.RunnerMode;
 import com.example.platform.runner.service.RunnerProperties;
 import com.example.platform.runner.service.RunnerWorkspaceService;
+import com.example.platform.scene.mapper.SceneMapper;
 import com.example.platform.scene.model.SceneEntity;
-import com.example.platform.scene.model.SceneJpaRepository;
 import com.example.platform.storage.service.ObjectStorageService;
 import com.example.platform.task.dto.SceneTaskListResponse;
 import com.example.platform.task.dto.TaskStageLogResponse;
@@ -714,7 +714,7 @@ class TaskExecutionServiceTest {
     @Test
     void shouldExposeNotFoundWhenListingTasksBySceneForMissingScene() {
         TestContext context = new TestContext();
-        Mockito.when(context.sceneRepository.existsById(999L)).thenReturn(false);
+        Mockito.when(context.sceneRepository.findById(999L)).thenReturn(Optional.empty());
 
         ResponseStatusException exception = org.junit.jupiter.api.Assertions.assertThrows(
                 ResponseStatusException.class,
@@ -748,8 +748,8 @@ class TaskExecutionServiceTest {
     }
 
     private static final class TestContext {
-        private final SceneJpaRepository sceneRepository = Mockito.mock(SceneJpaRepository.class);
-        private final TestRepositoryJpaRepository repositoryRepository = Mockito.mock(TestRepositoryJpaRepository.class);
+        private final SceneMapper sceneRepository = Mockito.mock(SceneMapper.class);
+        private final TestRepositoryMapper repositoryRepository = Mockito.mock(TestRepositoryMapper.class);
         private final TaskJpaRepository taskRepository = Mockito.mock(TaskJpaRepository.class);
         private final ArtifactJpaRepository artifactRepository = Mockito.mock(ArtifactJpaRepository.class);
         private final CaseResultJpaRepository caseResultRepository = Mockito.mock(CaseResultJpaRepository.class);

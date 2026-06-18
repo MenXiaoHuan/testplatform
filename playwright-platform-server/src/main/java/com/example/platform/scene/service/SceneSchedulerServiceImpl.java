@@ -1,7 +1,7 @@
 package com.example.platform.scene.service;
 
+import com.example.platform.scene.mapper.SceneMapper;
 import com.example.platform.scene.model.SceneEntity;
-import com.example.platform.scene.model.SceneJpaRepository;
 import com.example.platform.task.service.TaskService;
 import java.time.LocalDateTime;
 import org.slf4j.Logger;
@@ -12,16 +12,16 @@ import org.springframework.stereotype.Service;
 public class SceneSchedulerServiceImpl implements SceneSchedulerService {
     private static final Logger log = LoggerFactory.getLogger(SceneSchedulerServiceImpl.class);
 
-    private final SceneJpaRepository sceneRepository;
+    private final SceneMapper sceneMapper;
     private final SceneScheduleLeaseService leaseService;
     private final TaskService taskService;
     private final SceneScheduleTimeResolver sceneScheduleTimeResolver = new SceneScheduleTimeResolver();
 
     public SceneSchedulerServiceImpl(
-            SceneJpaRepository sceneRepository,
+            SceneMapper sceneMapper,
             SceneScheduleLeaseService leaseService,
             TaskService taskService) {
-        this.sceneRepository = sceneRepository;
+        this.sceneMapper = sceneMapper;
         this.leaseService = leaseService;
         this.taskService = taskService;
     }
@@ -29,7 +29,7 @@ public class SceneSchedulerServiceImpl implements SceneSchedulerService {
     @Override
     public void triggerDueScenes(LocalDateTime now) {
         initializeNextRunAtForLegacyScenes(now);
-        for (SceneEntity scene : sceneRepository.findDueScheduledScenes(now)) {
+        for (SceneEntity scene : sceneMapper.findDueScheduledScenes(now)) {
             LocalDateTime plannedFireAt = scene.getNextRunAt();
             if (plannedFireAt == null) {
                 continue;
@@ -39,7 +39,7 @@ public class SceneSchedulerServiceImpl implements SceneSchedulerService {
             }
             String cronExpression = scene.getCronExpression();
             scene.setNextRunAt(sceneScheduleTimeResolver.resolveNextRunAfter(cronExpression, plannedFireAt));
-            sceneRepository.save(scene);
+            sceneMapper.update(scene);
             try {
                 taskService.createScheduledTask(scene.getId(), "cron:" + cronExpression);
             } catch (RuntimeException exception) {
@@ -53,14 +53,14 @@ public class SceneSchedulerServiceImpl implements SceneSchedulerService {
     }
 
     private void initializeNextRunAtForLegacyScenes(LocalDateTime now) {
-        for (SceneEntity scene : sceneRepository.findAllByScheduleEnabledTrueAndNextRunAtIsNullOrderByIdAsc()) {
+        for (SceneEntity scene : sceneMapper.findAllByScheduleEnabledTrueAndNextRunAtIsNullOrderByIdAsc()) {
             LocalDateTime nextRunAt = sceneScheduleTimeResolver.resolveNextRunAt(
                     scene.getScheduleEnabled(),
                     scene.getCronExpression(),
                     now);
             if (nextRunAt != null) {
                 scene.setNextRunAt(nextRunAt);
-                sceneRepository.save(scene);
+                sceneMapper.update(scene);
             }
         }
     }
