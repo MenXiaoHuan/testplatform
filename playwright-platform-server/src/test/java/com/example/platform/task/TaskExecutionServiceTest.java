@@ -3,12 +3,16 @@ package com.example.platform.task;
 import com.example.platform.common.PageResponse;
 import com.example.platform.repository.model.TestRepositoryEntity;
 import com.example.platform.repository.model.TestRepositoryJpaRepository;
+import com.example.platform.runner.service.DockerRunnerProperties;
+import com.example.platform.runner.service.LocalRunnerCommandExecutor;
 import com.example.platform.runner.service.RunnerCommandExecutor;
-import com.example.platform.runner.service.RunnerCommandExecutorImpl;
+import com.example.platform.runner.service.RunnerCommandExecutorConfig;
 import com.example.platform.runner.service.RunnerCommandRequest;
 import com.example.platform.runner.service.RunnerCommandResult;
 import com.example.platform.runner.service.RunnerExecutionService;
 import com.example.platform.runner.service.RunnerExecutionServiceImpl;
+import com.example.platform.runner.service.RunnerMode;
+import com.example.platform.runner.service.RunnerProperties;
 import com.example.platform.runner.service.RunnerWorkspaceService;
 import com.example.platform.scene.model.SceneEntity;
 import com.example.platform.scene.model.SceneJpaRepository;
@@ -44,6 +48,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mockito;
+import org.springframework.stereotype.Service;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.web.server.ResponseStatusException;
@@ -322,7 +327,7 @@ class TaskExecutionServiceTest {
 
     @Test
     void shouldRestoreInterruptFlagWhenRunnerExecutionIsInterrupted() throws Exception {
-        RunnerExecutionServiceImpl service = new RunnerExecutionServiceImpl();
+        RunnerExecutionServiceImpl service = new RunnerExecutionServiceImpl(new LocalRunnerCommandExecutor());
         AtomicReference<Throwable> failure = new AtomicReference<>();
         AtomicBoolean interrupted = new AtomicBoolean(false);
 
@@ -348,7 +353,7 @@ class TaskExecutionServiceTest {
 
     @Test
     void shouldCaptureCombinedLogOutputToFile() throws Exception {
-        RunnerCommandExecutor executor = new RunnerCommandExecutorImpl();
+        RunnerCommandExecutor executor = new LocalRunnerCommandExecutor();
         RunnerCommandRequest request = new RunnerCommandRequest(
                 tempDir,
                 "printf 'line1\\nline2\\n'",
@@ -363,6 +368,35 @@ class TaskExecutionServiceTest {
         assertThat(result.canceled()).isFalse();
         assertThat(result.lineCount()).isEqualTo(2);
         assertThat(Files.readString(result.combinedLogFile())).contains("line1").contains("line2");
+    }
+
+    @Test
+    void shouldCreateLocalRunnerCommandExecutorFromConfiguration() {
+        RunnerProperties runnerProperties = new RunnerProperties();
+        runnerProperties.setMode(RunnerMode.LOCAL);
+        RunnerCommandExecutorConfig config = new RunnerCommandExecutorConfig();
+
+        RunnerCommandExecutor executor = config.runnerCommandExecutor(runnerProperties, new DockerRunnerProperties());
+
+        assertThat(executor).isInstanceOf(LocalRunnerCommandExecutor.class);
+    }
+
+    @Test
+    void shouldTemporarilyUseLocalRunnerCommandExecutorForDockerMode() {
+        RunnerProperties runnerProperties = new RunnerProperties();
+        runnerProperties.setMode(RunnerMode.DOCKER);
+        RunnerCommandExecutorConfig config = new RunnerCommandExecutorConfig();
+
+        RunnerCommandExecutor executor = config.runnerCommandExecutor(runnerProperties, new DockerRunnerProperties());
+
+        assertThat(executor).isInstanceOf(LocalRunnerCommandExecutor.class);
+    }
+
+    @Test
+    void shouldNotRegisterLegacyRunnerCommandExecutorImplAsSpringBean() throws Exception {
+        Class<?> legacyExecutor = Class.forName("com.example.platform.runner.service.RunnerCommandExecutorImpl");
+
+        assertThat(legacyExecutor.getAnnotation(Service.class)).isNull();
     }
 
     @Test

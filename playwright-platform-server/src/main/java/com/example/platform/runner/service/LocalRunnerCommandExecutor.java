@@ -12,7 +12,7 @@ import java.time.Instant;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
-public class RunnerCommandExecutorImpl implements RunnerCommandExecutor {
+public class LocalRunnerCommandExecutor implements RunnerCommandExecutor {
     @Override
     public RunnerCommandResult execute(RunnerCommandRequest request) {
         Instant startedAt = Instant.now();

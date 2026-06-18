@@ -13,10 +13,6 @@ public class RunnerExecutionServiceImpl implements RunnerExecutionService {
 
     private final RunnerCommandExecutor commandExecutor;
 
-    public RunnerExecutionServiceImpl() {
-        this(new RunnerCommandExecutorImpl());
-    }
-
     public RunnerExecutionServiceImpl(RunnerCommandExecutor commandExecutor) {
         this.commandExecutor = commandExecutor;
     }
