@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.platform.scene.mapper.SceneScheduleStateMapper">
+    <resultMap id="SceneScheduleStateResultMap" type="com.example.platform.scene.model.SceneScheduleStateEntity">
+        <id property="sceneId" column="scene_id"/>
+        <result property="lastPlannedFireAt" column="last_planned_fire_at"/>
+        <result property="lastTriggeredAt" column="last_triggered_at"/>
+        <result property="lastTaskId" column="last_task_id"/>
+        <result property="leaseOwner" column="lease_owner"/>
+        <result property="leaseUntil" column="lease_until"/>
+        <result property="version" column="version"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <select id="findBySceneId" resultMap="SceneScheduleStateResultMap">
+        select scene_id, last_planned_fire_at, last_triggered_at, last_task_id,
+               lease_owner, lease_until, version, updated_at
+        from scene_schedule_state
+        where scene_id = #{sceneId}
+    </select>
+
+    <insert id="insert" parameterType="com.example.platform.scene.model.SceneScheduleStateEntity">
+        insert into scene_schedule_state (
+            scene_id, last_planned_fire_at, last_triggered_at, last_task_id,
+            lease_owner, lease_until, version
+        ) values (
+            #{sceneId}, #{lastPlannedFireAt}, #{lastTriggeredAt}, #{lastTaskId},
+            #{leaseOwner}, #{leaseUntil}, #{version}
+        )
+    </insert>
+
+    <update id="update" parameterType="com.example.platform.scene.model.SceneScheduleStateEntity">
+        update scene_schedule_state
+        set last_planned_fire_at = #{lastPlannedFireAt},
+            last_triggered_at = #{lastTriggeredAt},
+            last_task_id = #{lastTaskId},
+            lease_owner = #{leaseOwner},
+            lease_until = #{leaseUntil},
+            version = #{version}
+        where scene_id = #{sceneId}
+    </update>
+</mapper>

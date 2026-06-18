@@ -1,0 +1,139 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.platform.scene.mapper.SceneMapper">
+    <resultMap id="SceneResultMap" type="com.example.platform.scene.model.SceneEntity">
+        <id property="id" column="id"/>
+        <result property="repoId" column="repo_id"/>
+        <result property="name" column="name"/>
+        <result property="description" column="description"/>
+        <result property="branch" column="branch"/>
+        <result property="testSelectorType" column="test_selector_type"/>
+        <result property="testSelectorValue" column="test_selector_value"/>
+        <result property="projectName" column="project_name"/>
+        <result property="browser" column="browser"/>
+        <result property="envJson" column="env_json"/>
+        <result property="runCommand" column="run_command"/>
+        <result property="scheduleEnabled" column="schedule_enabled"/>
+        <result property="cronExpression" column="cron_expression"/>
+        <result property="nextRunAt" column="next_run_at"/>
+        <result property="lastRunAt" column="last_run_at"/>
+        <result property="lastTaskStatus" column="last_task_status"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <sql id="SceneColumns">
+        id, repo_id, name, description, branch, test_selector_type, test_selector_value,
+        project_name, browser, env_json, run_command, schedule_enabled, cron_expression,
+        next_run_at, last_run_at, last_task_status, created_at, updated_at
+    </sql>
+
+    <insert id="insert" parameterType="com.example.platform.scene.model.SceneEntity"
+            useGeneratedKeys="true" keyProperty="id">
+        insert into scene (
+            repo_id, name, description, branch, test_selector_type, test_selector_value,
+            project_name, browser, env_json, run_command, schedule_enabled, cron_expression,
+            next_run_at, last_run_at, last_task_status
+        ) values (
+            #{repoId}, #{name}, #{description}, #{branch}, #{testSelectorType}, #{testSelectorValue},
+            #{projectName}, #{browser}, #{envJson}, #{runCommand}, #{scheduleEnabled}, #{cronExpression},
+            #{nextRunAt}, #{lastRunAt}, #{lastTaskStatus}
+        )
+    </insert>
+
+    <update id="update" parameterType="com.example.platform.scene.model.SceneEntity">
+        update scene
+        set repo_id = #{repoId},
+            name = #{name},
+            description = #{description},
+            branch = #{branch},
+            test_selector_type = #{testSelectorType},
+            test_selector_value = #{testSelectorValue},
+            project_name = #{projectName},
+            browser = #{browser},
+            env_json = #{envJson},
+            run_command = #{runCommand},
+            schedule_enabled = #{scheduleEnabled},
+            cron_expression = #{cronExpression},
+            next_run_at = #{nextRunAt},
+            last_run_at = #{lastRunAt},
+            last_task_status = #{lastTaskStatus}
+        where id = #{id}
+    </update>
+
+    <select id="findById" resultMap="SceneResultMap">
+        select <include refid="SceneColumns"/>
+        from scene
+        where id = #{id}
+    </select>
+
+    <select id="findPage" resultMap="SceneResultMap">
+        select <include refid="SceneColumns"/>
+        from scene
+        order by updated_at desc, id desc
+        limit #{limit} offset #{offset}
+    </select>
+
+    <select id="countAll" resultType="long">
+        select count(1)
+        from scene
+    </select>
+
+    <select id="existsByNameIgnoreCase" resultType="boolean">
+        select count(1) > 0
+        from scene
+        where lower(name) = lower(#{name})
+    </select>
+
+    <select id="existsByNameIgnoreCaseAndIdNot" resultType="boolean">
+        select count(1) > 0
+        from scene
+        where lower(name) = lower(#{name})
+          and id &lt;&gt; #{id}
+    </select>
+
+    <select id="findAllByRepoId" resultMap="SceneResultMap">
+        select <include refid="SceneColumns"/>
+        from scene
+        where repo_id = #{repoId}
+        order by id asc
+    </select>
+
+    <select id="findAllByScheduleEnabledTrue" resultMap="SceneResultMap">
+        select <include refid="SceneColumns"/>
+        from scene
+        where schedule_enabled = true
+        order by id asc
+    </select>
+
+    <select id="findDueScheduledScenes" resultMap="SceneResultMap">
+        select <include refid="SceneColumns"/>
+        from scene
+        where schedule_enabled = true
+          and cron_expression is not null
+          and cron_expression &lt;&gt; ''
+          and next_run_at is not null
+          and next_run_at &lt;= #{now}
+        order by next_run_at asc, id asc
+    </select>
+
+    <select id="findAllByScheduleEnabledTrueAndNextRunAtIsNullOrderByIdAsc" resultMap="SceneResultMap">
+        select <include refid="SceneColumns"/>
+        from scene
+        where schedule_enabled = true
+          and next_run_at is null
+        order by id asc
+    </select>
+
+    <delete id="deleteById">
+        delete from scene
+        where id = #{id}
+    </delete>
+
+    <delete id="deleteAllByRepoId">
+        delete from scene
+        where repo_id = #{repoId}
+    </delete>
+</mapper>
