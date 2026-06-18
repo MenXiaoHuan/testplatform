@@ -5,6 +5,7 @@ import com.example.platform.scene.model.SceneScheduleStateEntity;
 import java.time.LocalDateTime;
 import java.util.Optional;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class SceneScheduleLeaseServiceImpl implements SceneScheduleLeaseService {
@@ -15,6 +16,7 @@ public class SceneScheduleLeaseServiceImpl implements SceneScheduleLeaseService 
     }
 
     @Override
+    @Transactional
     public boolean tryAcquire(Long sceneId, LocalDateTime plannedFireAt) {
         Optional<SceneScheduleStateEntity> existing = mapper.findBySceneId(sceneId);
         SceneScheduleStateEntity state = existing.orElseGet(() -> {

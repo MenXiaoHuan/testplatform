@@ -7,6 +7,7 @@ import com.example.platform.repository.model.TestRepositoryEntity;
 import java.util.Optional;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class RepositoryServiceImpl implements RepositoryService {
@@ -31,6 +32,7 @@ public class RepositoryServiceImpl implements RepositoryService {
     }
 
     @Override
+    @Transactional
     public TestRepositoryEntity create(TestRepositoryEntity entity) {
         String normalizedName = normalizeName(entity.getName());
         validateUniqueName(normalizedName, null);
@@ -59,6 +61,7 @@ public class RepositoryServiceImpl implements RepositoryService {
     }
 
     @Override
+    @Transactional
     public TestRepositoryEntity update(Long id, TestRepositoryEntity entity) {
         TestRepositoryEntity existing = get(id);
         String normalizedName = normalizeName(entity.getName());
@@ -79,6 +82,7 @@ public class RepositoryServiceImpl implements RepositoryService {
     }
 
     @Override
+    @Transactional
     public void delete(Long id) {
         repositoryCascadeDeleteService.deleteRepositoryGraph(id);
         invalidateDetail(id);

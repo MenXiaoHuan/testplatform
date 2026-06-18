@@ -33,6 +33,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.http.HttpStatus;
 
@@ -51,6 +52,7 @@ public class TaskServiceImpl implements TaskService {
     private final TaskExecutionOrchestrator taskExecutionOrchestrator;
     private final TaskQueryViewService taskQueryViewService;
     private final TaskCreationService taskCreationService;
+    private final TaskExecutionMutationService taskExecutionMutationService;
     private final DetailCacheService detailCacheService;
 
     @Autowired
@@ -69,6 +71,7 @@ public class TaskServiceImpl implements TaskService {
             TaskCommandBuilder taskCommandBuilder,
             TaskCreationService taskCreationService,
             DetailCacheService detailCacheService,
+            TaskExecutionMutationService taskExecutionMutationService,
             @Qualifier("taskExecutionExecutor") Executor taskExecutionExecutor,
             TaskStageLogService taskStageLogService,
             TaskExecutionProperties taskExecutionProperties,
@@ -82,6 +85,7 @@ public class TaskServiceImpl implements TaskService {
         this.taskExecutionExecutor = taskExecutionExecutor;
         this.taskStageLogService = taskStageLogService;
         this.taskCreationService = taskCreationService;
+        this.taskExecutionMutationService = taskExecutionMutationService;
         this.detailCacheService = detailCacheService;
         this.taskExecutionOrchestrator = new TaskExecutionOrchestrator(
                 taskRepository,
@@ -93,6 +97,7 @@ public class TaskServiceImpl implements TaskService {
                 taskCaseResultPersistenceService,
                 taskStageLogService,
                 taskExecutionProperties,
+                taskExecutionMutationService,
                 detailCacheService);
         this.taskQueryViewService = new TaskQueryViewService(
                 sceneRepository,
@@ -134,6 +139,7 @@ public class TaskServiceImpl implements TaskService {
                 taskCommandBuilder,
                 new TaskCreationService(sceneRepository, repositoryRepository, taskRepository, taskCommandBuilder, detailCacheService),
                 detailCacheService,
+                new TaskExecutionMutationService(taskRepository, sceneRepository, detailCacheService),
                 Runnable::run,
                 taskStageLogService,
                 new TaskExecutionProperties(),
@@ -172,6 +178,7 @@ public class TaskServiceImpl implements TaskService {
                 taskCommandBuilder,
                 new TaskCreationService(sceneRepository, repositoryRepository, taskRepository, taskCommandBuilder),
                 null,
+                new TaskExecutionMutationService(taskRepository, sceneRepository),
                 Runnable::run,
                 taskStageLogService,
                 new TaskExecutionProperties(),
@@ -210,6 +217,7 @@ public class TaskServiceImpl implements TaskService {
                 taskCommandBuilder,
                 new TaskCreationService(sceneRepository, repositoryRepository, taskRepository, taskCommandBuilder),
                 null,
+                new TaskExecutionMutationService(taskRepository, sceneRepository),
                 taskExecutionExecutor,
                 new NoopTaskStageLogService(),
                 new TaskExecutionProperties(),
@@ -249,6 +257,7 @@ public class TaskServiceImpl implements TaskService {
                 taskCommandBuilder,
                 new TaskCreationService(sceneRepository, repositoryRepository, taskRepository, taskCommandBuilder, detailCacheService),
                 detailCacheService,
+                new TaskExecutionMutationService(taskRepository, sceneRepository, detailCacheService),
                 taskExecutionExecutor,
                 new NoopTaskStageLogService(),
                 new TaskExecutionProperties(),
@@ -286,6 +295,7 @@ public class TaskServiceImpl implements TaskService {
                 new TaskCommandBuilderImpl(),
                 new TaskCreationService(sceneRepository, repositoryRepository, taskRepository, new TaskCommandBuilderImpl()),
                 null,
+                new TaskExecutionMutationService(taskRepository, sceneRepository),
                 Runnable::run,
                 taskStageLogService,
                 new TaskExecutionProperties(),
@@ -324,6 +334,7 @@ public class TaskServiceImpl implements TaskService {
                 taskCommandBuilder,
                 new TaskCreationService(sceneRepository, repositoryRepository, taskRepository, taskCommandBuilder, detailCacheService),
                 detailCacheService,
+                new TaskExecutionMutationService(taskRepository, sceneRepository, detailCacheService),
                 Runnable::run,
                 new NoopTaskStageLogService(),
                 new TaskExecutionProperties(),
@@ -361,6 +372,7 @@ public class TaskServiceImpl implements TaskService {
                 taskCommandBuilder,
                 new TaskCreationService(sceneRepository, repositoryRepository, taskRepository, taskCommandBuilder),
                 null,
+                new TaskExecutionMutationService(taskRepository, sceneRepository),
                 Runnable::run,
                 new NoopTaskStageLogService(),
                 new TaskExecutionProperties(),
@@ -397,6 +409,7 @@ public class TaskServiceImpl implements TaskService {
                 new TaskCommandBuilderImpl(),
                 new TaskCreationService(sceneRepository, repositoryRepository, taskRepository, new TaskCommandBuilderImpl()),
                 null,
+                new TaskExecutionMutationService(taskRepository, sceneRepository),
                 Runnable::run,
                 new NoopTaskStageLogService(),
                 new TaskExecutionProperties(),
@@ -463,16 +476,14 @@ public class TaskServiceImpl implements TaskService {
         if (task.getQueuedAt() != null) {
             task.setDurationMs(java.time.Duration.between(task.getQueuedAt(), task.getFinishedAt()).toMillis());
         }
-        taskRepository.update(task);
-        invalidateTaskDetail(task.getId());
         SceneEntity scene = sceneRepository.findById(task.getSceneId()).orElse(null);
         if (scene == null) {
+            taskExecutionMutationService.saveTask(task);
             return;
         }
         scene.setLastTaskStatus(task.getStatus());
         scene.setLastRunAt(task.getFinishedAt());
-        sceneRepository.update(scene);
-        invalidateSceneDetail(scene.getId());
+        taskExecutionMutationService.saveTaskAndScene(task, scene);
     }
 
     private int normalizePage(int page) {
@@ -558,6 +569,7 @@ public class TaskServiceImpl implements TaskService {
     }
 
     @Override
+    @Transactional
     public void cancelTask(Long taskId, String operatorName) {
         TaskEntity task = taskRepository.findById(taskId)
                 .orElseThrow(() -> new IllegalArgumentException("Task not found: " + taskId));

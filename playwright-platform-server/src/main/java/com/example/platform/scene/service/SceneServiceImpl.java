@@ -16,6 +16,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class SceneServiceImpl implements SceneService {
@@ -62,6 +63,7 @@ public class SceneServiceImpl implements SceneService {
     }
 
     @Override
+    @Transactional
     public SceneEntity create(SceneEntity entity) {
         validateRepository(entity.getRepoId());
         SceneEntity normalized = normalizeSelector(entity);
@@ -93,6 +95,7 @@ public class SceneServiceImpl implements SceneService {
     }
 
     @Override
+    @Transactional
     public SceneEntity update(Long id, SceneEntity entity) {
         SceneEntity existing = get(id);
         validateRepository(entity.getRepoId());
@@ -119,6 +122,7 @@ public class SceneServiceImpl implements SceneService {
     }
 
     @Override
+    @Transactional
     public void delete(Long id) {
         sceneCascadeDeleteService.deleteSceneGraph(id);
         invalidateDetail(id);

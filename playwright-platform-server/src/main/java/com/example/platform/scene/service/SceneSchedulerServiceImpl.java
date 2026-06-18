@@ -7,6 +7,7 @@ import java.time.LocalDateTime;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class SceneSchedulerServiceImpl implements SceneSchedulerService {
@@ -27,6 +28,7 @@ public class SceneSchedulerServiceImpl implements SceneSchedulerService {
     }
 
     @Override
+    @Transactional
     public void triggerDueScenes(LocalDateTime now) {
         initializeNextRunAtForLegacyScenes(now);
         for (SceneEntity scene : sceneMapper.findDueScheduledScenes(now)) {

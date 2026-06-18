@@ -34,6 +34,7 @@ final class TaskExecutionOrchestrator {
     private final TaskCaseResultPersistenceService taskCaseResultPersistenceService;
     private final TaskStageLogService taskStageLogService;
     private final TaskExecutionProperties taskExecutionProperties;
+    private final TaskExecutionMutationService taskExecutionMutationService;
     private final DetailCacheService detailCacheService;
 
     TaskExecutionOrchestrator(
@@ -46,6 +47,7 @@ final class TaskExecutionOrchestrator {
             TaskCaseResultPersistenceService taskCaseResultPersistenceService,
             TaskStageLogService taskStageLogService,
             TaskExecutionProperties taskExecutionProperties,
+            TaskExecutionMutationService taskExecutionMutationService,
             DetailCacheService detailCacheService) {
         this.taskRepository = taskRepository;
         this.sceneMapper = sceneMapper;
@@ -56,6 +58,7 @@ final class TaskExecutionOrchestrator {
         this.taskCaseResultPersistenceService = taskCaseResultPersistenceService;
         this.taskStageLogService = taskStageLogService;
         this.taskExecutionProperties = taskExecutionProperties;
+        this.taskExecutionMutationService = taskExecutionMutationService;
         this.detailCacheService = detailCacheService;
     }
 
@@ -68,8 +71,7 @@ final class TaskExecutionOrchestrator {
             }
             task.setStatus("RUNNING");
             task.setCurrentStage("PREPARING");
-            taskRepository.update(task);
-            invalidateTaskDetail(task.getId());
+            taskExecutionMutationService.saveTask(task);
             Path workspace = runnerWorkspaceService.prepareWorkspace(
                     repository.getGitUrl(),
                     task.getResolvedBranch(),
@@ -78,8 +80,7 @@ final class TaskExecutionOrchestrator {
             Map<String, String> platformEnv = platformEnv();
             ResolvedExecutionPaths executionPaths = resolveExecutionPaths(executionDirectory, repository);
             task.setCurrentStage("INSTALLING");
-            taskRepository.update(task);
-            invalidateTaskDetail(task.getId());
+            taskExecutionMutationService.saveTask(task);
             RunnerCommandResult installResult = runStageWithFallback(
                     task,
                     workspace,
@@ -98,8 +99,7 @@ final class TaskExecutionOrchestrator {
             }
             if (installStatus == 0) {
                 task.setCurrentStage("TESTING");
-                taskRepository.update(task);
-                invalidateTaskDetail(task.getId());
+                taskExecutionMutationService.saveTask(task);
                 RunnerCommandResult testResult = runStageWithFallback(
                         task,
                         workspace,
@@ -117,8 +117,7 @@ final class TaskExecutionOrchestrator {
                     return finalizeTask(task, scene, "TIMEOUT", "TIMEOUT", "TESTING 阶段超时");
                 }
                 task.setCurrentStage("ARCHIVING");
-                taskRepository.update(task);
-                invalidateTaskDetail(task.getId());
+                taskExecutionMutationService.saveTask(task);
                 continuePostProcessing(task, executionDirectory, executionPaths, runStatus == 0);
             } else {
                 task.setResultCode("INSTALL_FAILED");
@@ -145,9 +144,8 @@ final class TaskExecutionOrchestrator {
             task.setResultCode("TEST_FAILED");
             task.setResultMessage("测试执行失败");
         }
-        taskRepository.update(task);
-        invalidateTaskDetail(task.getId());
-        refreshSceneSummary(scene, task);
+        taskExecutionMutationService.saveTask(task);
+        taskExecutionMutationService.refreshSceneSummary(scene, task);
         return task;
     }
 
@@ -318,9 +316,8 @@ final class TaskExecutionOrchestrator {
         if (task.getStartedAt() != null) {
             task.setDurationMs(Duration.between(task.getStartedAt(), task.getFinishedAt()).toMillis());
         }
-        taskRepository.update(task);
-        invalidateTaskDetail(task.getId());
-        refreshSceneSummary(scene, task);
+        taskExecutionMutationService.saveTask(task);
+        taskExecutionMutationService.refreshSceneSummary(scene, task);
         return task;
     }
 
@@ -333,15 +330,6 @@ final class TaskExecutionOrchestrator {
             return;
         }
         task.setLogUrl(task.getLogUrl() + "; " + message);
-    }
-
-    private void refreshSceneSummary(SceneEntity scene, TaskEntity task) {
-        TaskEntity summarySource = taskRepository.findFirstBySceneIdOrderByCreatedAtDescIdDesc(scene.getId())
-                .orElse(task);
-        scene.setLastRunAt(summarySource.getFinishedAt());
-        scene.setLastTaskStatus(summarySource.getStatus());
-        sceneMapper.update(scene);
-        invalidateSceneDetail(scene.getId());
     }
 
     private void invalidateTaskDetail(Long taskId) {
