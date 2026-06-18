@@ -1,20 +1,28 @@
 package com.example.platform.scene;
 
+import com.example.platform.common.PageResponse;
+import com.example.platform.repository.mapper.TestRepositoryMapper;
 import com.example.platform.repository.model.TestRepositoryEntity;
-import com.example.platform.repository.model.TestRepositoryJpaRepository;
+import com.example.platform.scene.mapper.SceneMapper;
 import com.example.platform.scene.model.SceneEntity;
 import com.example.platform.scene.model.SceneJpaRepository;
 import com.example.platform.scene.service.SceneCascadeDeleteService;
 import com.example.platform.scene.service.SceneScheduleLeaseService;
 import com.example.platform.scene.service.SceneSchedulerServiceImpl;
 import com.example.platform.scene.service.SceneServiceImpl;
+import com.example.platform.task.dto.CaseResultResponse;
+import com.example.platform.task.dto.SceneTaskListResponse;
+import com.example.platform.task.dto.TaskDetailResponse;
+import com.example.platform.task.dto.TaskStageLogResponse;
+import com.example.platform.task.model.ArtifactEntity;
+import com.example.platform.task.model.CaseResultEntity;
+import com.example.platform.task.model.TaskEntity;
 import com.example.platform.task.service.TaskService;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.springframework.data.domain.PageImpl;
-import org.springframework.data.domain.PageRequest;
-import java.util.Optional;
-import java.util.List;
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
@@ -24,10 +32,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class SceneServiceImplTest {
     @Test
     void shouldUpdateDescriptionAndScheduleFields() {
-        SceneJpaRepository repository = Mockito.mock(SceneJpaRepository.class);
-        TestRepositoryJpaRepository repositoryJpaRepository = Mockito.mock(TestRepositoryJpaRepository.class);
+        SceneMapper sceneMapper = Mockito.mock(SceneMapper.class);
+        TestRepositoryMapper repositoryMapper = Mockito.mock(TestRepositoryMapper.class);
         SceneCascadeDeleteService sceneCascadeDeleteService = Mockito.mock(SceneCascadeDeleteService.class);
-        SceneServiceImpl service = new SceneServiceImpl(repository, repositoryJpaRepository, sceneCascadeDeleteService, new ObjectMapper());
+        SceneServiceImpl service = new SceneServiceImpl(sceneMapper, repositoryMapper, sceneCascadeDeleteService, new ObjectMapper());
 
         SceneEntity existing = new SceneEntity();
         existing.setId(1L);
@@ -56,9 +64,9 @@ class SceneServiceImplTest {
         targetRepository.setId(2L);
         targetRepository.setEnabled(true);
 
-        Mockito.when(repository.findById(1L)).thenReturn(Optional.of(existing));
-        Mockito.when(repositoryJpaRepository.findById(2L)).thenReturn(Optional.of(targetRepository));
-        Mockito.when(repository.save(existing)).thenReturn(existing);
+        Mockito.when(sceneMapper.findById(1L)).thenReturn(Optional.of(existing));
+        Mockito.when(repositoryMapper.findById(2L)).thenReturn(Optional.of(targetRepository));
+        Mockito.when(sceneMapper.update(existing)).thenReturn(1);
 
         SceneEntity result = service.update(1L, update);
 
@@ -72,13 +80,14 @@ class SceneServiceImplTest {
         assertThat(result.getScheduleEnabled()).isTrue();
         assertThat(result.getCronExpression()).isEqualTo("0 0/30 * * * ?");
         assertThat(result.getNextRunAt()).isNotNull();
+        Mockito.verify(sceneMapper).update(existing);
     }
 
     @Test
     void shouldCreateScheduledTaskWhenCronIsDueAndLeaseAcquired() {
         SceneJpaRepository repository = Mockito.mock(SceneJpaRepository.class);
-        SceneScheduleLeaseService leaseService = Mockito.mock(SceneScheduleLeaseService.class);
-        TaskService taskService = Mockito.mock(TaskService.class);
+        FakeSceneScheduleLeaseService leaseService = new FakeSceneScheduleLeaseService(true);
+        FakeTaskService taskService = new FakeTaskService();
         SceneSchedulerServiceImpl service = new SceneSchedulerServiceImpl(repository, leaseService, taskService);
 
         SceneEntity scheduled = new SceneEntity();
@@ -90,21 +99,24 @@ class SceneServiceImplTest {
         Mockito.when(repository.findAllByScheduleEnabledTrueAndNextRunAtIsNullOrderByIdAsc()).thenReturn(List.of());
         Mockito.when(repository.findDueScheduledScenes(LocalDateTime.of(2026, 6, 13, 10, 0, 30)))
                 .thenReturn(List.of(scheduled));
-        Mockito.when(leaseService.tryAcquire(11L, LocalDateTime.of(2026, 6, 13, 10, 0))).thenReturn(true);
         Mockito.when(repository.save(scheduled)).thenReturn(scheduled);
 
         service.triggerDueScenes(LocalDateTime.of(2026, 6, 13, 10, 0, 30));
 
         Mockito.verify(repository).findDueScheduledScenes(LocalDateTime.of(2026, 6, 13, 10, 0, 30));
+        assertThat(leaseService.sceneId).isEqualTo(11L);
+        assertThat(leaseService.plannedFireAt).isEqualTo(LocalDateTime.of(2026, 6, 13, 10, 0));
         assertThat(scheduled.getNextRunAt()).isEqualTo(LocalDateTime.of(2026, 6, 13, 10, 5));
-        Mockito.verify(taskService).createScheduledTask(11L, "cron:0 */5 * * * *");
+        assertThat(taskService.scheduledTaskCount).isEqualTo(1);
+        assertThat(taskService.scheduledSceneId).isEqualTo(11L);
+        assertThat(taskService.scheduledTriggerReason).isEqualTo("cron:0 */5 * * * *");
     }
 
     @Test
     void shouldSkipScheduledTaskWhenLeaseIsRejected() {
         SceneJpaRepository repository = Mockito.mock(SceneJpaRepository.class);
-        SceneScheduleLeaseService leaseService = Mockito.mock(SceneScheduleLeaseService.class);
-        TaskService taskService = Mockito.mock(TaskService.class);
+        FakeSceneScheduleLeaseService leaseService = new FakeSceneScheduleLeaseService(false);
+        FakeTaskService taskService = new FakeTaskService();
         SceneSchedulerServiceImpl service = new SceneSchedulerServiceImpl(repository, leaseService, taskService);
 
         SceneEntity scheduled = new SceneEntity();
@@ -116,20 +128,21 @@ class SceneServiceImplTest {
         Mockito.when(repository.findAllByScheduleEnabledTrueAndNextRunAtIsNullOrderByIdAsc()).thenReturn(List.of());
         Mockito.when(repository.findDueScheduledScenes(LocalDateTime.of(2026, 6, 13, 10, 0, 30)))
                 .thenReturn(List.of(scheduled));
-        Mockito.when(leaseService.tryAcquire(11L, LocalDateTime.of(2026, 6, 13, 10, 0))).thenReturn(false);
 
         service.triggerDueScenes(LocalDateTime.of(2026, 6, 13, 10, 0, 30));
 
-        Mockito.verify(taskService, Mockito.never()).createScheduledTask(Mockito.anyLong(), Mockito.anyString());
+        assertThat(leaseService.sceneId).isEqualTo(11L);
+        assertThat(leaseService.plannedFireAt).isEqualTo(LocalDateTime.of(2026, 6, 13, 10, 0));
+        assertThat(taskService.scheduledTaskCount).isZero();
         Mockito.verify(repository, Mockito.never()).save(Mockito.any(SceneEntity.class));
     }
 
     @Test
     void shouldRejectDisabledRepositoryWhenCreatingScene() {
-        SceneJpaRepository repository = Mockito.mock(SceneJpaRepository.class);
-        TestRepositoryJpaRepository repositoryJpaRepository = Mockito.mock(TestRepositoryJpaRepository.class);
+        SceneMapper sceneMapper = Mockito.mock(SceneMapper.class);
+        TestRepositoryMapper repositoryMapper = Mockito.mock(TestRepositoryMapper.class);
         SceneCascadeDeleteService sceneCascadeDeleteService = Mockito.mock(SceneCascadeDeleteService.class);
-        SceneServiceImpl service = new SceneServiceImpl(repository, repositoryJpaRepository, sceneCascadeDeleteService, new ObjectMapper());
+        SceneServiceImpl service = new SceneServiceImpl(sceneMapper, repositoryMapper, sceneCascadeDeleteService, new ObjectMapper());
 
         SceneEntity scene = new SceneEntity();
         scene.setRepoId(7L);
@@ -139,50 +152,79 @@ class SceneServiceImplTest {
         disabledRepository.setId(7L);
         disabledRepository.setEnabled(false);
 
-        Mockito.when(repositoryJpaRepository.findById(7L)).thenReturn(Optional.of(disabledRepository));
+        Mockito.when(repositoryMapper.findById(7L)).thenReturn(Optional.of(disabledRepository));
 
         org.junit.jupiter.api.Assertions.assertThrows(
                 IllegalArgumentException.class,
                 () -> service.create(scene));
-        Mockito.verify(repository, Mockito.never()).save(Mockito.any(SceneEntity.class));
+        Mockito.verify(sceneMapper, Mockito.never()).insert(Mockito.any(SceneEntity.class));
     }
 
     @Test
-    void shouldNormalizeBlankEnvJsonToNullWhenCreatingScene() {
-        SceneJpaRepository repository = Mockito.mock(SceneJpaRepository.class);
-        TestRepositoryJpaRepository repositoryJpaRepository = Mockito.mock(TestRepositoryJpaRepository.class);
+    void shouldRejectMissingRepositoryWhenCreatingScene() {
+        SceneMapper sceneMapper = Mockito.mock(SceneMapper.class);
+        TestRepositoryMapper repositoryMapper = Mockito.mock(TestRepositoryMapper.class);
         SceneCascadeDeleteService sceneCascadeDeleteService = Mockito.mock(SceneCascadeDeleteService.class);
-        SceneServiceImpl service = new SceneServiceImpl(repository, repositoryJpaRepository, sceneCascadeDeleteService, new ObjectMapper());
+        SceneServiceImpl service = new SceneServiceImpl(sceneMapper, repositoryMapper, sceneCascadeDeleteService, new ObjectMapper());
 
         SceneEntity scene = new SceneEntity();
         scene.setRepoId(9L);
         scene.setName("login");
+
+        Mockito.when(repositoryMapper.findById(9L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.create(scene))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("所属仓库不存在，请重新选择");
+        Mockito.verify(sceneMapper, Mockito.never()).insert(Mockito.any(SceneEntity.class));
+    }
+
+    @Test
+    void shouldNormalizeSelectorAndBlankFieldsWhenCreatingScene() {
+        SceneMapper sceneMapper = Mockito.mock(SceneMapper.class);
+        TestRepositoryMapper repositoryMapper = Mockito.mock(TestRepositoryMapper.class);
+        SceneCascadeDeleteService sceneCascadeDeleteService = Mockito.mock(SceneCascadeDeleteService.class);
+        SceneServiceImpl service = new SceneServiceImpl(sceneMapper, repositoryMapper, sceneCascadeDeleteService, new ObjectMapper());
+
+        SceneEntity scene = new SceneEntity();
+        scene.setRepoId(9L);
+        scene.setName(" login ");
         scene.setBranch("main");
-        scene.setTestSelectorType("file");
-        scene.setTestSelectorValue("interview_agent");
+        scene.setMatchValue("interview_agent");
         scene.setBrowser("chromium");
         scene.setRunCommand("npx playwright test");
         scene.setEnvJson("");
+        scene.setCronExpression(" ");
 
         TestRepositoryEntity enabledRepository = new TestRepositoryEntity();
         enabledRepository.setId(9L);
         enabledRepository.setEnabled(true);
 
-        Mockito.when(repositoryJpaRepository.findById(9L)).thenReturn(Optional.of(enabledRepository));
-        Mockito.when(repository.save(Mockito.any(SceneEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        Mockito.when(repositoryMapper.findById(9L)).thenReturn(Optional.of(enabledRepository));
+        Mockito.when(sceneMapper.insert(Mockito.any(SceneEntity.class))).thenAnswer(invocation -> {
+            SceneEntity entity = invocation.getArgument(0);
+            entity.setId(33L);
+            return 1;
+        });
 
         SceneEntity result = service.create(scene);
 
+        assertThat(result.getId()).isEqualTo(33L);
+        assertThat(result.getName()).isEqualTo("login");
+        assertThat(result.getTestSelectorType()).isEqualTo("file");
+        assertThat(result.getTestSelectorValue()).isEqualTo("interview_agent");
+        assertThat(result.getMatchValue()).isEqualTo("interview_agent");
         assertThat(result.getEnvJson()).isNull();
+        assertThat(result.getCronExpression()).isNull();
         assertThat(result.getNextRunAt()).isNull();
     }
 
     @Test
     void shouldRejectDuplicateSceneNameWhenCreating() {
-        SceneJpaRepository repository = Mockito.mock(SceneJpaRepository.class);
-        TestRepositoryJpaRepository repositoryJpaRepository = Mockito.mock(TestRepositoryJpaRepository.class);
+        SceneMapper sceneMapper = Mockito.mock(SceneMapper.class);
+        TestRepositoryMapper repositoryMapper = Mockito.mock(TestRepositoryMapper.class);
         SceneCascadeDeleteService sceneCascadeDeleteService = Mockito.mock(SceneCascadeDeleteService.class);
-        SceneServiceImpl service = new SceneServiceImpl(repository, repositoryJpaRepository, sceneCascadeDeleteService, new ObjectMapper());
+        SceneServiceImpl service = new SceneServiceImpl(sceneMapper, repositoryMapper, sceneCascadeDeleteService, new ObjectMapper());
 
         SceneEntity scene = new SceneEntity();
         scene.setRepoId(9L);
@@ -192,21 +234,21 @@ class SceneServiceImplTest {
         enabledRepository.setId(9L);
         enabledRepository.setEnabled(true);
 
-        Mockito.when(repositoryJpaRepository.findById(9L)).thenReturn(Optional.of(enabledRepository));
-        Mockito.when(repository.existsByNameIgnoreCase("login")).thenReturn(true);
+        Mockito.when(repositoryMapper.findById(9L)).thenReturn(Optional.of(enabledRepository));
+        Mockito.when(sceneMapper.existsByNameIgnoreCase("login")).thenReturn(true);
 
         assertThatThrownBy(() -> service.create(scene))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("场景名称已存在，请更换后重试");
-        Mockito.verify(repository, Mockito.never()).save(Mockito.any(SceneEntity.class));
+        Mockito.verify(sceneMapper, Mockito.never()).insert(Mockito.any(SceneEntity.class));
     }
 
     @Test
     void shouldRejectDuplicateSceneNameWhenUpdating() {
-        SceneJpaRepository repository = Mockito.mock(SceneJpaRepository.class);
-        TestRepositoryJpaRepository repositoryJpaRepository = Mockito.mock(TestRepositoryJpaRepository.class);
+        SceneMapper sceneMapper = Mockito.mock(SceneMapper.class);
+        TestRepositoryMapper repositoryMapper = Mockito.mock(TestRepositoryMapper.class);
         SceneCascadeDeleteService sceneCascadeDeleteService = Mockito.mock(SceneCascadeDeleteService.class);
-        SceneServiceImpl service = new SceneServiceImpl(repository, repositoryJpaRepository, sceneCascadeDeleteService, new ObjectMapper());
+        SceneServiceImpl service = new SceneServiceImpl(sceneMapper, repositoryMapper, sceneCascadeDeleteService, new ObjectMapper());
 
         SceneEntity existing = new SceneEntity();
         existing.setId(1L);
@@ -221,21 +263,21 @@ class SceneServiceImplTest {
         enabledRepository.setId(9L);
         enabledRepository.setEnabled(true);
 
-        Mockito.when(repository.findById(1L)).thenReturn(Optional.of(existing));
-        Mockito.when(repositoryJpaRepository.findById(9L)).thenReturn(Optional.of(enabledRepository));
-        Mockito.when(repository.existsByNameIgnoreCaseAndIdNot("checkout", 1L)).thenReturn(true);
+        Mockito.when(sceneMapper.findById(1L)).thenReturn(Optional.of(existing));
+        Mockito.when(repositoryMapper.findById(9L)).thenReturn(Optional.of(enabledRepository));
+        Mockito.when(sceneMapper.existsByNameIgnoreCaseAndIdNot("checkout", 1L)).thenReturn(true);
 
         assertThatThrownBy(() -> service.update(1L, update))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("场景名称已存在，请更换后重试");
-        Mockito.verify(repository, Mockito.never()).save(Mockito.any(SceneEntity.class));
+        Mockito.verify(sceneMapper, Mockito.never()).update(Mockito.any(SceneEntity.class));
     }
 
     @Test
     void shouldInitializeNextRunAtForLegacyScheduledScene() {
         SceneJpaRepository repository = Mockito.mock(SceneJpaRepository.class);
-        SceneScheduleLeaseService leaseService = Mockito.mock(SceneScheduleLeaseService.class);
-        TaskService taskService = Mockito.mock(TaskService.class);
+        FakeSceneScheduleLeaseService leaseService = new FakeSceneScheduleLeaseService(true);
+        FakeTaskService taskService = new FakeTaskService();
         SceneSchedulerServiceImpl service = new SceneSchedulerServiceImpl(repository, leaseService, taskService);
 
         SceneEntity legacyScene = new SceneEntity();
@@ -256,10 +298,10 @@ class SceneServiceImplTest {
 
     @Test
     void shouldReturnPagedSceneCards() {
-        SceneJpaRepository repository = Mockito.mock(SceneJpaRepository.class);
-        TestRepositoryJpaRepository repositoryJpaRepository = Mockito.mock(TestRepositoryJpaRepository.class);
+        SceneMapper sceneMapper = Mockito.mock(SceneMapper.class);
+        TestRepositoryMapper repositoryMapper = Mockito.mock(TestRepositoryMapper.class);
         SceneCascadeDeleteService sceneCascadeDeleteService = Mockito.mock(SceneCascadeDeleteService.class);
-        SceneServiceImpl service = new SceneServiceImpl(repository, repositoryJpaRepository, sceneCascadeDeleteService, new ObjectMapper());
+        SceneServiceImpl service = new SceneServiceImpl(sceneMapper, repositoryMapper, sceneCascadeDeleteService, new ObjectMapper());
 
         SceneEntity scene = new SceneEntity();
         scene.setId(11L);
@@ -271,8 +313,8 @@ class SceneServiceImplTest {
         scene.setCronExpression(null);
         scene.setEnvJson("{\"foo\":\"bar\"}");
 
-        Mockito.when(repository.findAll(Mockito.any(PageRequest.class)))
-                .thenReturn(new PageImpl<>(List.of(scene), PageRequest.of(0, 10), 1));
+        Mockito.when(sceneMapper.findPage(10, 0)).thenReturn(List.of(scene));
+        Mockito.when(sceneMapper.countAll()).thenReturn(1L);
 
         var page = service.listCards(1, 10);
 
@@ -280,5 +322,116 @@ class SceneServiceImplTest {
         assertThat(page.total()).isEqualTo(1);
         assertThat(page.page()).isEqualTo(1);
         assertThat(page.items().getFirst().environmentVariableCount()).isEqualTo(1);
+    }
+
+    @Test
+    void shouldDelegateTriggerScheduledScenesToScheduler() {
+        SceneMapper sceneMapper = Mockito.mock(SceneMapper.class);
+        TestRepositoryMapper repositoryMapper = Mockito.mock(TestRepositoryMapper.class);
+        SceneCascadeDeleteService sceneCascadeDeleteService = Mockito.mock(SceneCascadeDeleteService.class);
+        AtomicReference<LocalDateTime> capturedNow = new AtomicReference<>();
+        com.example.platform.scene.service.SceneSchedulerService schedulerService = capturedNow::set;
+        SceneServiceImpl service = new SceneServiceImpl(
+                sceneMapper,
+                repositoryMapper,
+                sceneCascadeDeleteService,
+                new ObjectMapper(),
+                schedulerService);
+
+        service.triggerScheduledScenes();
+
+        assertThat(capturedNow.get()).isNotNull();
+        Mockito.verify(sceneMapper, Mockito.never()).findAllByScheduleEnabledTrue();
+    }
+
+    private static final class FakeSceneScheduleLeaseService implements SceneScheduleLeaseService {
+        private final boolean acquireResult;
+        private Long sceneId;
+        private LocalDateTime plannedFireAt;
+
+        private FakeSceneScheduleLeaseService(boolean acquireResult) {
+            this.acquireResult = acquireResult;
+        }
+
+        @Override
+        public boolean tryAcquire(Long sceneId, LocalDateTime plannedFireAt) {
+            this.sceneId = sceneId;
+            this.plannedFireAt = plannedFireAt;
+            return acquireResult;
+        }
+    }
+
+    private static final class FakeTaskService implements TaskService {
+        private int scheduledTaskCount;
+        private Long scheduledSceneId;
+        private String scheduledTriggerReason;
+
+        @Override
+        public TaskEntity createAndStart(Long sceneId) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public TaskEntity createAndRun(Long sceneId) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public TaskEntity createScheduledTask(Long sceneId, String triggerReason) {
+            scheduledTaskCount++;
+            scheduledSceneId = sceneId;
+            scheduledTriggerReason = triggerReason;
+            return new TaskEntity();
+        }
+
+        @Override
+        public PageResponse<SceneTaskListResponse> list(int page, int size) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public PageResponse<SceneTaskListResponse> listByScene(Long sceneId, int page, int size) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public TaskDetailResponse getDetail(Long taskId) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public TaskEntity get(Long taskId) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public List<ArtifactEntity> listArtifacts(Long taskId) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public List<CaseResultResponse> listCaseResultResponses(Long taskId) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public List<CaseResultEntity> listCaseResults(Long taskId) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public List<ArtifactEntity> listArtifactsByCaseResult(Long caseResultId) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void cancelTask(Long taskId, String operatorName) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public List<TaskStageLogResponse> listStageLogs(Long taskId) {
+            throw new UnsupportedOperationException();
+        }
     }
 }

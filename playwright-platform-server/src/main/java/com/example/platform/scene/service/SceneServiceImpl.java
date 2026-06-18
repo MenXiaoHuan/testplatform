@@ -1,28 +1,25 @@
 package com.example.platform.scene.service;
 
 import com.example.platform.common.PageResponse;
+import com.example.platform.repository.mapper.TestRepositoryMapper;
 import com.example.platform.repository.model.TestRepositoryEntity;
-import com.example.platform.repository.model.TestRepositoryJpaRepository;
 import com.example.platform.scene.dto.SceneCardResponse;
+import com.example.platform.scene.mapper.SceneMapper;
 import com.example.platform.scene.model.SceneEntity;
-import com.example.platform.scene.model.SceneJpaRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.LocalDateTime;
-import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.scheduling.annotation.Scheduled;
 
 @Service
 public class SceneServiceImpl implements SceneService {
     private static final Logger log = LoggerFactory.getLogger(SceneServiceImpl.class);
-    private final SceneJpaRepository repository;
-    private final TestRepositoryJpaRepository repositoryJpaRepository;
+    private final SceneMapper sceneMapper;
+    private final TestRepositoryMapper repositoryMapper;
     private final SceneCascadeDeleteService sceneCascadeDeleteService;
     private final ObjectMapper objectMapper;
     private final SceneSchedulerService sceneSchedulerService;
@@ -30,24 +27,24 @@ public class SceneServiceImpl implements SceneService {
 
     @Autowired
     public SceneServiceImpl(
-            SceneJpaRepository repository,
-            TestRepositoryJpaRepository repositoryJpaRepository,
+            SceneMapper sceneMapper,
+            TestRepositoryMapper repositoryMapper,
             SceneCascadeDeleteService sceneCascadeDeleteService,
             ObjectMapper objectMapper,
             SceneSchedulerService sceneSchedulerService) {
-        this.repository = repository;
-        this.repositoryJpaRepository = repositoryJpaRepository;
+        this.sceneMapper = sceneMapper;
+        this.repositoryMapper = repositoryMapper;
         this.sceneCascadeDeleteService = sceneCascadeDeleteService;
         this.objectMapper = objectMapper;
         this.sceneSchedulerService = sceneSchedulerService;
     }
 
     public SceneServiceImpl(
-            SceneJpaRepository repository,
-            TestRepositoryJpaRepository repositoryJpaRepository,
+            SceneMapper sceneMapper,
+            TestRepositoryMapper repositoryMapper,
             SceneCascadeDeleteService sceneCascadeDeleteService,
             ObjectMapper objectMapper) {
-        this(repository, repositoryJpaRepository, sceneCascadeDeleteService, objectMapper, null);
+        this(sceneMapper, repositoryMapper, sceneCascadeDeleteService, objectMapper, null);
     }
 
     @Override
@@ -57,23 +54,26 @@ public class SceneServiceImpl implements SceneService {
         normalized.setName(normalizeName(normalized.getName()));
         validateUniqueName(normalized.getName(), null);
         normalized.setNextRunAt(resolveNextRunAt(normalized));
-        return repository.save(normalized);
+        sceneMapper.insert(normalized);
+        return normalized;
     }
 
     @Override
     public PageResponse<SceneCardResponse> listCards(int page, int size) {
         int normalizedPage = normalizePage(page);
         int normalizedSize = normalizeSize(size);
-        var pageData = repository.findAll(PageRequest.of(
-                normalizedPage - 1,
-                normalizedSize,
-                Sort.by(Sort.Order.desc("updatedAt"), Sort.Order.desc("id"))));
-        return PageResponse.from(pageData, normalizedPage, normalizedSize).map(this::toCard);
+        int offset = (normalizedPage - 1) * normalizedSize;
+        return PageResponse.of(
+                        sceneMapper.findPage(normalizedSize, offset),
+                        sceneMapper.countAll(),
+                        normalizedPage,
+                        normalizedSize)
+                .map(this::toCard);
     }
 
     @Override
     public SceneEntity get(Long id) {
-        return repository.findById(id)
+        return sceneMapper.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Scene not found: " + id));
     }
 
@@ -98,7 +98,8 @@ public class SceneServiceImpl implements SceneService {
         existing.setScheduleEnabled(entity.getScheduleEnabled());
         existing.setCronExpression(entity.getCronExpression());
         existing.setNextRunAt(resolveNextRunAt(existing));
-        return repository.save(existing);
+        sceneMapper.update(existing);
+        return existing;
     }
 
     @Override
@@ -108,13 +109,13 @@ public class SceneServiceImpl implements SceneService {
 
     @Override
     public void deleteAllByRepoId(Long repoId) {
-        repository.deleteAllByRepoId(repoId);
+        sceneMapper.deleteAllByRepoId(repoId);
     }
 
     @Scheduled(fixedDelay = 60000)
     public void triggerScheduledScenes() {
         if (sceneSchedulerService == null) {
-            repository.findAllByScheduleEnabledTrue().stream()
+            sceneMapper.findAllByScheduleEnabledTrue().stream()
                     .filter(scene -> scene.getCronExpression() != null && !scene.getCronExpression().isBlank())
                     .forEach(scene -> log.info(
                             "Scheduling hook scanned scene id={}, cron={}",
@@ -161,7 +162,7 @@ public class SceneServiceImpl implements SceneService {
         if (repoId == null || repoId <= 0) {
             throw new IllegalArgumentException("请选择有效的所属仓库");
         }
-        TestRepositoryEntity repositoryEntity = repositoryJpaRepository.findById(repoId)
+        TestRepositoryEntity repositoryEntity = repositoryMapper.findById(repoId)
                 .orElseThrow(() -> new IllegalArgumentException("所属仓库不存在，请重新选择"));
         if (!Boolean.TRUE.equals(repositoryEntity.getEnabled())) {
             throw new IllegalArgumentException("所属仓库已停用，请先启用仓库");
@@ -212,8 +213,8 @@ public class SceneServiceImpl implements SceneService {
 
     private void validateUniqueName(String name, Long currentId) {
         boolean duplicated = currentId == null
-                ? repository.existsByNameIgnoreCase(name)
-                : repository.existsByNameIgnoreCaseAndIdNot(name, currentId);
+                ? sceneMapper.existsByNameIgnoreCase(name)
+                : sceneMapper.existsByNameIgnoreCaseAndIdNot(name, currentId);
         if (duplicated) {
             throw new IllegalStateException("场景名称已存在，请更换后重试");
         }
