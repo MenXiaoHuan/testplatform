@@ -1,9 +1,11 @@
 package com.example.platform.repository;
 
+import com.example.platform.common.PageResponse;
+import com.example.platform.repository.mapper.TestRepositoryMapper;
 import com.example.platform.repository.model.TestRepositoryEntity;
-import com.example.platform.repository.model.TestRepositoryJpaRepository;
 import com.example.platform.repository.service.RepositoryCascadeDeleteService;
 import com.example.platform.repository.service.RepositoryServiceImpl;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -15,7 +17,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class RepositoryServiceImplTest {
     @Test
     void shouldCreateRepositoryWithoutLegacyRuntimeFields() {
-        TestRepositoryJpaRepository repositoryJpaRepository = Mockito.mock(TestRepositoryJpaRepository.class);
+        TestRepositoryMapper repositoryMapper = Mockito.mock(TestRepositoryMapper.class);
         RepositoryCascadeDeleteService repositoryCascadeDeleteService = Mockito.mock(RepositoryCascadeDeleteService.class);
 
         TestRepositoryEntity payload = new TestRepositoryEntity();
@@ -30,22 +32,26 @@ class RepositoryServiceImplTest {
         payload.setArtifactRootRelativePath(".playwright-artifacts");
         payload.setEnabled(true);
 
-        Mockito.when(repositoryJpaRepository.save(Mockito.any(TestRepositoryEntity.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
+        Mockito.when(repositoryMapper.insert(Mockito.any(TestRepositoryEntity.class))).thenAnswer(invocation -> {
+            TestRepositoryEntity entity = invocation.getArgument(0);
+            entity.setId(1L);
+            return 1;
+        });
 
-        RepositoryServiceImpl service = new RepositoryServiceImpl(repositoryJpaRepository, repositoryCascadeDeleteService);
+        RepositoryServiceImpl service = new RepositoryServiceImpl(repositoryMapper, repositoryCascadeDeleteService);
 
         TestRepositoryEntity result = service.create(payload);
 
         ArgumentCaptor<TestRepositoryEntity> captor = ArgumentCaptor.forClass(TestRepositoryEntity.class);
-        Mockito.verify(repositoryJpaRepository).save(captor.capture());
+        Mockito.verify(repositoryMapper).insert(captor.capture());
+        assertThat(result.getId()).isEqualTo(1L);
         assertThat(result.getWorkingDirectory()).isEqualTo("playwright_framework");
         assertThat(captor.getValue().getWorkingDirectory()).isEqualTo("playwright_framework");
     }
 
     @Test
     void shouldUpdateRepositoryWithoutLegacyRuntimeFields() {
-        TestRepositoryJpaRepository repositoryJpaRepository = Mockito.mock(TestRepositoryJpaRepository.class);
+        TestRepositoryMapper repositoryMapper = Mockito.mock(TestRepositoryMapper.class);
         RepositoryCascadeDeleteService repositoryCascadeDeleteService = Mockito.mock(RepositoryCascadeDeleteService.class);
 
         TestRepositoryEntity existing = new TestRepositoryEntity();
@@ -72,40 +78,40 @@ class RepositoryServiceImplTest {
         payload.setArtifactRootRelativePath(".playwright-artifacts");
         payload.setEnabled(false);
 
-        Mockito.when(repositoryJpaRepository.findById(1L)).thenReturn(Optional.of(existing));
-        Mockito.when(repositoryJpaRepository.save(Mockito.any(TestRepositoryEntity.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
+        Mockito.when(repositoryMapper.findById(1L)).thenReturn(Optional.of(existing));
+        Mockito.when(repositoryMapper.update(Mockito.any(TestRepositoryEntity.class))).thenReturn(1);
 
-        RepositoryServiceImpl service = new RepositoryServiceImpl(repositoryJpaRepository, repositoryCascadeDeleteService);
+        RepositoryServiceImpl service = new RepositoryServiceImpl(repositoryMapper, repositoryCascadeDeleteService);
 
         TestRepositoryEntity result = service.update(1L, payload);
 
+        Mockito.verify(repositoryMapper).update(existing);
         assertThat(result.getWorkingDirectory()).isEqualTo("playwright_framework");
         assertThat(result.getDefaultBranch()).isEqualTo("release");
     }
 
     @Test
     void shouldRejectDuplicateRepositoryNameWhenCreating() {
-        TestRepositoryJpaRepository repositoryJpaRepository = Mockito.mock(TestRepositoryJpaRepository.class);
+        TestRepositoryMapper repositoryMapper = Mockito.mock(TestRepositoryMapper.class);
         RepositoryCascadeDeleteService repositoryCascadeDeleteService = Mockito.mock(RepositoryCascadeDeleteService.class);
-        RepositoryServiceImpl service = new RepositoryServiceImpl(repositoryJpaRepository, repositoryCascadeDeleteService);
+        RepositoryServiceImpl service = new RepositoryServiceImpl(repositoryMapper, repositoryCascadeDeleteService);
 
         TestRepositoryEntity payload = new TestRepositoryEntity();
         payload.setName("demo-repo");
 
-        Mockito.when(repositoryJpaRepository.existsByNameIgnoreCase("demo-repo")).thenReturn(true);
+        Mockito.when(repositoryMapper.existsByNameIgnoreCase("demo-repo")).thenReturn(true);
 
         assertThatThrownBy(() -> service.create(payload))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("仓库名称已存在，请更换后重试");
-        Mockito.verify(repositoryJpaRepository, Mockito.never()).save(Mockito.any(TestRepositoryEntity.class));
+        Mockito.verify(repositoryMapper, Mockito.never()).insert(Mockito.any(TestRepositoryEntity.class));
     }
 
     @Test
     void shouldRejectDuplicateRepositoryNameWhenUpdating() {
-        TestRepositoryJpaRepository repositoryJpaRepository = Mockito.mock(TestRepositoryJpaRepository.class);
+        TestRepositoryMapper repositoryMapper = Mockito.mock(TestRepositoryMapper.class);
         RepositoryCascadeDeleteService repositoryCascadeDeleteService = Mockito.mock(RepositoryCascadeDeleteService.class);
-        RepositoryServiceImpl service = new RepositoryServiceImpl(repositoryJpaRepository, repositoryCascadeDeleteService);
+        RepositoryServiceImpl service = new RepositoryServiceImpl(repositoryMapper, repositoryCascadeDeleteService);
 
         TestRepositoryEntity existing = new TestRepositoryEntity();
         existing.setId(1L);
@@ -114,12 +120,45 @@ class RepositoryServiceImplTest {
         TestRepositoryEntity payload = new TestRepositoryEntity();
         payload.setName("demo-repo");
 
-        Mockito.when(repositoryJpaRepository.findById(1L)).thenReturn(Optional.of(existing));
-        Mockito.when(repositoryJpaRepository.existsByNameIgnoreCaseAndIdNot("demo-repo", 1L)).thenReturn(true);
+        Mockito.when(repositoryMapper.findById(1L)).thenReturn(Optional.of(existing));
+        Mockito.when(repositoryMapper.existsByNameIgnoreCaseAndIdNot("demo-repo", 1L)).thenReturn(true);
 
         assertThatThrownBy(() -> service.update(1L, payload))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("仓库名称已存在，请更换后重试");
-        Mockito.verify(repositoryJpaRepository, Mockito.never()).save(Mockito.any(TestRepositoryEntity.class));
+        Mockito.verify(repositoryMapper, Mockito.never()).update(Mockito.any(TestRepositoryEntity.class));
+    }
+
+    @Test
+    void shouldNormalizePaginationWhenListingRepositories() {
+        TestRepositoryMapper repositoryMapper = Mockito.mock(TestRepositoryMapper.class);
+        RepositoryServiceImpl service = new RepositoryServiceImpl(
+                repositoryMapper,
+                Mockito.mock(RepositoryCascadeDeleteService.class));
+        TestRepositoryEntity entity = new TestRepositoryEntity();
+        entity.setId(1L);
+        Mockito.when(repositoryMapper.countAll()).thenReturn(1L);
+        Mockito.when(repositoryMapper.findPage(100, 0)).thenReturn(List.of(entity));
+
+        PageResponse<TestRepositoryEntity> response = service.list(0, 200);
+
+        assertThat(response.page()).isEqualTo(1);
+        assertThat(response.size()).isEqualTo(100);
+        assertThat(response.total()).isEqualTo(1L);
+        assertThat(response.items()).containsExactly(entity);
+        Mockito.verify(repositoryMapper).findPage(100, 0);
+    }
+
+    @Test
+    void shouldThrowWhenRepositoryNotFound() {
+        TestRepositoryMapper repositoryMapper = Mockito.mock(TestRepositoryMapper.class);
+        RepositoryServiceImpl service = new RepositoryServiceImpl(
+                repositoryMapper,
+                Mockito.mock(RepositoryCascadeDeleteService.class));
+        Mockito.when(repositoryMapper.findById(404L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.get(404L))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Repository not found: 404");
     }
 }

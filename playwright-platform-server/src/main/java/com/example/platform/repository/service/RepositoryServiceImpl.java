@@ -1,19 +1,17 @@
 package com.example.platform.repository.service;
 
 import com.example.platform.common.PageResponse;
-import com.example.platform.repository.model.TestRepositoryJpaRepository;
+import com.example.platform.repository.mapper.TestRepositoryMapper;
 import com.example.platform.repository.model.TestRepositoryEntity;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
 @Service
 public class RepositoryServiceImpl implements RepositoryService {
-    private final TestRepositoryJpaRepository repository;
+    private final TestRepositoryMapper repository;
     private final RepositoryCascadeDeleteService repositoryCascadeDeleteService;
 
     public RepositoryServiceImpl(
-            TestRepositoryJpaRepository repository,
+            TestRepositoryMapper repository,
             RepositoryCascadeDeleteService repositoryCascadeDeleteService) {
         this.repository = repository;
         this.repositoryCascadeDeleteService = repositoryCascadeDeleteService;
@@ -24,18 +22,18 @@ public class RepositoryServiceImpl implements RepositoryService {
         String normalizedName = normalizeName(entity.getName());
         validateUniqueName(normalizedName, null);
         entity.setName(normalizedName);
-        return repository.save(entity);
+        repository.insert(entity);
+        return entity;
     }
 
     @Override
     public PageResponse<TestRepositoryEntity> list(int page, int size) {
         int normalizedPage = normalizePage(page);
         int normalizedSize = normalizeSize(size);
-        return PageResponse.from(
-                repository.findAll(PageRequest.of(
-                        normalizedPage - 1,
-                        normalizedSize,
-                        Sort.by(Sort.Order.desc("updatedAt"), Sort.Order.desc("id")))),
+        int offset = (normalizedPage - 1) * normalizedSize;
+        return PageResponse.of(
+                repository.findPage(normalizedSize, offset),
+                repository.countAll(),
                 normalizedPage,
                 normalizedSize);
     }
@@ -61,7 +59,8 @@ public class RepositoryServiceImpl implements RepositoryService {
         existing.setResultsIndexRelativePath(entity.getResultsIndexRelativePath());
         existing.setArtifactRootRelativePath(entity.getArtifactRootRelativePath());
         existing.setEnabled(entity.getEnabled());
-        return repository.save(existing);
+        repository.update(existing);
+        return existing;
     }
 
     @Override

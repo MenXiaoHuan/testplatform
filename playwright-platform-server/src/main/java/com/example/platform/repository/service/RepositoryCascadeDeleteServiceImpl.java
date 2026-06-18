@@ -1,38 +1,41 @@
 package com.example.platform.repository.service;
 
+import com.example.platform.repository.mapper.TestRepositoryMapper;
 import com.example.platform.repository.model.TestRepositoryEntity;
-import com.example.platform.repository.model.TestRepositoryJpaRepository;
+import com.example.platform.scene.mapper.SceneMapper;
 import com.example.platform.scene.model.SceneEntity;
-import com.example.platform.scene.model.SceneJpaRepository;
 import com.example.platform.scene.service.SceneCascadeDeleteService;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class RepositoryCascadeDeleteServiceImpl implements RepositoryCascadeDeleteService {
-    private final TestRepositoryJpaRepository repositoryRepository;
-    private final SceneJpaRepository sceneRepository;
+    private final TestRepositoryMapper repositoryMapper;
+    private final SceneMapper sceneMapper;
     private final SceneCascadeDeleteService sceneCascadeDeleteService;
 
     public RepositoryCascadeDeleteServiceImpl(
-            TestRepositoryJpaRepository repositoryRepository,
-            SceneJpaRepository sceneRepository,
+            TestRepositoryMapper repositoryMapper,
+            SceneMapper sceneMapper,
             SceneCascadeDeleteService sceneCascadeDeleteService) {
-        this.repositoryRepository = repositoryRepository;
-        this.sceneRepository = sceneRepository;
+        this.repositoryMapper = repositoryMapper;
+        this.sceneMapper = sceneMapper;
         this.sceneCascadeDeleteService = sceneCascadeDeleteService;
     }
 
     @Override
     @Transactional
     public void deleteRepositoryGraph(Long repoId) {
-        TestRepositoryEntity repository = repositoryRepository.findById(repoId)
-                .orElseThrow(() -> new IllegalArgumentException("Repository not found: " + repoId));
-        List<SceneEntity> scenes = sceneRepository.findAllByRepoId(repoId);
+        Optional<TestRepositoryEntity> repository = repositoryMapper.findById(repoId);
+        if (repository.isEmpty()) {
+            return;
+        }
+        List<SceneEntity> scenes = sceneMapper.findAllByRepoId(repoId);
         for (SceneEntity scene : scenes) {
             sceneCascadeDeleteService.deleteSceneGraph(scene.getId());
         }
-        repositoryRepository.delete(repository);
+        repositoryMapper.deleteById(repoId);
     }
 }
