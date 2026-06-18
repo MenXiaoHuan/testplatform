@@ -1,5 +1,6 @@
 package com.example.platform.task;
 
+import com.example.platform.cache.DetailCacheService;
 import com.example.platform.common.PageResponse;
 import com.example.platform.repository.mapper.TestRepositoryMapper;
 import com.example.platform.repository.model.TestRepositoryEntity;
@@ -19,6 +20,7 @@ import com.example.platform.scene.mapper.SceneMapper;
 import com.example.platform.scene.model.SceneEntity;
 import com.example.platform.storage.service.ObjectStorageService;
 import com.example.platform.task.dto.SceneTaskListResponse;
+import com.example.platform.task.dto.TaskDetailResponse;
 import com.example.platform.task.dto.TaskStageLogResponse;
 import com.example.platform.task.model.ArtifactEntity;
 import com.example.platform.task.mapper.ArtifactMapper;
@@ -159,6 +161,8 @@ class TaskExecutionServiceTest {
                 Path.of("/tmp/task-101/playwright_framework"),
                 List.of(".playwright-artifacts"),
                 Map.of());
+        Mockito.verify(context.detailCacheService, Mockito.atLeastOnce()).invalidate("task", 101L);
+        Mockito.verify(context.detailCacheService, Mockito.atLeastOnce()).invalidate("scene", 11L);
     }
 
     @Test
@@ -372,6 +376,7 @@ class TaskExecutionServiceTest {
         assertThat(scene.getLastTaskStatus()).isEqualTo("QUEUED");
         assertThat(scene.getLastRunAt()).isEqualTo(createdTask.getQueuedAt());
         assertThat(scheduledTask.get()).isNotNull();
+        Mockito.verify(context.detailCacheService, Mockito.atLeastOnce()).invalidate("scene", 11L);
         Mockito.verify(context.executionService, Mockito.never()).installDependencies(Mockito.any(), Mockito.anyString(), Mockito.anyMap());
 
         scheduledTask.get().run();
@@ -474,6 +479,71 @@ class TaskExecutionServiceTest {
         assertThat(task.getCancelRequestedAt()).isNotNull();
         assertThat(task.getCancelRequestedBy()).isEqualTo("demo-user");
         assertThat(task.getTriggerUser()).isNull();
+        Mockito.verify(context.detailCacheService).invalidate("task", 101L);
+    }
+
+    @Test
+    void shouldReturnTaskDetailFromDetailCacheHit() {
+        TestContext context = new TestContext();
+        TaskDetailResponse cached = new TaskDetailResponse(
+                101L,
+                11L,
+                21L,
+                "scene",
+                "repo",
+                "SUCCESS",
+                true,
+                "MANUAL",
+                "demo",
+                "manual-run",
+                "main",
+                null,
+                "FINISHED",
+                "SUCCESS",
+                false,
+                null,
+                null,
+                null,
+                null,
+                "centralized-runner",
+                null,
+                "main",
+                "chromium",
+                null,
+                "login.spec.ts",
+                "tests",
+                "npm run test:e2e",
+                0,
+                0,
+                false);
+        Mockito.when(context.detailCacheService.getOrLoad(
+                        Mockito.eq("task"),
+                        Mockito.eq(101L),
+                        Mockito.eq(TaskDetailResponse.class),
+                        Mockito.any()))
+                .thenReturn(Optional.of(cached));
+
+        TaskDetailResponse result = context.service().getDetail(101L);
+
+        assertThat(result).isSameAs(cached);
+        Mockito.verify(context.taskRepository, Mockito.never()).findById(Mockito.anyLong());
+        Mockito.verify(context.artifactRepository, Mockito.never()).findAllByTaskIdOrderByIdAsc(Mockito.anyLong());
+    }
+
+    @Test
+    void shouldThrowWhenTaskDetailEmptyValueIsCached() {
+        TestContext context = new TestContext();
+        Mockito.when(context.detailCacheService.getOrLoad(
+                        Mockito.eq("task"),
+                        Mockito.eq(404L),
+                        Mockito.eq(TaskDetailResponse.class),
+                        Mockito.any()))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> context.service().getDetail(404L))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Task not found: 404");
+        Mockito.verify(context.taskRepository, Mockito.never()).findById(Mockito.anyLong());
     }
 
     @Test
@@ -525,6 +595,8 @@ class TaskExecutionServiceTest {
         assertThat(savedTaskRef[0].getStatus()).isEqualTo("FAILED");
         assertThat(savedTaskRef[0].getResultCode()).isEqualTo("SYSTEM_BUSY");
         assertThat(savedTaskRef[0].getCurrentStage()).isEqualTo("FINISHED");
+        Mockito.verify(context.detailCacheService).invalidate("task", 101L);
+        Mockito.verify(context.detailCacheService, Mockito.atLeastOnce()).invalidate("scene", 11L);
     }
 
     @Test
@@ -762,6 +834,7 @@ class TaskExecutionServiceTest {
         private final TaskCaseResultPersistenceService taskCaseResultPersistenceService = Mockito.mock(TaskCaseResultPersistenceService.class);
         private final ObjectStorageService objectStorageService = Mockito.mock(ObjectStorageService.class);
         private final TaskCommandBuilder taskCommandBuilder = Mockito.mock(TaskCommandBuilder.class);
+        private final DetailCacheService detailCacheService = Mockito.mock(DetailCacheService.class);
 
         private TestContext() {
             Mockito.when(taskCommandBuilder.buildRunCommand(Mockito.any(), Mockito.any())).thenReturn("npm run test:e2e");
@@ -816,6 +889,7 @@ class TaskExecutionServiceTest {
                     taskCaseResultPersistenceService,
                     objectStorageService,
                     taskCommandBuilder,
+                    detailCacheService,
                     "qa-report",
                     "http://minio");
         }
@@ -835,6 +909,7 @@ class TaskExecutionServiceTest {
                     objectStorageService,
                     taskCommandBuilder,
                     executor,
+                    detailCacheService,
                     "qa-report",
                     "http://minio");
         }
@@ -854,6 +929,7 @@ class TaskExecutionServiceTest {
                     objectStorageService,
                     taskCommandBuilder,
                     taskStageLogService,
+                    detailCacheService,
                     "qa-report",
                     "http://minio");
         }

@@ -1,5 +1,6 @@
 package com.example.platform.scene.service;
 
+import com.example.platform.cache.DetailCacheService;
 import com.example.platform.common.PageResponse;
 import com.example.platform.repository.mapper.TestRepositoryMapper;
 import com.example.platform.repository.model.TestRepositoryEntity;
@@ -9,6 +10,7 @@ import com.example.platform.scene.model.SceneEntity;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.LocalDateTime;
+import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,7 +25,17 @@ public class SceneServiceImpl implements SceneService {
     private final SceneCascadeDeleteService sceneCascadeDeleteService;
     private final ObjectMapper objectMapper;
     private final SceneSchedulerService sceneSchedulerService;
+    private final DetailCacheService detailCacheService;
     private final SceneScheduleTimeResolver sceneScheduleTimeResolver = new SceneScheduleTimeResolver();
+
+    public SceneServiceImpl(
+            SceneMapper sceneMapper,
+            TestRepositoryMapper repositoryMapper,
+            SceneCascadeDeleteService sceneCascadeDeleteService,
+            ObjectMapper objectMapper,
+            SceneSchedulerService sceneSchedulerService) {
+        this(sceneMapper, repositoryMapper, sceneCascadeDeleteService, objectMapper, sceneSchedulerService, null);
+    }
 
     @Autowired
     public SceneServiceImpl(
@@ -31,12 +43,14 @@ public class SceneServiceImpl implements SceneService {
             TestRepositoryMapper repositoryMapper,
             SceneCascadeDeleteService sceneCascadeDeleteService,
             ObjectMapper objectMapper,
-            SceneSchedulerService sceneSchedulerService) {
+            SceneSchedulerService sceneSchedulerService,
+            DetailCacheService detailCacheService) {
         this.sceneMapper = sceneMapper;
         this.repositoryMapper = repositoryMapper;
         this.sceneCascadeDeleteService = sceneCascadeDeleteService;
         this.objectMapper = objectMapper;
         this.sceneSchedulerService = sceneSchedulerService;
+        this.detailCacheService = detailCacheService;
     }
 
     public SceneServiceImpl(
@@ -55,6 +69,7 @@ public class SceneServiceImpl implements SceneService {
         validateUniqueName(normalized.getName(), null);
         normalized.setNextRunAt(resolveNextRunAt(normalized));
         sceneMapper.insert(normalized);
+        invalidateDetail(normalized.getId());
         return normalized;
     }
 
@@ -73,7 +88,7 @@ public class SceneServiceImpl implements SceneService {
 
     @Override
     public SceneEntity get(Long id) {
-        return sceneMapper.findById(id)
+        return getOptional(id)
                 .orElseThrow(() -> new IllegalArgumentException("Scene not found: " + id));
     }
 
@@ -99,17 +114,32 @@ public class SceneServiceImpl implements SceneService {
         existing.setCronExpression(entity.getCronExpression());
         existing.setNextRunAt(resolveNextRunAt(existing));
         sceneMapper.update(existing);
+        invalidateDetail(id);
         return existing;
     }
 
     @Override
     public void delete(Long id) {
         sceneCascadeDeleteService.deleteSceneGraph(id);
+        invalidateDetail(id);
     }
 
     @Override
     public void deleteAllByRepoId(Long repoId) {
         sceneMapper.deleteAllByRepoId(repoId);
+    }
+
+    private Optional<SceneEntity> getOptional(Long id) {
+        if (detailCacheService == null) {
+            return sceneMapper.findById(id);
+        }
+        return detailCacheService.getOrLoad("scene", id, SceneEntity.class, () -> sceneMapper.findById(id));
+    }
+
+    private void invalidateDetail(Long id) {
+        if (detailCacheService != null && id != null) {
+            detailCacheService.invalidate("scene", id);
+        }
     }
 
     @Scheduled(fixedDelay = 60000)

@@ -1,5 +1,6 @@
 package com.example.platform.repository;
 
+import com.example.platform.cache.DetailCacheService;
 import com.example.platform.common.PageResponse;
 import com.example.platform.repository.mapper.TestRepositoryMapper;
 import com.example.platform.repository.model.TestRepositoryEntity;
@@ -7,6 +8,7 @@ import com.example.platform.repository.service.RepositoryCascadeDeleteService;
 import com.example.platform.repository.service.RepositoryServiceImpl;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
@@ -19,6 +21,7 @@ class RepositoryServiceImplTest {
     void shouldCreateRepositoryWithoutLegacyRuntimeFields() {
         TestRepositoryMapper repositoryMapper = Mockito.mock(TestRepositoryMapper.class);
         RepositoryCascadeDeleteService repositoryCascadeDeleteService = Mockito.mock(RepositoryCascadeDeleteService.class);
+        DetailCacheService detailCacheService = Mockito.mock(DetailCacheService.class);
 
         TestRepositoryEntity payload = new TestRepositoryEntity();
         payload.setName("playwright-framework");
@@ -38,7 +41,10 @@ class RepositoryServiceImplTest {
             return 1;
         });
 
-        RepositoryServiceImpl service = new RepositoryServiceImpl(repositoryMapper, repositoryCascadeDeleteService);
+        RepositoryServiceImpl service = new RepositoryServiceImpl(
+                repositoryMapper,
+                repositoryCascadeDeleteService,
+                detailCacheService);
 
         TestRepositoryEntity result = service.create(payload);
 
@@ -47,12 +53,14 @@ class RepositoryServiceImplTest {
         assertThat(result.getId()).isEqualTo(1L);
         assertThat(result.getWorkingDirectory()).isEqualTo("playwright_framework");
         assertThat(captor.getValue().getWorkingDirectory()).isEqualTo("playwright_framework");
+        Mockito.verify(detailCacheService).invalidate("repository", 1L);
     }
 
     @Test
     void shouldUpdateRepositoryWithoutLegacyRuntimeFields() {
         TestRepositoryMapper repositoryMapper = Mockito.mock(TestRepositoryMapper.class);
         RepositoryCascadeDeleteService repositoryCascadeDeleteService = Mockito.mock(RepositoryCascadeDeleteService.class);
+        DetailCacheService detailCacheService = Mockito.mock(DetailCacheService.class);
 
         TestRepositoryEntity existing = new TestRepositoryEntity();
         existing.setId(1L);
@@ -80,14 +88,24 @@ class RepositoryServiceImplTest {
 
         Mockito.when(repositoryMapper.findById(1L)).thenReturn(Optional.of(existing));
         Mockito.when(repositoryMapper.update(Mockito.any(TestRepositoryEntity.class))).thenReturn(1);
+        Mockito.when(detailCacheService.getOrLoad(
+                        Mockito.eq("repository"),
+                        Mockito.eq(1L),
+                        Mockito.eq(TestRepositoryEntity.class),
+                        Mockito.any()))
+                .thenAnswer(invocation -> invocation.<Supplier<Optional<TestRepositoryEntity>>>getArgument(3).get());
 
-        RepositoryServiceImpl service = new RepositoryServiceImpl(repositoryMapper, repositoryCascadeDeleteService);
+        RepositoryServiceImpl service = new RepositoryServiceImpl(
+                repositoryMapper,
+                repositoryCascadeDeleteService,
+                detailCacheService);
 
         TestRepositoryEntity result = service.update(1L, payload);
 
         Mockito.verify(repositoryMapper).update(existing);
         assertThat(result.getWorkingDirectory()).isEqualTo("playwright_framework");
         assertThat(result.getDefaultBranch()).isEqualTo("release");
+        Mockito.verify(detailCacheService).invalidate("repository", 1L);
     }
 
     @Test
@@ -160,5 +178,66 @@ class RepositoryServiceImplTest {
         assertThatThrownBy(() -> service.get(404L))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Repository not found: 404");
+    }
+
+    @Test
+    void shouldReturnRepositoryFromDetailCacheHit() {
+        TestRepositoryMapper repositoryMapper = Mockito.mock(TestRepositoryMapper.class);
+        DetailCacheService detailCacheService = Mockito.mock(DetailCacheService.class);
+        RepositoryServiceImpl service = new RepositoryServiceImpl(
+                repositoryMapper,
+                Mockito.mock(RepositoryCascadeDeleteService.class),
+                detailCacheService);
+        TestRepositoryEntity cached = new TestRepositoryEntity();
+        cached.setId(1L);
+        cached.setName("cached");
+        Mockito.when(detailCacheService.getOrLoad(
+                        Mockito.eq("repository"),
+                        Mockito.eq(1L),
+                        Mockito.eq(TestRepositoryEntity.class),
+                        Mockito.any()))
+                .thenReturn(Optional.of(cached));
+
+        TestRepositoryEntity result = service.get(1L);
+
+        assertThat(result).isSameAs(cached);
+        Mockito.verify(repositoryMapper, Mockito.never()).findById(Mockito.anyLong());
+    }
+
+    @Test
+    void shouldThrowWhenRepositoryEmptyValueIsCached() {
+        TestRepositoryMapper repositoryMapper = Mockito.mock(TestRepositoryMapper.class);
+        DetailCacheService detailCacheService = Mockito.mock(DetailCacheService.class);
+        RepositoryServiceImpl service = new RepositoryServiceImpl(
+                repositoryMapper,
+                Mockito.mock(RepositoryCascadeDeleteService.class),
+                detailCacheService);
+        Mockito.when(detailCacheService.getOrLoad(
+                        Mockito.eq("repository"),
+                        Mockito.eq(404L),
+                        Mockito.eq(TestRepositoryEntity.class),
+                        Mockito.any()))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.get(404L))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Repository not found: 404");
+        Mockito.verify(repositoryMapper, Mockito.never()).findById(Mockito.anyLong());
+    }
+
+    @Test
+    void shouldInvalidateRepositoryDetailCacheWhenDeleting() {
+        TestRepositoryMapper repositoryMapper = Mockito.mock(TestRepositoryMapper.class);
+        RepositoryCascadeDeleteService repositoryCascadeDeleteService = Mockito.mock(RepositoryCascadeDeleteService.class);
+        DetailCacheService detailCacheService = Mockito.mock(DetailCacheService.class);
+        RepositoryServiceImpl service = new RepositoryServiceImpl(
+                repositoryMapper,
+                repositoryCascadeDeleteService,
+                detailCacheService);
+
+        service.delete(7L);
+
+        Mockito.verify(repositoryCascadeDeleteService).deleteRepositoryGraph(7L);
+        Mockito.verify(detailCacheService).invalidate("repository", 7L);
     }
 }

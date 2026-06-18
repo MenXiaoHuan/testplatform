@@ -112,6 +112,37 @@ class DetailCacheServiceTest {
     }
 
     @Test
+    void shouldRetryReadingCacheWhenRedisLockIsAlreadyHeld() throws Exception {
+        properties.setLockRetryTimes(2);
+        properties.setLockWaitMillis(1);
+        DetailCacheService service = service();
+        Mockito.when(valueOperations.setIfAbsent(
+                        Mockito.eq("detail:repository:9:lock"),
+                        Mockito.anyString(),
+                        Mockito.any(Duration.class)))
+                .thenReturn(false);
+        AtomicInteger cacheReads = new AtomicInteger();
+        Mockito.when(valueOperations.get("detail:repository:9"))
+                .thenAnswer(invocation -> cacheReads.incrementAndGet() == 1
+                        ? null
+                        : objectMapper.writeValueAsString(CachedValue.hit(new DetailDto(9L, "cached"))));
+
+        Optional<DetailDto> result = service.getOrLoad(
+                "repository",
+                9L,
+                DetailDto.class,
+                () -> {
+                    throw new AssertionError("loader must not run while another node holds the cache lock");
+                });
+
+        assertThat(result).contains(new DetailDto(9L, "cached"));
+        Mockito.verify(valueOperations, Mockito.never()).set(
+                Mockito.eq("detail:repository:9"),
+                Mockito.anyString(),
+                Mockito.any(Duration.class));
+    }
+
+    @Test
     void shouldInvalidateCachedDetail() {
         DetailCacheService service = service();
 

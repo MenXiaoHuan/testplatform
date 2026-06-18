@@ -9,6 +9,8 @@ public class CacheProperties {
     private Duration nullTtl = Duration.ofMinutes(1);
     private int jitterSeconds = 60;
     private Duration mutexTtl = Duration.ofSeconds(5);
+    private int lockRetryTimes = 3;
+    private long lockWaitMillis = 50;
 
     public Duration getDetailTtl() {
         return detailTtl;
@@ -40,5 +42,21 @@ public class CacheProperties {
 
     public void setMutexTtl(Duration mutexTtl) {
         this.mutexTtl = mutexTtl;
+    }
+
+    public int getLockRetryTimes() {
+        return lockRetryTimes;
+    }
+
+    public void setLockRetryTimes(int lockRetryTimes) {
+        this.lockRetryTimes = lockRetryTimes;
+    }
+
+    public long getLockWaitMillis() {
+        return lockWaitMillis;
+    }
+
+    public void setLockWaitMillis(long lockWaitMillis) {
+        this.lockWaitMillis = lockWaitMillis;
     }
 }

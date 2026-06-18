@@ -1,5 +1,6 @@
 package com.example.platform.task.service;
 
+import com.example.platform.cache.DetailCacheService;
 import com.example.platform.repository.model.TestRepositoryEntity;
 import com.example.platform.runner.service.RunnerCommandResult;
 import com.example.platform.runner.service.RunnerExecutionService;
@@ -33,6 +34,7 @@ final class TaskExecutionOrchestrator {
     private final TaskCaseResultPersistenceService taskCaseResultPersistenceService;
     private final TaskStageLogService taskStageLogService;
     private final TaskExecutionProperties taskExecutionProperties;
+    private final DetailCacheService detailCacheService;
 
     TaskExecutionOrchestrator(
             TaskMapper taskRepository,
@@ -43,7 +45,8 @@ final class TaskExecutionOrchestrator {
             TaskCaseResultParseService taskCaseResultParseService,
             TaskCaseResultPersistenceService taskCaseResultPersistenceService,
             TaskStageLogService taskStageLogService,
-            TaskExecutionProperties taskExecutionProperties) {
+            TaskExecutionProperties taskExecutionProperties,
+            DetailCacheService detailCacheService) {
         this.taskRepository = taskRepository;
         this.sceneMapper = sceneMapper;
         this.runnerWorkspaceService = runnerWorkspaceService;
@@ -53,6 +56,7 @@ final class TaskExecutionOrchestrator {
         this.taskCaseResultPersistenceService = taskCaseResultPersistenceService;
         this.taskStageLogService = taskStageLogService;
         this.taskExecutionProperties = taskExecutionProperties;
+        this.detailCacheService = detailCacheService;
     }
 
     TaskEntity executeTask(TaskEntity task, TestRepositoryEntity repository, SceneEntity scene) {
@@ -65,6 +69,7 @@ final class TaskExecutionOrchestrator {
             task.setStatus("RUNNING");
             task.setCurrentStage("PREPARING");
             taskRepository.update(task);
+            invalidateTaskDetail(task.getId());
             Path workspace = runnerWorkspaceService.prepareWorkspace(
                     repository.getGitUrl(),
                     task.getResolvedBranch(),
@@ -74,6 +79,7 @@ final class TaskExecutionOrchestrator {
             ResolvedExecutionPaths executionPaths = resolveExecutionPaths(executionDirectory, repository);
             task.setCurrentStage("INSTALLING");
             taskRepository.update(task);
+            invalidateTaskDetail(task.getId());
             RunnerCommandResult installResult = runStageWithFallback(
                     task,
                     workspace,
@@ -93,6 +99,7 @@ final class TaskExecutionOrchestrator {
             if (installStatus == 0) {
                 task.setCurrentStage("TESTING");
                 taskRepository.update(task);
+                invalidateTaskDetail(task.getId());
                 RunnerCommandResult testResult = runStageWithFallback(
                         task,
                         workspace,
@@ -111,6 +118,7 @@ final class TaskExecutionOrchestrator {
                 }
                 task.setCurrentStage("ARCHIVING");
                 taskRepository.update(task);
+                invalidateTaskDetail(task.getId());
                 continuePostProcessing(task, executionDirectory, executionPaths, runStatus == 0);
             } else {
                 task.setResultCode("INSTALL_FAILED");
@@ -138,6 +146,7 @@ final class TaskExecutionOrchestrator {
             task.setResultMessage("测试执行失败");
         }
         taskRepository.update(task);
+        invalidateTaskDetail(task.getId());
         refreshSceneSummary(scene, task);
         return task;
     }
@@ -310,6 +319,7 @@ final class TaskExecutionOrchestrator {
             task.setDurationMs(Duration.between(task.getStartedAt(), task.getFinishedAt()).toMillis());
         }
         taskRepository.update(task);
+        invalidateTaskDetail(task.getId());
         refreshSceneSummary(scene, task);
         return task;
     }
@@ -331,6 +341,19 @@ final class TaskExecutionOrchestrator {
         scene.setLastRunAt(summarySource.getFinishedAt());
         scene.setLastTaskStatus(summarySource.getStatus());
         sceneMapper.update(scene);
+        invalidateSceneDetail(scene.getId());
+    }
+
+    private void invalidateTaskDetail(Long taskId) {
+        if (detailCacheService != null && taskId != null) {
+            detailCacheService.invalidate("task", taskId);
+        }
+    }
+
+    private void invalidateSceneDetail(Long sceneId) {
+        if (detailCacheService != null && sceneId != null) {
+            detailCacheService.invalidate("scene", sceneId);
+        }
     }
 
     private record ResolvedExecutionPaths(

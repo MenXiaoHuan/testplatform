@@ -1,5 +1,6 @@
 package com.example.platform.task.service;
 
+import com.example.platform.cache.DetailCacheService;
 import com.example.platform.repository.mapper.TestRepositoryMapper;
 import com.example.platform.repository.model.TestRepositoryEntity;
 import com.example.platform.scene.mapper.SceneMapper;
@@ -9,6 +10,7 @@ import com.example.platform.task.mapper.TaskMapper;
 import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,16 +22,28 @@ public class TaskCreationService {
     private final TestRepositoryMapper repositoryMapper;
     private final TaskMapper taskRepository;
     private final TaskCommandBuilder taskCommandBuilder;
+    private final DetailCacheService detailCacheService;
+
+    @Autowired
+    public TaskCreationService(
+            SceneMapper sceneMapper,
+            TestRepositoryMapper repositoryMapper,
+            TaskMapper taskRepository,
+            TaskCommandBuilder taskCommandBuilder,
+            DetailCacheService detailCacheService) {
+        this.sceneMapper = sceneMapper;
+        this.repositoryMapper = repositoryMapper;
+        this.taskRepository = taskRepository;
+        this.taskCommandBuilder = taskCommandBuilder;
+        this.detailCacheService = detailCacheService;
+    }
 
     public TaskCreationService(
             SceneMapper sceneMapper,
             TestRepositoryMapper repositoryMapper,
             TaskMapper taskRepository,
             TaskCommandBuilder taskCommandBuilder) {
-        this.sceneMapper = sceneMapper;
-        this.repositoryMapper = repositoryMapper;
-        this.taskRepository = taskRepository;
-        this.taskCommandBuilder = taskCommandBuilder;
+        this(sceneMapper, repositoryMapper, taskRepository, taskCommandBuilder, null);
     }
 
     @Transactional
@@ -72,6 +86,13 @@ public class TaskCreationService {
         scene.setLastTaskStatus(task.getStatus());
         scene.setLastRunAt(task.getQueuedAt());
         sceneMapper.update(scene);
+        invalidateSceneDetail(scene.getId());
         return task;
+    }
+
+    private void invalidateSceneDetail(Long sceneId) {
+        if (detailCacheService != null && sceneId != null) {
+            detailCacheService.invalidate("scene", sceneId);
+        }
     }
 }

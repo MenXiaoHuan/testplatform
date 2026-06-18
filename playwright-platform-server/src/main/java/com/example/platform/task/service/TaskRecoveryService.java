@@ -1,5 +1,6 @@
 package com.example.platform.task.service;
 
+import com.example.platform.cache.DetailCacheService;
 import com.example.platform.scene.mapper.SceneMapper;
 import com.example.platform.scene.model.SceneEntity;
 import com.example.platform.task.model.TaskEntity;
@@ -25,14 +26,17 @@ public class TaskRecoveryService {
     private final TaskMapper taskRepository;
     private final SceneMapper sceneMapper;
     private final TaskServiceImpl taskService;
+    private final DetailCacheService detailCacheService;
 
     public TaskRecoveryService(
             TaskMapper taskRepository,
             SceneMapper sceneMapper,
-            TaskServiceImpl taskService) {
+            TaskServiceImpl taskService,
+            DetailCacheService detailCacheService) {
         this.taskRepository = taskRepository;
         this.sceneMapper = sceneMapper;
         this.taskService = taskService;
+        this.detailCacheService = detailCacheService;
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -87,6 +91,7 @@ public class TaskRecoveryService {
             task.setDurationMs(Duration.between(task.getStartedAt(), finishedAt).toMillis());
         }
         taskRepository.update(task);
+        invalidateTaskDetail(task.getId());
     }
 
     private void markRecoveredQueuedCancellation(TaskEntity task, LocalDateTime finishedAt) {
@@ -99,6 +104,7 @@ public class TaskRecoveryService {
             task.setDurationMs(Duration.between(task.getQueuedAt(), finishedAt).toMillis());
         }
         taskRepository.update(task);
+        invalidateTaskDetail(task.getId());
     }
 
     private void refreshSceneSummaries(Set<Long> sceneIds) {
@@ -111,6 +117,19 @@ public class TaskRecoveryService {
             scene.setLastTaskStatus(summarySource.getStatus());
             scene.setLastRunAt(summarySource.getFinishedAt() != null ? summarySource.getFinishedAt() : summarySource.getQueuedAt());
             sceneMapper.update(scene);
+            invalidateSceneDetail(sceneId);
+        }
+    }
+
+    private void invalidateTaskDetail(Long taskId) {
+        if (detailCacheService != null && taskId != null) {
+            detailCacheService.invalidate("task", taskId);
+        }
+    }
+
+    private void invalidateSceneDetail(Long sceneId) {
+        if (detailCacheService != null && sceneId != null) {
+            detailCacheService.invalidate("scene", sceneId);
         }
     }
 }

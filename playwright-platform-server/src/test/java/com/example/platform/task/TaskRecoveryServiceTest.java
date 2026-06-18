@@ -1,5 +1,6 @@
 package com.example.platform.task;
 
+import com.example.platform.cache.DetailCacheService;
 import com.example.platform.scene.mapper.SceneMapper;
 import com.example.platform.scene.model.SceneEntity;
 import com.example.platform.task.model.TaskEntity;
@@ -20,7 +21,12 @@ class TaskRecoveryServiceTest {
         TaskMapper taskRepository = Mockito.mock(TaskMapper.class);
         SceneMapper sceneRepository = Mockito.mock(SceneMapper.class);
         TaskServiceImpl taskService = Mockito.mock(TaskServiceImpl.class);
-        TaskRecoveryService service = new TaskRecoveryService(taskRepository, sceneRepository, taskService);
+        DetailCacheService detailCacheService = Mockito.mock(DetailCacheService.class);
+        TaskRecoveryService service = new TaskRecoveryService(
+                taskRepository,
+                sceneRepository,
+                taskService,
+                detailCacheService);
 
         TaskEntity runningTask = new TaskEntity();
         runningTask.setId(101L);
@@ -54,6 +60,9 @@ class TaskRecoveryServiceTest {
         Mockito.verify(taskService).dispatchExistingTask(102L, false);
         assertThat(runningScene.getLastTaskStatus()).isEqualTo("FAILED");
         assertThat(queuedScene.getLastTaskStatus()).isEqualTo("QUEUED");
+        Mockito.verify(detailCacheService).invalidate("task", 101L);
+        Mockito.verify(detailCacheService).invalidate("scene", 11L);
+        Mockito.verify(detailCacheService).invalidate("scene", 12L);
     }
 
     @Test
@@ -61,7 +70,12 @@ class TaskRecoveryServiceTest {
         TaskMapper taskRepository = Mockito.mock(TaskMapper.class);
         SceneMapper sceneRepository = Mockito.mock(SceneMapper.class);
         TaskServiceImpl taskService = Mockito.mock(TaskServiceImpl.class);
-        TaskRecoveryService service = new TaskRecoveryService(taskRepository, sceneRepository, taskService);
+        DetailCacheService detailCacheService = Mockito.mock(DetailCacheService.class);
+        TaskRecoveryService service = new TaskRecoveryService(
+                taskRepository,
+                sceneRepository,
+                taskService,
+                detailCacheService);
 
         TaskEntity queuedTask = new TaskEntity();
         queuedTask.setId(201L);
@@ -83,5 +97,7 @@ class TaskRecoveryServiceTest {
         assertThat(queuedTask.getStatus()).isEqualTo("CANCELED");
         assertThat(queuedTask.getResultCode()).isEqualTo("CANCELED");
         Mockito.verifyNoInteractions(taskService);
+        Mockito.verify(detailCacheService).invalidate("task", 201L);
+        Mockito.verify(detailCacheService).invalidate("scene", 21L);
     }
 }

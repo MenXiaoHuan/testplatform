@@ -1,20 +1,33 @@
 package com.example.platform.repository.service;
 
+import com.example.platform.cache.DetailCacheService;
 import com.example.platform.common.PageResponse;
 import com.example.platform.repository.mapper.TestRepositoryMapper;
 import com.example.platform.repository.model.TestRepositoryEntity;
+import java.util.Optional;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 @Service
 public class RepositoryServiceImpl implements RepositoryService {
     private final TestRepositoryMapper repository;
     private final RepositoryCascadeDeleteService repositoryCascadeDeleteService;
+    private final DetailCacheService detailCacheService;
+
+    @Autowired
+    public RepositoryServiceImpl(
+            TestRepositoryMapper repository,
+            RepositoryCascadeDeleteService repositoryCascadeDeleteService,
+            DetailCacheService detailCacheService) {
+        this.repository = repository;
+        this.repositoryCascadeDeleteService = repositoryCascadeDeleteService;
+        this.detailCacheService = detailCacheService;
+    }
 
     public RepositoryServiceImpl(
             TestRepositoryMapper repository,
             RepositoryCascadeDeleteService repositoryCascadeDeleteService) {
-        this.repository = repository;
-        this.repositoryCascadeDeleteService = repositoryCascadeDeleteService;
+        this(repository, repositoryCascadeDeleteService, null);
     }
 
     @Override
@@ -23,6 +36,7 @@ public class RepositoryServiceImpl implements RepositoryService {
         validateUniqueName(normalizedName, null);
         entity.setName(normalizedName);
         repository.insert(entity);
+        invalidateDetail(entity.getId());
         return entity;
     }
 
@@ -40,7 +54,7 @@ public class RepositoryServiceImpl implements RepositoryService {
 
     @Override
     public TestRepositoryEntity get(Long id) {
-        return repository.findById(id)
+        return getOptional(id)
                 .orElseThrow(() -> new IllegalArgumentException("Repository not found: " + id));
     }
 
@@ -60,12 +74,27 @@ public class RepositoryServiceImpl implements RepositoryService {
         existing.setArtifactRootRelativePath(entity.getArtifactRootRelativePath());
         existing.setEnabled(entity.getEnabled());
         repository.update(existing);
+        invalidateDetail(id);
         return existing;
     }
 
     @Override
     public void delete(Long id) {
         repositoryCascadeDeleteService.deleteRepositoryGraph(id);
+        invalidateDetail(id);
+    }
+
+    private Optional<TestRepositoryEntity> getOptional(Long id) {
+        if (detailCacheService == null) {
+            return repository.findById(id);
+        }
+        return detailCacheService.getOrLoad("repository", id, TestRepositoryEntity.class, () -> repository.findById(id));
+    }
+
+    private void invalidateDetail(Long id) {
+        if (detailCacheService != null && id != null) {
+            detailCacheService.invalidate("repository", id);
+        }
     }
 
     private int normalizePage(int page) {

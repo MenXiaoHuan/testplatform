@@ -1,5 +1,6 @@
 package com.example.platform.scene;
 
+import com.example.platform.cache.DetailCacheService;
 import com.example.platform.common.PageResponse;
 import com.example.platform.repository.mapper.TestRepositoryMapper;
 import com.example.platform.repository.model.TestRepositoryEntity;
@@ -22,6 +23,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
@@ -341,6 +343,105 @@ class SceneServiceImplTest {
 
         assertThat(capturedNow.get()).isNotNull();
         Mockito.verify(sceneMapper, Mockito.never()).findAllByScheduleEnabledTrue();
+    }
+
+    @Test
+    void shouldReturnSceneFromDetailCacheHit() {
+        SceneMapper sceneMapper = Mockito.mock(SceneMapper.class);
+        DetailCacheService detailCacheService = Mockito.mock(DetailCacheService.class);
+        SceneServiceImpl service = new SceneServiceImpl(
+                sceneMapper,
+                Mockito.mock(TestRepositoryMapper.class),
+                Mockito.mock(SceneCascadeDeleteService.class),
+                new ObjectMapper(),
+                null,
+                detailCacheService);
+        SceneEntity cached = new SceneEntity();
+        cached.setId(1L);
+        cached.setName("cached");
+        Mockito.when(detailCacheService.getOrLoad(
+                        Mockito.eq("scene"),
+                        Mockito.eq(1L),
+                        Mockito.eq(SceneEntity.class),
+                        Mockito.any()))
+                .thenReturn(Optional.of(cached));
+
+        SceneEntity result = service.get(1L);
+
+        assertThat(result).isSameAs(cached);
+        Mockito.verify(sceneMapper, Mockito.never()).findById(Mockito.anyLong());
+    }
+
+    @Test
+    void shouldThrowWhenSceneEmptyValueIsCached() {
+        SceneMapper sceneMapper = Mockito.mock(SceneMapper.class);
+        DetailCacheService detailCacheService = Mockito.mock(DetailCacheService.class);
+        SceneServiceImpl service = new SceneServiceImpl(
+                sceneMapper,
+                Mockito.mock(TestRepositoryMapper.class),
+                Mockito.mock(SceneCascadeDeleteService.class),
+                new ObjectMapper(),
+                null,
+                detailCacheService);
+        Mockito.when(detailCacheService.getOrLoad(
+                        Mockito.eq("scene"),
+                        Mockito.eq(404L),
+                        Mockito.eq(SceneEntity.class),
+                        Mockito.any()))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.get(404L))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Scene not found: 404");
+        Mockito.verify(sceneMapper, Mockito.never()).findById(Mockito.anyLong());
+    }
+
+    @Test
+    void shouldInvalidateSceneDetailCacheWhenWritingScene() {
+        SceneMapper sceneMapper = Mockito.mock(SceneMapper.class);
+        TestRepositoryMapper repositoryMapper = Mockito.mock(TestRepositoryMapper.class);
+        SceneCascadeDeleteService sceneCascadeDeleteService = Mockito.mock(SceneCascadeDeleteService.class);
+        DetailCacheService detailCacheService = Mockito.mock(DetailCacheService.class);
+        SceneServiceImpl service = new SceneServiceImpl(
+                sceneMapper,
+                repositoryMapper,
+                sceneCascadeDeleteService,
+                new ObjectMapper(),
+                null,
+                detailCacheService);
+        TestRepositoryEntity repository = new TestRepositoryEntity();
+        repository.setId(9L);
+        repository.setEnabled(true);
+        Mockito.when(repositoryMapper.findById(9L)).thenReturn(Optional.of(repository));
+        Mockito.when(sceneMapper.insert(Mockito.any(SceneEntity.class))).thenAnswer(invocation -> {
+            SceneEntity entity = invocation.getArgument(0);
+            entity.setId(33L);
+            return 1;
+        });
+        SceneEntity existing = new SceneEntity();
+        existing.setId(33L);
+        existing.setRepoId(9L);
+        existing.setName("login");
+        Mockito.when(sceneMapper.findById(33L)).thenReturn(Optional.of(existing));
+        Mockito.when(detailCacheService.getOrLoad(
+                        Mockito.eq("scene"),
+                        Mockito.eq(33L),
+                        Mockito.eq(SceneEntity.class),
+                        Mockito.any()))
+                .thenAnswer(invocation -> invocation.<Supplier<Optional<SceneEntity>>>getArgument(3).get());
+
+        SceneEntity created = new SceneEntity();
+        created.setRepoId(9L);
+        created.setName("login");
+        service.create(created);
+        SceneEntity update = new SceneEntity();
+        update.setRepoId(9L);
+        update.setName("login-new");
+        service.update(33L, update);
+        service.delete(33L);
+
+        Mockito.verify(detailCacheService, Mockito.times(3)).invalidate("scene", 33L);
+        Mockito.verify(sceneCascadeDeleteService).deleteSceneGraph(33L);
     }
 
     private static final class FakeSceneScheduleLeaseService implements SceneScheduleLeaseService {

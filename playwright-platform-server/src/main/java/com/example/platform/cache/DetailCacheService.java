@@ -43,7 +43,7 @@ public class DetailCacheService {
                 if (cached != null) {
                     return cached;
                 }
-                return loadAndCache(key, loader);
+                return loadAndCache(key, valueType, loader);
             } finally {
                 keyLocks.remove(key, lock);
             }
@@ -70,13 +70,11 @@ public class DetailCacheService {
         }
     }
 
-    private <T> Optional<T> loadAndCache(String key, Supplier<Optional<T>> loader) {
+    private <T> Optional<T> loadAndCache(String key, Class<T> valueType, Supplier<Optional<T>> loader) {
         String lockKey = key + ":lock";
         Boolean locked = redisTemplate.opsForValue().setIfAbsent(lockKey, "1", properties.getMutexTtl());
         if (!Boolean.TRUE.equals(locked)) {
-            Optional<T> existing = loader.get();
-            writeCached(key, existing);
-            return existing;
+            return waitForCachedValue(key, valueType);
         }
         try {
             Optional<T> loaded = loader.get();
@@ -84,6 +82,30 @@ public class DetailCacheService {
             return loaded;
         } finally {
             redisTemplate.delete(lockKey);
+        }
+    }
+
+    private <T> Optional<T> waitForCachedValue(String key, Class<T> valueType) {
+        int retryTimes = Math.max(0, properties.getLockRetryTimes());
+        long waitMillis = Math.max(0, properties.getLockWaitMillis());
+        for (int attempt = 0; attempt < retryTimes; attempt++) {
+            if (waitMillis > 0) {
+                sleep(waitMillis);
+            }
+            Optional<T> cached = readCached(key, valueType);
+            if (cached != null) {
+                return cached;
+            }
+        }
+        return Optional.empty();
+    }
+
+    private void sleep(long waitMillis) {
+        try {
+            Thread.sleep(waitMillis);
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while waiting for detail cache lock", ex);
         }
     }
 
