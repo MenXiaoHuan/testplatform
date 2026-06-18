@@ -8,7 +8,7 @@ spring:
     driver-class-name: com.mysql.cj.jdbc.Driver
   data:
     redis:
-      host: ${PLATFORM_REDIS_HOST}
+      host: ${PLATFORM_REDIS_HOST:localhost}
       port: ${PLATFORM_REDIS_PORT:6379}
       password: ${PLATFORM_REDIS_PASSWORD:}
       timeout: ${PLATFORM_REDIS_TIMEOUT:2s}
@@ -30,6 +30,8 @@ platform:
     null-ttl: ${PLATFORM_CACHE_NULL_TTL:1m}
     jitter-seconds: ${PLATFORM_CACHE_JITTER_SECONDS:60}
     mutex-ttl: ${PLATFORM_CACHE_MUTEX_TTL:5s}
+    lock-retry-times: ${PLATFORM_CACHE_LOCK_RETRY_TIMES:3}
+    lock-wait-millis: ${PLATFORM_CACHE_LOCK_WAIT_MILLIS:50}
   task:
     execution:
       core-pool-size: 2
