@@ -2,9 +2,9 @@ spring:
   application:
     name: playwright-platform-server
   datasource:
-    url: ${PLATFORM_DB_URL:jdbc:mysql://localhost:3306/playwright_platform?useSSL=false&allowPublicKeyRetrieval=true&createDatabaseIfNotExist=true&serverTimezone=UTC}
-    username: ${PLATFORM_DB_USERNAME:root}
-    password: ${PLATFORM_DB_PASSWORD:12345678}
+    url: ${PLATFORM_DB_URL}
+    username: ${PLATFORM_DB_USERNAME}
+    password: ${PLATFORM_DB_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
   jpa:
     hibernate:
@@ -29,6 +29,6 @@ platform:
   storage:
     bucket: ${PLATFORM_STORAGE_BUCKET:qa-report}
     minio:
-      endpoint: ${PLATFORM_MINIO_ENDPOINT:http://127.0.0.1:9000}
-      access-key: ${PLATFORM_MINIO_ACCESS_KEY:minioadmin}
-      secret-key: ${PLATFORM_MINIO_SECRET_KEY:minioadmin}
+      endpoint: ${PLATFORM_MINIO_ENDPOINT}
+      access-key: ${PLATFORM_MINIO_ACCESS_KEY}
+      secret-key: ${PLATFORM_MINIO_SECRET_KEY}

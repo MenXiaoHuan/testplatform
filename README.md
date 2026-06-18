@@ -46,9 +46,10 @@
 
 ## Docker Compose 开发环境
 
-本地已安装 Docker 后，可以使用 Compose 一键启动 MySQL、MinIO、后端和前端：
+本地已安装 Docker 后，可以使用 Compose 一键启动 MySQL、MinIO、后端和前端。首次启动前先复制环境变量模板：
 
 ```bash
+cp .env.example .env
 docker compose up --build
 ```
 
@@ -76,7 +77,7 @@ docker compose down
 docker compose down -v
 ```
 
-该 Compose 配置用于本地开发。生产环境配置、弱口令清理和多环境 profile 将在后续阶段处理。
+该 Compose 配置用于本地开发，会启用后端 `dev` profile。生产环境请显式注入敏感配置，不要使用 `dev` profile。
 
 ## 快速开始
 
@@ -91,7 +92,7 @@ cd test_platform
 
 先启动本地 MySQL 和 MinIO。
 
-后端默认配置来自 `playwright-platform-server/src/main/resources/application.yml`：
+本地开发可启用后端 `dev` profile，示例配置来自 `playwright-platform-server/src/main/resources/application-dev.yml`：
 
 - MySQL：`jdbc:mysql://localhost:3306/playwright_platform`
 - 用户名：`root`
@@ -113,11 +114,9 @@ export PLATFORM_STORAGE_BUCKET='qa-report'
 
 ### 3. 初始化数据库
 
-可使用仓库内的结构脚本初始化：
+后端启动时会通过 Flyway 自动执行 `playwright-platform-server/src/main/resources/db/migration` 下的版本化迁移脚本。
 
-```bash
-mysql -u root -p < playwright-platform-server/src/main/resources/db/schema/SCHEMA_OVERVIEW.sql
-```
+`SCHEMA_OVERVIEW.sql` 仅作为结构参考，不再是首选初始化方式。
 
 ### 4. 安装前端依赖
 
@@ -131,7 +130,7 @@ cd ..
 
 ```bash
 cd playwright-platform-server
-mvn spring-boot:run
+mvn spring-boot:run -Dspring-boot.run.profiles=dev
 ```
 
 默认监听 `http://localhost:8080`。
@@ -152,13 +151,25 @@ npm run dev -- --host 0.0.0.0 --port 4173
 
 前端开发服务器会将 `/api` 代理到 `http://localhost:8080`。
 
+## 生产配置
+
+生产环境必须显式注入以下配置，不要依赖本地开发示例值，也不要启用 `dev` profile：
+
+- `PLATFORM_DB_URL`
+- `PLATFORM_DB_USERNAME`
+- `PLATFORM_DB_PASSWORD`
+- `PLATFORM_MINIO_ENDPOINT`
+- `PLATFORM_MINIO_ACCESS_KEY`
+- `PLATFORM_MINIO_SECRET_KEY`
+- `PLATFORM_STORAGE_BUCKET`
+
 ## 开发命令
 
 ### 后端
 
 ```bash
 cd playwright-platform-server
-mvn spring-boot:run
+mvn spring-boot:run -Dspring-boot.run.profiles=dev
 mvn test
 ```
 

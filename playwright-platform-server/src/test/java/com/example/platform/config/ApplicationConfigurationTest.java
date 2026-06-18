@@ -9,13 +9,28 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class ApplicationConfigurationTest {
     @Test
-    void shouldUseLocalMysqlDefaultsThatCanAutoCreateSchema() throws IOException {
+    void shouldNotExposeWeakSecretsInDefaultConfiguration() throws IOException {
         String applicationYaml = Files.readString(Path.of("src/main/resources/application.yml"));
 
-        assertThat(applicationYaml).contains("allowPublicKeyRetrieval=true");
-        assertThat(applicationYaml).contains("createDatabaseIfNotExist=true");
-        assertThat(applicationYaml).contains("${PLATFORM_DB_USERNAME:root}");
-        assertThat(applicationYaml).contains("${PLATFORM_DB_PASSWORD:12345678}");
+        assertThat(applicationYaml).contains("url: ${PLATFORM_DB_URL}");
+        assertThat(applicationYaml).contains("username: ${PLATFORM_DB_USERNAME}");
+        assertThat(applicationYaml).contains("password: ${PLATFORM_DB_PASSWORD}");
+        assertThat(applicationYaml).contains("access-key: ${PLATFORM_MINIO_ACCESS_KEY}");
+        assertThat(applicationYaml).contains("secret-key: ${PLATFORM_MINIO_SECRET_KEY}");
+        assertThat(applicationYaml).doesNotContain("12345678");
+        assertThat(applicationYaml).doesNotContain("minioadmin");
+    }
+
+    @Test
+    void shouldKeepLocalDefaultsInDevProfile() throws IOException {
+        String devApplicationYaml = Files.readString(Path.of("src/main/resources/application-dev.yml"));
+
+        assertThat(devApplicationYaml).contains("allowPublicKeyRetrieval=true");
+        assertThat(devApplicationYaml).contains("createDatabaseIfNotExist=true");
+        assertThat(devApplicationYaml).contains("${PLATFORM_DB_USERNAME:root}");
+        assertThat(devApplicationYaml).contains("${PLATFORM_DB_PASSWORD:12345678}");
+        assertThat(devApplicationYaml).contains("${PLATFORM_MINIO_ACCESS_KEY:minioadmin}");
+        assertThat(devApplicationYaml).contains("${PLATFORM_MINIO_SECRET_KEY:minioadmin}");
     }
 
     @Test
