@@ -49,6 +49,18 @@ class ApplicationConfigurationTest {
     }
 
     @Test
+    void shouldExposeTomcatRequestThreadDefaults() throws IOException {
+        String applicationYaml = Files.readString(Path.of("src/main/resources/application.yml"));
+
+        assertThat(applicationYaml).contains("server:");
+        assertThat(applicationYaml).contains("tomcat:");
+        assertThat(applicationYaml).contains("threads:");
+        assertThat(applicationYaml).contains("max: ${SERVER_TOMCAT_THREADS_MAX:200}");
+        assertThat(applicationYaml).contains("min-spare: ${SERVER_TOMCAT_THREADS_MIN_SPARE:10}");
+        assertThat(applicationYaml).contains("accept-count: ${SERVER_TOMCAT_ACCEPT_COUNT:100}");
+    }
+
+    @Test
     void shouldExposeRunnerDefaults() throws IOException {
         String applicationYaml = Files.readString(Path.of("src/main/resources/application.yml"));
 

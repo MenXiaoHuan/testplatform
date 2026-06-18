@@ -19,8 +19,8 @@
 ## 技术栈
 
 - 前端：Vue 3、TypeScript、Vite、Pinia、Element Plus、Vitest
-- 后端：Spring Boot 3.5、Spring Web、注解式 MyBatis、Flyway
-- 存储与依赖：MySQL、MinIO
+- 后端：Spring Boot 3.5、Spring Web、注解式 MyBatis、Flyway、Spring Data Redis
+- 存储与依赖：MySQL、Redis、MinIO
 
 ### 持久层
 
@@ -46,6 +46,7 @@
 - Java 21
 - Maven 3.9+
 - MySQL 8+
+- Redis 7+
 - MinIO
 
 ## Docker Compose 开发环境
@@ -66,6 +67,7 @@ docker compose up --build
 默认开发账号与本地配置保持一致：
 
 - MySQL：`root` / `12345678`
+- Redis：`localhost:6379`，无密码
 - MinIO：`minioadmin` / `minioadmin`
 - Bucket：`qa-report`
 
@@ -106,13 +108,14 @@ cd test_platform
 
 ### 2. 准备基础依赖
 
-先启动本地 MySQL 和 MinIO。
+先启动本地 MySQL、Redis 和 MinIO。
 
 本地开发可启用后端 `dev` profile，示例配置来自 `playwright-platform-server/src/main/resources/application-dev.yml`：
 
 - MySQL：`jdbc:mysql://localhost:3306/playwright_platform`
 - 用户名：`root`
 - 密码：`12345678`
+- Redis：`localhost:6379`
 - MinIO：`http://127.0.0.1:9000`
 - Bucket：`qa-report`
 
@@ -122,6 +125,9 @@ cd test_platform
 export PLATFORM_DB_URL='jdbc:mysql://localhost:3306/playwright_platform?useSSL=false&allowPublicKeyRetrieval=true&createDatabaseIfNotExist=true&serverTimezone=UTC'
 export PLATFORM_DB_USERNAME='root'
 export PLATFORM_DB_PASSWORD='12345678'
+export PLATFORM_REDIS_HOST='127.0.0.1'
+export PLATFORM_REDIS_PORT='6379'
+export PLATFORM_REDIS_PASSWORD=''
 export PLATFORM_MINIO_ENDPOINT='http://127.0.0.1:9000'
 export PLATFORM_MINIO_ACCESS_KEY='minioadmin'
 export PLATFORM_MINIO_SECRET_KEY='minioadmin'
@@ -174,10 +180,52 @@ npm run dev -- --host 0.0.0.0 --port 4173
 - `PLATFORM_DB_URL`
 - `PLATFORM_DB_USERNAME`
 - `PLATFORM_DB_PASSWORD`
+- `PLATFORM_REDIS_HOST`
+- `PLATFORM_REDIS_PORT`
+- `PLATFORM_REDIS_PASSWORD`
 - `PLATFORM_MINIO_ENDPOINT`
 - `PLATFORM_MINIO_ACCESS_KEY`
 - `PLATFORM_MINIO_SECRET_KEY`
 - `PLATFORM_STORAGE_BUCKET`
+
+### Redis 详情缓存
+
+仓库详情、场景详情和任务详情使用 Redis 缓存，降低高频查询对 MySQL 的压力。写入路径采用写后失效策略，仓库、场景和任务的新增、更新、取消、状态流转、完成归档等变更会删除相关详情缓存。
+
+缓存治理配置由 `platform.cache` 管理：
+
+- `detail-ttl`：正常详情缓存 TTL，默认 `${PLATFORM_CACHE_DETAIL_TTL:5m}`
+- `null-ttl`：空值缓存 TTL，默认 `${PLATFORM_CACHE_NULL_TTL:1m}`，用于防穿透
+- `jitter-seconds`：随机 TTL 抖动秒数，默认 `${PLATFORM_CACHE_JITTER_SECONDS:60}`，用于防雪崩
+- `mutex-ttl`：缓存未命中加载互斥锁 TTL，默认 `${PLATFORM_CACHE_MUTEX_TTL:5s}`，用于防击穿
+
+### 事务策略
+
+平台只在短写操作上开启事务边界，例如仓库、场景、任务取消、任务状态更新、场景摘要更新和启动恢复补偿。长时间执行的 Playwright 安装、测试、解析和产物归档不放在单个数据库事务中，避免外部命令运行期间占用连接和锁。
+
+### 线程池治理
+
+长任务执行继续使用自定义 `taskExecutionExecutor`，不会占用 Spring Web/Tomcat 请求线程执行 Playwright 命令。线程池参数由 `platform.task.execution` 管理：
+
+- `core-pool-size`：核心执行线程数，默认 `2`
+- `max-pool-size`：最大执行线程数，默认 `4`
+- `queue-capacity`：等待队列容量，默认 `50`
+- `keep-alive-seconds`：非核心线程空闲存活时间，默认 `60`
+- `install-timeout-seconds`：依赖安装阶段超时，默认 `600`
+- `test-timeout-seconds`：测试执行阶段超时，默认 `1800`
+- `monitor-log-interval-seconds`：线程池监控日志输出间隔，默认 `30`
+
+`taskExecutionExecutor` 使用 fail-fast 拒绝策略。线程池满载时会记录 active、pool、max、queue 等指标日志，便于日志告警系统按 `Task execution rejected` 关键字触发告警；业务侧捕获拒绝异常后将任务补偿为 `FAILED`，`resultCode=SYSTEM_BUSY`，并同步刷新场景摘要和详情缓存。
+
+启动恢复会扫描历史 `QUEUED/RUNNING` 任务。未取消的 `QUEUED` 任务会重新派发，重启前已进入 `RUNNING` 或已取消的任务会按失败/取消路径补偿，避免服务重启后任务长期卡在执行中。
+
+### Tomcat 请求线程
+
+HTTP 请求线程由内嵌 Tomcat 管理，只负责接收请求和提交后台任务。可通过以下环境变量调整请求线程池和连接积压队列：
+
+- `SERVER_TOMCAT_THREADS_MAX`：最大请求线程数，默认 `200`
+- `SERVER_TOMCAT_THREADS_MIN_SPARE`：最小空闲请求线程数，默认 `10`
+- `SERVER_TOMCAT_ACCEPT_COUNT`：请求线程耗尽时的连接等待队列长度，默认 `100`
 
 ## 开发命令
 
