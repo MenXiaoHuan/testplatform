@@ -52,6 +52,20 @@ services:
       PLATFORM_MINIO_SECRET_KEY: ${PLATFORM_MINIO_SECRET_KEY:-minioadmin}
       PLATFORM_STORAGE_BUCKET: ${PLATFORM_STORAGE_BUCKET:-qa-report}
 
+  redis:
+    image: redis:7.2-alpine
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
   server:
     build:
       context: ./playwright-platform-server
@@ -61,11 +75,15 @@ services:
         condition: service_healthy
       minio-init:
         condition: service_completed_successfully
+      redis:
+        condition: service_healthy
     environment:
       SPRING_PROFILES_ACTIVE: dev
       PLATFORM_DB_URL: jdbc:mysql://mysql:3306/${PLATFORM_DB_NAME:-playwright_platform}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
       PLATFORM_DB_USERNAME: ${PLATFORM_DB_USERNAME:-root}
       PLATFORM_DB_PASSWORD: ${PLATFORM_DB_PASSWORD:-12345678}
+      PLATFORM_REDIS_HOST: redis
+      PLATFORM_REDIS_PORT: 6379
       PLATFORM_MINIO_ENDPOINT: http://minio:9000
       PLATFORM_MINIO_ACCESS_KEY: ${PLATFORM_MINIO_ACCESS_KEY:-minioadmin}
       PLATFORM_MINIO_SECRET_KEY: ${PLATFORM_MINIO_SECRET_KEY:-minioadmin}
@@ -103,5 +121,6 @@ services:
 volumes:
   mysql-data:
   minio-data:
+  redis-data:
   maven-cache:
   web-node-modules:

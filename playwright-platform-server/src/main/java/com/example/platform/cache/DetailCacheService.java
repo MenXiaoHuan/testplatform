@@ -1,0 +1,111 @@
+package com.example.platform.cache;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.time.Duration;
+import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.function.Supplier;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.stereotype.Service;
+
+@Service
+@EnableConfigurationProperties(CacheProperties.class)
+public class DetailCacheService {
+    private final RedisTemplate<String, String> redisTemplate;
+    private final ObjectMapper objectMapper;
+    private final CacheProperties properties;
+    private final ConcurrentMap<String, Object> keyLocks = new ConcurrentHashMap<>();
+
+    public DetailCacheService(
+            RedisTemplate<String, String> redisTemplate,
+            ObjectMapper objectMapper,
+            CacheProperties properties) {
+        this.redisTemplate = redisTemplate;
+        this.objectMapper = objectMapper;
+        this.properties = properties;
+    }
+
+    public <T> Optional<T> getOrLoad(String detailType, Long id, Class<T> valueType, Supplier<Optional<T>> loader) {
+        String key = detailKey(detailType, id);
+        Optional<T> cached = readCached(key, valueType);
+        if (cached != null) {
+            return cached;
+        }
+
+        Object lock = keyLocks.computeIfAbsent(key, ignored -> new Object());
+        synchronized (lock) {
+            try {
+                cached = readCached(key, valueType);
+                if (cached != null) {
+                    return cached;
+                }
+                return loadAndCache(key, loader);
+            } finally {
+                keyLocks.remove(key, lock);
+            }
+        }
+    }
+
+    public void invalidate(String detailType, Long id) {
+        redisTemplate.delete(detailKey(detailType, id));
+    }
+
+    private <T> Optional<T> readCached(String key, Class<T> valueType) {
+        String json = redisTemplate.opsForValue().get(key);
+        if (json == null) {
+            return null;
+        }
+        try {
+            JsonNode root = objectMapper.readTree(json);
+            if (root.path("empty").asBoolean(false)) {
+                return Optional.empty();
+            }
+            return Optional.of(objectMapper.treeToValue(root.get("value"), valueType));
+        } catch (Exception ex) {
+            throw new IllegalStateException("Failed to read detail cache: " + key, ex);
+        }
+    }
+
+    private <T> Optional<T> loadAndCache(String key, Supplier<Optional<T>> loader) {
+        String lockKey = key + ":lock";
+        Boolean locked = redisTemplate.opsForValue().setIfAbsent(lockKey, "1", properties.getMutexTtl());
+        if (!Boolean.TRUE.equals(locked)) {
+            Optional<T> existing = loader.get();
+            writeCached(key, existing);
+            return existing;
+        }
+        try {
+            Optional<T> loaded = loader.get();
+            writeCached(key, loaded);
+            return loaded;
+        } finally {
+            redisTemplate.delete(lockKey);
+        }
+    }
+
+    private <T> void writeCached(String key, Optional<T> value) {
+        CachedValue cachedValue = value.<CachedValue>map(CachedValue::hit).orElseGet(CachedValue::nullValue);
+        try {
+            redisTemplate.opsForValue().set(key, objectMapper.writeValueAsString(cachedValue), ttl(value.isEmpty()));
+        } catch (Exception ex) {
+            throw new IllegalStateException("Failed to write detail cache: " + key, ex);
+        }
+    }
+
+    private Duration ttl(boolean emptyValue) {
+        Duration base = emptyValue ? properties.getNullTtl() : properties.getDetailTtl();
+        int jitterSeconds = Math.max(0, properties.getJitterSeconds());
+        if (jitterSeconds == 0) {
+            return base;
+        }
+        return base.plusSeconds(ThreadLocalRandom.current().nextInt(jitterSeconds + 1));
+    }
+
+    private String detailKey(String detailType, Long id) {
+        return "detail:" + detailType + ":" + id;
+    }
+}

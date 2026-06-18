@@ -6,6 +6,12 @@ spring:
     username: ${PLATFORM_DB_USERNAME}
     password: ${PLATFORM_DB_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
+  data:
+    redis:
+      host: ${PLATFORM_REDIS_HOST}
+      port: ${PLATFORM_REDIS_PORT:6379}
+      password: ${PLATFORM_REDIS_PASSWORD:}
+      timeout: ${PLATFORM_REDIS_TIMEOUT:2s}
   flyway:
     enabled: true
 mybatis:
@@ -14,6 +20,11 @@ mybatis:
 server:
   port: ${SERVER_PORT:8080}
 platform:
+  cache:
+    detail-ttl: ${PLATFORM_CACHE_DETAIL_TTL:5m}
+    null-ttl: ${PLATFORM_CACHE_NULL_TTL:1m}
+    jitter-seconds: ${PLATFORM_CACHE_JITTER_SECONDS:60}
+    mutex-ttl: ${PLATFORM_CACHE_MUTEX_TTL:5s}
   task:
     execution:
       core-pool-size: 2
