@@ -51,25 +51,72 @@
 
 ## Docker Compose 开发环境
 
-本地已安装 Docker 后，可以使用 Compose 一键启动 MySQL、MinIO、后端和前端。首次启动前先复制环境变量模板：
+本地已安装 Docker 后，可以使用 Compose 一键启动 MySQL、Redis、MinIO、后端和前端。首次启动前先创建本机私有 `.env` 文件，填写端口、连接地址、账号和密码；该文件已被 `.gitignore` 忽略，不会上传到 GitHub。
 
 ```bash
-cp .env.example .env
+docker compose config
 docker compose up --build
 ```
 
 启动后可访问：
 
-- 前端：`http://localhost:5173`
-- 后端：`http://localhost:8080`
-- MinIO Console：`http://localhost:9001`
+- 前端：`http://localhost:${PLATFORM_WEB_HOST_PORT}`
+- 后端：`http://localhost:${PLATFORM_SERVER_HOST_PORT}`
+- MinIO Console：`http://localhost:${PLATFORM_MINIO_CONSOLE_HOST_PORT}`
 
-本地 Compose 会读取 `.env`。仓库只提交 `.env.example` 模板，不提交真实账号或密码；首次启动前请复制并替换其中的 `change-me-*` 占位值：
+推荐按以下结构维护本机 `.env`，前端独立分组，后端依赖作为后端子类目：
+
+```env
+# Frontend
+PLATFORM_WEB_HOST_PORT=5173
+PLATFORM_WEB_API_PROXY_TARGET=http://server:8080
+
+# Backend - Server
+PLATFORM_SERVER_HOST_PORT=8080
+
+# Backend - MySQL
+PLATFORM_DB_NAME=playwright_platform
+PLATFORM_DB_URL=jdbc:mysql://mysql:3306/playwright_platform?useSSL=false&allowPublicKeyRetrieval=true&createDatabaseIfNotExist=true&serverTimezone=UTC
+PLATFORM_DB_USERNAME=root
+PLATFORM_DB_PASSWORD=<your-db-password>
+PLATFORM_MYSQL_HOST_PORT=3307
+
+# Backend - Redis
+PLATFORM_REDIS_HOST=redis
+PLATFORM_REDIS_PORT=6379
+PLATFORM_REDIS_HOST_PORT=6379
+PLATFORM_REDIS_PASSWORD=<your-redis-password>
+
+# Backend - MinIO
+PLATFORM_MINIO_ENDPOINT=http://minio:9000
+PLATFORM_MINIO_INTERNAL_ENDPOINT=http://minio:9000
+PLATFORM_MINIO_API_HOST_PORT=9000
+PLATFORM_MINIO_CONSOLE_HOST_PORT=9001
+PLATFORM_MINIO_ACCESS_KEY=<your-minio-access-key>
+PLATFORM_MINIO_SECRET_KEY=<your-minio-secret-key>
+PLATFORM_STORAGE_BUCKET=qa-report
+
+# Backend - Runner
+PLATFORM_RUNNER_MODE=docker
+PLATFORM_RUNNER_WORKSPACE_ROOT=/workspace/.runner-workspaces
+PLATFORM_RUNNER_HOST_WORKSPACE_ROOT=./.runner-workspaces
+PLATFORM_RUNNER_DOCKER_IMAGE=mcr.microsoft.com/playwright:v1.44.0-jammy
+PLATFORM_RUNNER_DOCKER_NETWORK=bridge
+PLATFORM_RUNNER_DOCKER_MEMORY=2g
+PLATFORM_RUNNER_DOCKER_CPUS=2
+PLATFORM_RUNNER_DOCKER_CONTAINER_WORKSPACE_ROOT=/workspace/task
+```
+
+本地 Compose 会读取 `.env`，其中真实账号和密码只保留在本机：
 
 - MySQL：账号和密码来自 `PLATFORM_DB_USERNAME`、`PLATFORM_DB_PASSWORD`
 - Redis：连接地址和密码来自 `PLATFORM_REDIS_HOST`、`PLATFORM_REDIS_PORT`、`PLATFORM_REDIS_PASSWORD`
 - MinIO：账号和密码来自 `PLATFORM_MINIO_ACCESS_KEY`、`PLATFORM_MINIO_SECRET_KEY`
-- Bucket：`qa-report`
+- 前端代理：容器内开发服务器通过 `PLATFORM_WEB_API_PROXY_TARGET` 转发到后端
+- 端口映射：宿主机端口来自 `PLATFORM_WEB_HOST_PORT`、`PLATFORM_SERVER_HOST_PORT`、`PLATFORM_MYSQL_HOST_PORT`、`PLATFORM_REDIS_HOST_PORT`、`PLATFORM_MINIO_API_HOST_PORT`、`PLATFORM_MINIO_CONSOLE_HOST_PORT`
+- Runner 工作区：宿主机路径来自 `PLATFORM_RUNNER_HOST_WORKSPACE_ROOT`，容器内路径来自 `PLATFORM_RUNNER_WORKSPACE_ROOT`
+
+如果 MySQL、Redis 或 MinIO 已经使用 Docker volume 初始化过，修改 `.env` 中的账号密码不会自动修改已有 volume 内部的账号密码。需要沿用旧密码，或执行 `docker compose down -v` 清理数据卷后重新初始化。
 
 停止服务：
 
@@ -77,7 +124,7 @@ docker compose up --build
 docker compose down
 ```
 
-如需同时清理 MySQL、MinIO 和依赖缓存数据卷：
+如需同时清理 MySQL、Redis、MinIO、Maven 缓存和前端依赖数据卷：
 
 ```bash
 docker compose down -v
@@ -87,7 +134,7 @@ docker compose down -v
 
 ### Docker Runner
 
-Compose 开发环境默认启用 `PLATFORM_RUNNER_MODE=docker`。后端会通过 Docker socket 启动短生命周期 Runner 容器来执行安装和测试命令，任务工作区位于 `.runner-workspaces/`。
+Compose 开发环境默认启用 `PLATFORM_RUNNER_MODE=docker`。后端会通过 Docker socket 启动短生命周期 Runner 容器来执行安装和测试命令，任务工作区由 `PLATFORM_RUNNER_HOST_WORKSPACE_ROOT` 和 `PLATFORM_RUNNER_WORKSPACE_ROOT` 控制。
 
 该模式会把宿主机 `/var/run/docker.sock` 挂载给 server 容器。Docker socket 具备较高权限，仅建议用于本地开发或受控环境。Runner 容器本身不会挂载 Docker socket，只挂载当前任务 workspace。
 

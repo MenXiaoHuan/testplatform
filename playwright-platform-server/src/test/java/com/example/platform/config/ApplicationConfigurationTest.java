@@ -45,22 +45,38 @@ class ApplicationConfigurationTest {
     @Test
     void shouldNotExposeWeakSecretsInDockerOrDocs() throws IOException {
         String compose = Files.readString(Path.of("../docker-compose.yml"));
-        String envExample = Files.readString(Path.of("../.env.example"));
         String readme = Files.readString(Path.of("../README.md"));
 
         assertThat(compose).doesNotContain(WEAK_NUMERIC_SECRET);
         assertThat(compose).doesNotContain(WEAK_MINIO_SECRET);
         assertThat(compose).contains("PLATFORM_REDIS_PASSWORD");
         assertThat(compose).contains("--requirepass");
-        assertThat(envExample).contains("PLATFORM_DB_URL=change-me-db-url");
-        assertThat(envExample).contains("PLATFORM_REDIS_HOST=change-me-redis-host");
-        assertThat(envExample).contains("PLATFORM_MINIO_ENDPOINT=change-me-minio-endpoint");
-        assertThat(envExample).doesNotContain(WEAK_NUMERIC_SECRET);
-        assertThat(envExample).doesNotContain(WEAK_MINIO_SECRET);
         assertThat(readme).doesNotContain(WEAK_NUMERIC_SECRET);
         assertThat(readme).doesNotContain(WEAK_MINIO_SECRET);
         assertThat(readme).doesNotContain("jdbc:mysql://localhost");
         assertThat(readme).doesNotContain("http://127.0.0.1");
+    }
+
+    @Test
+    void shouldExternalizeComposePortsAndServiceEndpoints() throws IOException {
+        String compose = Files.readString(Path.of("../docker-compose.yml"));
+
+        assertThat(compose).contains("${PLATFORM_MYSQL_HOST_PORT");
+        assertThat(compose).contains("${PLATFORM_MINIO_API_HOST_PORT");
+        assertThat(compose).contains("${PLATFORM_MINIO_CONSOLE_HOST_PORT");
+        assertThat(compose).contains("${PLATFORM_REDIS_HOST_PORT");
+        assertThat(compose).contains("${PLATFORM_SERVER_HOST_PORT");
+        assertThat(compose).contains("${PLATFORM_WEB_HOST_PORT");
+        assertThat(compose).contains("${PLATFORM_WEB_API_PROXY_TARGET");
+        assertThat(compose).contains("${PLATFORM_MINIO_INTERNAL_ENDPOINT");
+        assertThat(compose).contains("${PLATFORM_RUNNER_HOST_WORKSPACE_ROOT");
+        assertThat(compose).doesNotContain("\"3307:3306\"");
+        assertThat(compose).doesNotContain("\"9000:9000\"");
+        assertThat(compose).doesNotContain("\"9001:9001\"");
+        assertThat(compose).doesNotContain("\"6379:6379\"");
+        assertThat(compose).doesNotContain("\"8080:8080\"");
+        assertThat(compose).doesNotContain("\"5173:5173\"");
+        assertThat(compose).doesNotContain("VITE_API_PROXY_TARGET: http://server:8080");
     }
 
     @Test
