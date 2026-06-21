@@ -18,6 +18,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * Coordinates scene CRUD, schedule metadata, and scene detail-cache lifecycle.
+ */
 @Service
 public class SceneServiceImpl implements SceneService {
     private static final Logger log = LoggerFactory.getLogger(SceneServiceImpl.class);

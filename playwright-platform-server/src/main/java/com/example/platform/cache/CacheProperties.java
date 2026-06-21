@@ -3,6 +3,9 @@ package com.example.platform.cache;
 import java.time.Duration;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
+/**
+ * Tunable cache protection settings for detail endpoint Redis keys.
+ */
 @ConfigurationProperties(prefix = "platform.cache")
 public class CacheProperties {
     private Duration detailTtl = Duration.ofMinutes(5);

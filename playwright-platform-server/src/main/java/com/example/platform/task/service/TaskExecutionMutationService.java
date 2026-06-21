@@ -9,6 +9,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * Owns the short database transactions used by the task execution pipeline.
+ *
+ * <p>The orchestrator intentionally avoids one large transaction around external
+ * process execution. Each state transition is persisted independently here and
+ * invalidates the affected detail cache entry after the write.
+ */
 @Service
 public class TaskExecutionMutationService {
     private final TaskMapper taskRepository;

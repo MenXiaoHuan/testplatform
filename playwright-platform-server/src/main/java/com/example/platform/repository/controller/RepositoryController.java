@@ -15,6 +15,13 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+/**
+ * HTTP boundary for repository management.
+ *
+ * <p>CRUD behavior, transaction boundaries, cascade deletion, and detail-cache
+ * invalidation live in {@link RepositoryService}; this class only maps requests
+ * and wraps responses in the platform envelope.
+ */
 @RestController
 @RequestMapping("/api/repos")
 public class RepositoryController {

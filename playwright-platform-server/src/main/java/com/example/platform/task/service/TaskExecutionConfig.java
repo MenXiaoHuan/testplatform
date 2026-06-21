@@ -9,6 +9,12 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
+/**
+ * Defines the dedicated executor used for long-running task execution.
+ *
+ * <p>HTTP request threads should only enqueue work; Playwright installation,
+ * test execution, log capture, and artifact archiving run on this pool.
+ */
 @Configuration
 @EnableConfigurationProperties(TaskExecutionProperties.class)
 public class TaskExecutionConfig {

@@ -12,6 +12,13 @@ import java.time.Instant;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+/**
+ * Executes runner stages directly on the host machine.
+ *
+ * <p>This executor is intended for local development and trusted environments.
+ * It streams combined process output to a temporary log file and supports
+ * cooperative cancellation and timeout enforcement.
+ */
 public class LocalRunnerCommandExecutor implements RunnerCommandExecutor {
     @Override
     public RunnerCommandResult execute(RunnerCommandRequest request) {

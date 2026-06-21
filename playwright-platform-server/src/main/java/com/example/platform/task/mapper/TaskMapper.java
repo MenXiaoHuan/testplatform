@@ -15,6 +15,13 @@ import org.apache.ibatis.annotations.Results;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
+/**
+ * Annotation-based MyBatis mapper for task execution state.
+ *
+ * <p>The task pipeline persists each state transition through short service
+ * transactions; this mapper provides the SQL used by those transitions and
+ * by task read models.
+ */
 @Mapper
 public interface TaskMapper {
     String TASK_COLUMNS = """

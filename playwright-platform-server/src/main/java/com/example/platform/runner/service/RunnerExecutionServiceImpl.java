@@ -7,6 +7,13 @@ import java.util.Map;
 import java.util.function.BooleanSupplier;
 import org.springframework.stereotype.Service;
 
+/**
+ * Adapts high-level runner stages to the configured command executor.
+ *
+ * <p>The implementation keeps the orchestration layer independent from whether
+ * stages run locally or inside Docker, and it passes cancellation signals through
+ * to the lower-level executor.
+ */
 @Service
 public class RunnerExecutionServiceImpl implements RunnerExecutionService {
     private static final Duration DEFAULT_STAGE_TIMEOUT = Duration.ofHours(1);

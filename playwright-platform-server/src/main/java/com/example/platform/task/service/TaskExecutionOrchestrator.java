@@ -22,6 +22,13 @@ import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * Coordinates the full task lifecycle after a task has been accepted for execution.
+ *
+ * <p>This class calls external systems such as Git, shell/Docker runners, the
+ * filesystem, and object storage. It must not be wrapped in a single transaction;
+ * database mutations are delegated to {@link TaskExecutionMutationService}.
+ */
 final class TaskExecutionOrchestrator {
     private static final Logger log = LoggerFactory.getLogger(TaskExecutionOrchestrator.class);
 

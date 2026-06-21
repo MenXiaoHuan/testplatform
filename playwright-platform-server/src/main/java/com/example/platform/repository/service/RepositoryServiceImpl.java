@@ -9,6 +9,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * Handles repository CRUD with short write transactions and detail-cache invalidation.
+ */
 @Service
 public class RepositoryServiceImpl implements RepositoryService {
     private final TestRepositoryMapper repository;

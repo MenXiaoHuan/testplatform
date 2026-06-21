@@ -3,6 +3,13 @@ import { cancelTask, fetchSceneTasks, getTask, listArtifacts, listTaskCases, lis
 import type { CaseResultRecord } from '../types/report'
 import type { ArtifactRecord, TaskRecord, TaskStageLogRecord } from '../types/task'
 
+/**
+ * Central Pinia store for task lists and task detail read models.
+ *
+ * The store keeps list pagination separate from the current detail view and
+ * tolerates partial detail failures so artifacts, cases, or logs can fail
+ * independently without hiding the task itself.
+ */
 export const useTaskStore = defineStore('task', {
   state: () => ({
     items: [] as TaskRecord[],
@@ -89,7 +96,7 @@ export const useTaskStore = defineStore('task', {
         getTask(taskId),
         listArtifacts(taskId),
         listTaskLogs(taskId),
-        ])
+      ])
       this.current = task
       this.artifacts = artifacts
       this.stageLogs = stageLogs

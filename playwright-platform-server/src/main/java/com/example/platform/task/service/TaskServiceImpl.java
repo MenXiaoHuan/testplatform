@@ -37,6 +37,13 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.http.HttpStatus;
 
+/**
+ * Application service for task commands and task read models.
+ *
+ * <p>Creation and cancellation are short write transactions. Actual execution is
+ * dispatched to {@code taskExecutionExecutor} so web request threads are not
+ * blocked by Playwright or artifact archiving work.
+ */
 @Service
 public class TaskServiceImpl implements TaskService {
     private static final Logger log = LoggerFactory.getLogger(TaskServiceImpl.class);

@@ -4,6 +4,12 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+/**
+ * Selects the command execution backend used by task stages.
+ *
+ * <p>Docker mode isolates untrusted test commands in short-lived containers;
+ * local mode is reserved for trusted development environments.
+ */
 @Configuration
 @EnableConfigurationProperties({RunnerProperties.class, DockerRunnerProperties.class})
 public class RunnerCommandExecutorConfig {

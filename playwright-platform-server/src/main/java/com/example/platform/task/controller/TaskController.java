@@ -12,6 +12,12 @@ import com.example.platform.task.service.TaskService;
 import java.util.List;
 import org.springframework.web.bind.annotation.*;
 
+/**
+ * Exposes task execution, cancellation, detail, artifact, case, and log APIs.
+ *
+ * <p>The controller stays thin: write transactions, cache reads, and long-running
+ * task dispatch are delegated to {@link TaskService}.
+ */
 @RestController
 public class TaskController {
     private final TaskService taskService;

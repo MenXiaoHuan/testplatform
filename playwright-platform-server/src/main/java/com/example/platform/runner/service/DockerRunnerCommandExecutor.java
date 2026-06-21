@@ -18,6 +18,12 @@ import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * Executes task stages in short-lived Docker containers.
+ *
+ * <p>The executor captures combined output to a temporary log file, supports
+ * cooperative cancellation, and force-removes the container on timeout or cancel.
+ */
 public class DockerRunnerCommandExecutor implements RunnerCommandExecutor {
     private static final Logger log = LoggerFactory.getLogger(DockerRunnerCommandExecutor.class);
     private static final Pattern TASK_ID_PATTERN = Pattern.compile(".*/([0-9]+)$");

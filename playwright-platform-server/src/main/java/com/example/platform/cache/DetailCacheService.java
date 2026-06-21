@@ -12,6 +12,13 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
+/**
+ * Centralizes Redis-backed detail caching for read-heavy detail endpoints.
+ *
+ * <p>The cache stores normal hits and short-lived null values, adds TTL jitter,
+ * and uses a Redis mutex plus an in-process lock to reduce cache penetration,
+ * breakdown, and avalanche risk.
+ */
 @Service
 @EnableConfigurationProperties(CacheProperties.class)
 public class DetailCacheService {
@@ -29,6 +36,9 @@ public class DetailCacheService {
         this.properties = properties;
     }
 
+    /**
+     * Returns a cached detail value or loads it once from the database when the key is missing.
+     */
     public <T> Optional<T> getOrLoad(String detailType, Long id, Class<T> valueType, Supplier<Optional<T>> loader) {
         String key = detailKey(detailType, id);
         Optional<T> cached = readCached(key, valueType);
@@ -50,6 +60,9 @@ public class DetailCacheService {
         }
     }
 
+    /**
+     * Removes one detail cache entry after a write transaction changes its source row.
+     */
     public void invalidate(String detailType, Long id) {
         redisTemplate.delete(detailKey(detailType, id));
     }

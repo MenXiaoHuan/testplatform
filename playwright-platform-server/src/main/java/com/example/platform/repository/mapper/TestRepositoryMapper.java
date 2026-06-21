@@ -14,6 +14,12 @@ import org.apache.ibatis.annotations.Results;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
+/**
+ * Annotation-based MyBatis mapper for repository records.
+ *
+ * <p>SQL is kept in annotations so the persistence layer remains pure MyBatis
+ * without JPA repositories or XML mapper files.
+ */
 @Mapper
 public interface TestRepositoryMapper {
     @Insert("""

@@ -7,6 +7,12 @@ interface UseTaskDetailLoaderOptions {
   onLoadError: (error: unknown) => void
 }
 
+/**
+ * Loads task detail whenever the route-derived task id becomes available or changes.
+ *
+ * The caller owns user-facing navigation and error messaging; this composable
+ * only centralizes lifecycle and id-validation behavior.
+ */
 export function useTaskDetailLoader({
   taskId,
   loadTaskDetailPage,

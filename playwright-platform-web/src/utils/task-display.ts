@@ -3,6 +3,9 @@ import type { TaskRecord } from '../types/task'
 type TaskLike = Pick<TaskRecord, 'status' | 'cancelRequested'>
 type TaskDurationLike = Pick<TaskRecord, 'status' | 'startedAt' | 'queuedAt' | 'createdAt' | 'durationMs'>
 
+/**
+ * Normalizes backend enum values before mapping them to UI labels and tag types.
+ */
 function normalizeEnum(value?: string | null) {
   return (value ?? '').trim().toUpperCase()
 }
@@ -12,6 +15,7 @@ function isCancelingTask(task: TaskLike) {
   return task.cancelRequested === true && (status === 'QUEUED' || status === 'RUNNING')
 }
 
+/** Maps task status plus cancel intent into the user-facing status label. */
 export function taskStatusText(task: TaskLike) {
   if (isCancelingTask(task)) {
     return '取消中'
@@ -27,6 +31,7 @@ export function taskStatusText(task: TaskLike) {
   return status || '未知状态'
 }
 
+/** Maps task status plus cancel intent into Element Plus tag type names. */
 export function taskStatusType(task: TaskLike) {
   if (isCancelingTask(task)) return 'warning'
 
@@ -37,6 +42,7 @@ export function taskStatusType(task: TaskLike) {
   return 'info'
 }
 
+/** Maps execution stage codes into labels shown on task detail and list pages. */
 export function taskStageText(stage?: string | null) {
   const normalized = normalizeEnum(stage)
   if (!normalized) return '暂无'
@@ -50,6 +56,7 @@ export function taskStageText(stage?: string | null) {
   return normalized
 }
 
+/** Maps runner result codes into concise failure or success labels. */
 export function taskResultCodeText(resultCode?: string | null) {
   const normalized = normalizeEnum(resultCode)
   if (!normalized) return '暂无'
@@ -65,6 +72,7 @@ export function taskResultCodeText(resultCode?: string | null) {
   return normalized
 }
 
+/** Maps task trigger source codes into user-facing labels. */
 export function taskTriggerTypeText(triggerType?: string | null) {
   const normalized = normalizeEnum(triggerType)
   if (!normalized) return '暂无'
@@ -74,6 +82,7 @@ export function taskTriggerTypeText(triggerType?: string | null) {
   return normalized
 }
 
+/** Formats a millisecond duration using the compact task UI format. */
 export function formatDuration(durationMs: number | null | undefined) {
   const totalSeconds = Math.max(0, Math.floor((durationMs ?? 0) / 1000))
   const minutes = Math.floor(totalSeconds / 60)
@@ -81,6 +90,7 @@ export function formatDuration(durationMs: number | null | undefined) {
   return `${String(minutes).padStart(2, '0')}min${String(seconds).padStart(2, '0')}s`
 }
 
+/** Resolves the best available timestamp for live queued/running duration display. */
 export function resolveTaskStartTimestamp(task: TaskDurationLike) {
   const raw = task.startedAt ?? task.queuedAt ?? task.createdAt
   if (!raw) {
@@ -90,6 +100,7 @@ export function resolveTaskStartTimestamp(task: TaskDurationLike) {
   return Number.isFinite(timestamp) ? timestamp : null
 }
 
+/** Returns persisted duration for finished tasks and live elapsed time for active tasks. */
 export function taskDurationText(task: TaskDurationLike, nowTimestamp: number) {
   const status = normalizeEnum(task.status)
   if (status !== 'RUNNING' && status !== 'QUEUED') {
@@ -105,6 +116,7 @@ export function taskDurationText(task: TaskDurationLike, nowTimestamp: number) {
   return formatDuration(elapsedMs)
 }
 
+/** Maps case status codes into labels shown in case result tables. */
 export function caseStatusText(status?: string | null) {
   const normalized = normalizeEnum(status)
   if (!normalized) return '未知'
@@ -115,6 +127,7 @@ export function caseStatusText(status?: string | null) {
   return normalized
 }
 
+/** Maps case status codes into Element Plus tag type names. */
 export function caseStatusType(status?: string | null) {
   const normalized = normalizeEnum(status)
   if (normalized === 'PASSED') return 'success'
@@ -122,6 +135,7 @@ export function caseStatusType(status?: string | null) {
   return 'info'
 }
 
+/** Maps case filter values into tab or select labels. */
 export function caseFilterLabel(status: 'ALL' | 'FAILED' | 'PASSED' | 'SKIPPED') {
   if (status === 'ALL') return '全部'
   if (status === 'FAILED') return '失败'

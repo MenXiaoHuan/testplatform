@@ -16,6 +16,13 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+/**
+ * HTTP boundary for scene CRUD and scene card listing.
+ *
+ * <p>Schedule metadata updates, short write transactions, and cache invalidation
+ * are handled by {@link SceneService}; this controller only translates HTTP
+ * requests into service calls.
+ */
 @RestController
 @RequestMapping("/api/scenes")
 public class SceneController {

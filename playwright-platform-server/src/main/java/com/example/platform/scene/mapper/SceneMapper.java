@@ -15,6 +15,12 @@ import org.apache.ibatis.annotations.Results;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
+/**
+ * Annotation-based MyBatis mapper for scene definitions and schedule metadata.
+ *
+ * <p>Scene writes are wrapped by service-level transactions; this mapper only
+ * owns SQL shape and column-to-property mapping.
+ */
 @Mapper
 public interface SceneMapper {
     String SCENE_COLUMNS = """

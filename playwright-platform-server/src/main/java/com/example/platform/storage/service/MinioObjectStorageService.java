@@ -17,6 +17,12 @@ import java.util.concurrent.TimeUnit;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+/**
+ * Stores task artifacts and reports in MinIO-compatible object storage.
+ *
+ * <p>The service owns bucket creation, upload URL construction, presigned
+ * download URL creation, and cleanup for archived task artifacts.
+ */
 @Service
 public class MinioObjectStorageService implements ObjectStorageService {
     private static final String DEFAULT_CONTENT_TYPE = "application/octet-stream";
@@ -115,6 +121,9 @@ public class MinioObjectStorageService implements ObjectStorageService {
         }
     }
 
+    /**
+     * Converts either a raw object key or a previously stored object URL into a MinIO object key.
+     */
     private String normalizeObjectKey(String bucket, String objectKeyOrUrl) {
         if (objectKeyOrUrl == null || objectKeyOrUrl.isBlank()) {
             return objectKeyOrUrl;

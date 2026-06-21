@@ -15,6 +15,12 @@ interface UseTaskListLifecycleOptions {
   now?: () => number
 }
 
+/**
+ * Owns task-list lifecycle effects: initial loading, running-task polling, and duration ticks.
+ *
+ * Polling is enabled only while queued or running tasks exist, and in-flight
+ * refreshes are de-duplicated to avoid overlapping list requests.
+ */
 export function useTaskListLifecycle({
   rows,
   sceneId,
