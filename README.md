@@ -67,7 +67,7 @@ docker compose up --build
 本地 Compose 会读取 `.env`。仓库只提交 `.env.example` 模板，不提交真实账号或密码；首次启动前请复制并替换其中的 `change-me-*` 占位值：
 
 - MySQL：账号和密码来自 `PLATFORM_DB_USERNAME`、`PLATFORM_DB_PASSWORD`
-- Redis：`localhost:6379`，密码来自 `PLATFORM_REDIS_PASSWORD`
+- Redis：连接地址和密码来自 `PLATFORM_REDIS_HOST`、`PLATFORM_REDIS_PORT`、`PLATFORM_REDIS_PASSWORD`
 - MinIO：账号和密码来自 `PLATFORM_MINIO_ACCESS_KEY`、`PLATFORM_MINIO_SECRET_KEY`
 - Bucket：`qa-report`
 
@@ -110,29 +110,37 @@ cd test_platform
 
 先启动本地 MySQL、Redis 和 MinIO。
 
-本地开发可启用后端 `dev` profile，示例配置来自 `playwright-platform-server/src/main/resources/application-dev.yml`：
+本地开发可启用后端 `dev` profile。配置文件只读取环境变量，不内置数据库、Redis 或对象存储连接地址：
 
-- MySQL：`jdbc:mysql://localhost:3306/playwright_platform`
+- MySQL 连接：通过 `PLATFORM_DB_URL` 注入
 - 用户名：通过 `PLATFORM_DB_USERNAME` 注入
 - 密码：通过 `PLATFORM_DB_PASSWORD` 注入
-- Redis：`localhost:6379`，密码通过 `PLATFORM_REDIS_PASSWORD` 注入
-- MinIO：`http://127.0.0.1:9000`
+- Redis：通过 `PLATFORM_REDIS_HOST`、`PLATFORM_REDIS_PORT`、`PLATFORM_REDIS_PASSWORD` 注入
+- MinIO：通过 `PLATFORM_MINIO_ENDPOINT` 注入
 - Bucket：`qa-report`
 
 如需覆盖，使用环境变量：
 
 ```bash
-export PLATFORM_DB_URL='jdbc:mysql://localhost:3306/playwright_platform?useSSL=false&allowPublicKeyRetrieval=true&createDatabaseIfNotExist=true&serverTimezone=UTC'
+export PLATFORM_DB_URL='<your-db-jdbc-url>'
 export PLATFORM_DB_USERNAME='<your-db-username>'
 export PLATFORM_DB_PASSWORD='<your-db-password>'
-export PLATFORM_REDIS_HOST='127.0.0.1'
-export PLATFORM_REDIS_PORT='6379'
+export PLATFORM_REDIS_HOST='<your-redis-host>'
+export PLATFORM_REDIS_PORT='<your-redis-port>'
 export PLATFORM_REDIS_PASSWORD='<your-redis-password>'
-export PLATFORM_MINIO_ENDPOINT='http://127.0.0.1:9000'
+export PLATFORM_MINIO_ENDPOINT='<your-minio-endpoint>'
 export PLATFORM_MINIO_ACCESS_KEY='<your-minio-access-key>'
 export PLATFORM_MINIO_SECRET_KEY='<your-minio-secret-key>'
 export PLATFORM_STORAGE_BUCKET='qa-report'
 ```
+
+如果使用本机 Redis，请先给 Redis 配置密码，或直接使用 Compose 中已启用 `requirepass` 的 Redis。真实密码只写入本地 `.env` 或本机 Redis 配置，不提交到代码库。
+
+本机 Redis 尚未设置密码时，可任选一种方式：
+
+- 推荐：使用 `docker compose up redis` 启动 Compose Redis，并在本地 `.env` 中填写 `PLATFORM_REDIS_PASSWORD`
+- 临时：执行 `redis-cli CONFIG SET requirepass '<your-redis-password>'`，重启 Redis 后可能失效
+- 持久：在本机 `redis.conf` 中配置 `requirepass <your-redis-password>`，然后重启 Redis
 
 ### 3. 初始化数据库
 

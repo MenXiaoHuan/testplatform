@@ -8,7 +8,7 @@ spring:
     driver-class-name: com.mysql.cj.jdbc.Driver
   data:
     redis:
-      host: ${PLATFORM_REDIS_HOST:localhost}
+      host: ${PLATFORM_REDIS_HOST}
       port: ${PLATFORM_REDIS_PORT:6379}
       password: ${PLATFORM_REDIS_PASSWORD}
       timeout: ${PLATFORM_REDIS_TIMEOUT:2s}

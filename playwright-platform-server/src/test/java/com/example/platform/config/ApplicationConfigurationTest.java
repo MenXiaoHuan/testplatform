@@ -18,8 +18,10 @@ class ApplicationConfigurationTest {
         assertThat(applicationYaml).contains("url: ${PLATFORM_DB_URL}");
         assertThat(applicationYaml).contains("username: ${PLATFORM_DB_USERNAME}");
         assertThat(applicationYaml).contains("password: ${PLATFORM_DB_PASSWORD}");
+        assertThat(applicationYaml).contains("host: ${PLATFORM_REDIS_HOST}");
         assertThat(applicationYaml).contains("access-key: ${PLATFORM_MINIO_ACCESS_KEY}");
         assertThat(applicationYaml).contains("secret-key: ${PLATFORM_MINIO_SECRET_KEY}");
+        assertThat(applicationYaml).doesNotContain("host: ${PLATFORM_REDIS_HOST:localhost}");
         assertThat(applicationYaml).doesNotContain(WEAK_NUMERIC_SECRET);
         assertThat(applicationYaml).doesNotContain(WEAK_MINIO_SECRET);
     }
@@ -28,8 +30,10 @@ class ApplicationConfigurationTest {
     void shouldNotExposeWeakSecretsInDevProfile() throws IOException {
         String devApplicationYaml = Files.readString(Path.of("src/main/resources/application-dev.yml"));
 
-        assertThat(devApplicationYaml).contains("allowPublicKeyRetrieval=true");
-        assertThat(devApplicationYaml).contains("createDatabaseIfNotExist=true");
+        assertThat(devApplicationYaml).contains("url: ${PLATFORM_DB_URL}");
+        assertThat(devApplicationYaml).contains("endpoint: ${PLATFORM_MINIO_ENDPOINT}");
+        assertThat(devApplicationYaml).doesNotContain("jdbc:mysql://localhost");
+        assertThat(devApplicationYaml).doesNotContain("http://127.0.0.1");
         assertThat(devApplicationYaml).contains("${PLATFORM_DB_USERNAME}");
         assertThat(devApplicationYaml).contains("${PLATFORM_DB_PASSWORD}");
         assertThat(devApplicationYaml).contains("${PLATFORM_MINIO_ACCESS_KEY}");
@@ -48,10 +52,15 @@ class ApplicationConfigurationTest {
         assertThat(compose).doesNotContain(WEAK_MINIO_SECRET);
         assertThat(compose).contains("PLATFORM_REDIS_PASSWORD");
         assertThat(compose).contains("--requirepass");
+        assertThat(envExample).contains("PLATFORM_DB_URL=change-me-db-url");
+        assertThat(envExample).contains("PLATFORM_REDIS_HOST=change-me-redis-host");
+        assertThat(envExample).contains("PLATFORM_MINIO_ENDPOINT=change-me-minio-endpoint");
         assertThat(envExample).doesNotContain(WEAK_NUMERIC_SECRET);
         assertThat(envExample).doesNotContain(WEAK_MINIO_SECRET);
         assertThat(readme).doesNotContain(WEAK_NUMERIC_SECRET);
         assertThat(readme).doesNotContain(WEAK_MINIO_SECRET);
+        assertThat(readme).doesNotContain("jdbc:mysql://localhost");
+        assertThat(readme).doesNotContain("http://127.0.0.1");
     }
 
     @Test
