@@ -132,6 +132,36 @@ docker compose down -v
 
 该 Compose 配置用于本地开发，会启用后端 `dev` profile。生产环境请显式注入敏感配置，不要使用 `dev` profile。
 
+### 开发镜像与生产镜像
+
+前后端都区分开发镜像和生产镜像：
+
+- 开发镜像：`playwright-platform-server/Dockerfile.dev`、`playwright-platform-web/Dockerfile.dev`，由 `docker-compose.yml` 使用，适合本地挂载源码和热更新。
+- 生产镜像：`playwright-platform-server/Dockerfile`、`playwright-platform-web/Dockerfile`，使用多阶段构建，适合 CI/CD 或部署流水线。
+- 后端生产镜像：先用 Maven 打包 Spring Boot jar，再用 JRE 镜像运行，运行时不包含 Maven。
+- 前端生产镜像：先用 `npm ci` 和 Vite 构建静态资源，再用 Nginx 托管 `dist`，并支持 SPA 路由 fallback。
+
+生产镜像示例构建命令：
+
+```bash
+docker build -f playwright-platform-server/Dockerfile -t test-platform-server:prod ./playwright-platform-server
+docker build -f playwright-platform-web/Dockerfile -t test-platform-web:prod ./playwright-platform-web
+```
+
+单机生产部署可以使用 `docker-compose.prod.yml`：
+
+```bash
+docker compose -f docker-compose.prod.yml config
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+正式对团队开放时，推荐前后端分域名部署：
+
+- 前端：`https://test-platform.example.com`
+- 后端 API：`https://api.test-platform.example.com`
+
+当前 `docker-compose.prod.yml` 先提供单机可运行版本，完整步骤和分域名接入说明见 `docs/deployment.md`。
+
 ### Docker Runner
 
 Compose 开发环境默认启用 `PLATFORM_RUNNER_MODE=docker`。后端会通过 Docker socket 启动短生命周期 Runner 容器来执行安装和测试命令，任务工作区由 `PLATFORM_RUNNER_HOST_WORKSPACE_ROOT` 和 `PLATFORM_RUNNER_WORKSPACE_ROOT` 控制。

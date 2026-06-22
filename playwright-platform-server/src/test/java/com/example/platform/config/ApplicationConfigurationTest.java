@@ -80,6 +80,53 @@ class ApplicationConfigurationTest {
     }
 
     @Test
+    void shouldProvideProductionComposeForSingleHostDeployment() throws IOException {
+        String productionCompose = Files.readString(Path.of("../docker-compose.prod.yml"));
+
+        assertThat(productionCompose).contains("dockerfile: Dockerfile");
+        assertThat(productionCompose).doesNotContain("Dockerfile.dev");
+        assertThat(productionCompose).contains("SPRING_PROFILES_ACTIVE: prod");
+        assertThat(productionCompose).contains("PLATFORM_WEB_HOST_PORT");
+        assertThat(productionCompose).contains("PLATFORM_MINIO_API_HOST_PORT");
+        assertThat(productionCompose).contains("PLATFORM_MINIO_CONSOLE_HOST_PORT");
+        assertThat(productionCompose).contains("/var/run/docker.sock:/var/run/docker.sock");
+        assertThat(productionCompose).doesNotContain("PLATFORM_MYSQL_HOST_PORT");
+        assertThat(productionCompose).doesNotContain("PLATFORM_REDIS_HOST_PORT");
+        assertThat(productionCompose).doesNotContain("PLATFORM_SERVER_HOST_PORT");
+        assertThat(productionCompose).doesNotContain(WEAK_NUMERIC_SECRET);
+        assertThat(productionCompose).doesNotContain(WEAK_MINIO_SECRET);
+    }
+
+    @Test
+    void shouldDocumentProductionDeploymentSteps() throws IOException {
+        String deploymentGuide = Files.readString(Path.of("../docs/deployment.md"));
+
+        assertThat(deploymentGuide).contains("docker compose -f docker-compose.prod.yml config");
+        assertThat(deploymentGuide).contains("docker compose -f docker-compose.prod.yml up -d --build");
+        assertThat(deploymentGuide).contains("docker compose -f docker-compose.prod.yml logs -f server");
+        assertThat(deploymentGuide).contains("PLATFORM_DB_PASSWORD=<your-db-password>");
+        assertThat(deploymentGuide).contains("PLATFORM_REDIS_PASSWORD=<your-redis-password>");
+        assertThat(deploymentGuide).contains("PLATFORM_MINIO_SECRET_KEY=<your-minio-secret-key>");
+        assertThat(deploymentGuide).contains("80");
+        assertThat(deploymentGuide).contains("443");
+        assertThat(deploymentGuide).contains("https://test-platform.example.com");
+        assertThat(deploymentGuide).contains("https://api.test-platform.example.com");
+        assertThat(deploymentGuide).contains("VITE_API_BASE_URL=https://api.test-platform.example.com");
+        assertThat(deploymentGuide).contains("CORS");
+        assertThat(deploymentGuide).doesNotContain(WEAK_NUMERIC_SECRET);
+        assertThat(deploymentGuide).doesNotContain(WEAK_MINIO_SECRET);
+    }
+
+    @Test
+    void shouldProxyApiRequestsFromProductionWebContainer() throws IOException {
+        String nginxConfig = Files.readString(Path.of("../playwright-platform-web/nginx.conf"));
+
+        assertThat(nginxConfig).contains("location /api/");
+        assertThat(nginxConfig).contains("proxy_pass http://server:8080;");
+        assertThat(nginxConfig).contains("try_files $uri $uri/ /index.html;");
+    }
+
+    @Test
     void shouldExposeTaskExecutionDefaults() throws IOException {
         String applicationYaml = Files.readString(Path.of("src/main/resources/application.yml"));
 
