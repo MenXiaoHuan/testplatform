@@ -26,7 +26,7 @@ const pagination = computed(() => ({
 const repositoryFieldHelp = {
   workingDirectory: '为空时直接在仓库根目录执行；多模块仓库可填写子目录，例如 playwright_framework。',
   installCommand:
-    '默认使用 Playwright 原生命令，例如 npm install && npx playwright install；如仓库封装了脚本，也可以改成自定义安装命令。',
+      '默认使用 npm install；如仓库封装了脚本，也可以改成自定义安装命令。',
   runCommandTemplate:
     '默认使用 Playwright 原生命令，例如 npx playwright test；如仓库封装了脚本，也可以改成自定义执行命令。若使用 wrapper 模式，必须写成可透传参数的形式，例如 npm run test:e2e --，这样平台追加测试目标时才能继续向后透传。',
   testRoot: '相对工作目录填写测试目录，例如 tests。',
@@ -239,7 +239,7 @@ async function handleSizeChange(size: number) {
               </el-tooltip>
             </span>
           </template>
-          <el-input v-model="form.installCommand" placeholder="npm install && npx playwright install" />
+          <el-input v-model="form.installCommand" placeholder="npm install" />
         </el-form-item>
         <el-form-item prop="runCommandTemplate" required>
           <template #label>

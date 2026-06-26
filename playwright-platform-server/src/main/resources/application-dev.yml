@@ -9,5 +9,6 @@ platform:
   storage:
     minio:
       endpoint: ${PLATFORM_MINIO_ENDPOINT}
+      public-endpoint: ${PLATFORM_MINIO_PUBLIC_ENDPOINT:${PLATFORM_MINIO_ENDPOINT}}
       access-key: ${PLATFORM_MINIO_ACCESS_KEY}
       secret-key: ${PLATFORM_MINIO_SECRET_KEY}

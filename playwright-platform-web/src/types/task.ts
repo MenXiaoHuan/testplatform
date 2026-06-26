@@ -37,6 +37,29 @@ export interface TaskRecord {
   skippedCount?: number
 }
 
+export interface ApplicationErrorSummaryRecord {
+  occurredAt: string
+  loggerName?: string | null
+  message?: string | null
+  exceptionType?: string | null
+  requestId?: string | null
+  traceId?: string | null
+  taskId?: number | null
+  sceneId?: number | null
+  repoId?: number | null
+  stage?: string | null
+}
+
+export interface TaskDiagnosticsRecord {
+  taskId: number
+  currentStage?: string | null
+  resultCode?: string | null
+  resultMessage?: string | null
+  additionalDiagnostic?: string | null
+  stageLogCount: number
+  recentApplicationErrors: ApplicationErrorSummaryRecord[]
+}
+
 export interface ArtifactRecord {
   id: number
   taskId: number

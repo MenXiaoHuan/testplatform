@@ -12,6 +12,7 @@ import com.example.platform.scene.service.SceneSchedulerServiceImpl;
 import com.example.platform.scene.service.SceneServiceImpl;
 import com.example.platform.task.dto.CaseResultResponse;
 import com.example.platform.task.dto.SceneTaskListResponse;
+import com.example.platform.task.dto.TaskDiagnosticsResponse;
 import com.example.platform.task.dto.TaskDetailResponse;
 import com.example.platform.task.dto.TaskStageLogResponse;
 import com.example.platform.task.model.ArtifactEntity;
@@ -26,6 +27,8 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
+import org.springframework.core.io.Resource;
+import org.springframework.http.ResponseEntity;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -500,6 +503,11 @@ class SceneServiceImplTest {
         }
 
         @Override
+        public TaskDiagnosticsResponse getDiagnostics(Long taskId) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
         public TaskEntity get(Long taskId) {
             throw new UnsupportedOperationException();
         }
@@ -531,6 +539,16 @@ class SceneServiceImplTest {
 
         @Override
         public List<TaskStageLogResponse> listStageLogs(Long taskId) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public ResponseEntity<Resource> downloadArtifact(Long taskId, Long artifactId) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public ResponseEntity<Resource> downloadStageLog(Long taskId, Long stageLogId) {
             throw new UnsupportedOperationException();
         }
     }

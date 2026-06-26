@@ -28,6 +28,7 @@ public class DockerRunnerCommandExecutor implements RunnerCommandExecutor {
     private static final Logger log = LoggerFactory.getLogger(DockerRunnerCommandExecutor.class);
     private static final Pattern TASK_ID_PATTERN = Pattern.compile(".*/([0-9]+)$");
 
+    private final DockerRunnerProperties dockerProperties;
     private final DockerCommandBuilder commandBuilder;
     private final DockerContainerNameFactory containerNameFactory;
     private final RunnerProcessLauncher processLauncher;
@@ -46,6 +47,7 @@ public class DockerRunnerCommandExecutor implements RunnerCommandExecutor {
             DockerCommandBuilder commandBuilder,
             DockerContainerNameFactory containerNameFactory,
             RunnerProcessLauncher processLauncher) {
+        this.dockerProperties = dockerProperties;
         this.commandBuilder = commandBuilder;
         this.containerNameFactory = containerNameFactory;
         this.processLauncher = processLauncher;
@@ -61,6 +63,10 @@ public class DockerRunnerCommandExecutor implements RunnerCommandExecutor {
         Process process = null;
         Thread logThread = null;
         try {
+            RunnerCommandResult imagePreparationResult = ensureImageAvailable(request, logFile, lineCount);
+            if (imagePreparationResult != null) {
+                return imagePreparationResult;
+            }
             process = processLauncher.start(dockerCommand, request.workspaceRoot(), Map.of());
             Process runningProcess = process;
             logThread = new Thread(() -> captureOutput(runningProcess, logFile, lineCount), "docker-runner-log-capture");
@@ -94,6 +100,47 @@ public class DockerRunnerCommandExecutor implements RunnerCommandExecutor {
         } catch (IOException exception) {
             throw new IllegalStateException("Failed to execute docker runner command: " + request.command(), exception);
         }
+    }
+
+    private RunnerCommandResult ensureImageAvailable(
+            RunnerCommandRequest request,
+            Path logFile,
+            AtomicInteger lineCount) throws IOException, InterruptedException {
+        List<String> inspectCommand = List.of("docker", "image", "inspect", dockerProperties.getImage());
+        Process inspectProcess = processLauncher.start(inspectCommand, request.workspaceRoot(), Map.of());
+        int inspectExitCode = inspectProcess.waitFor();
+        if (inspectExitCode == 0) {
+            return null;
+        }
+
+        Instant startedAt = Instant.now();
+        Process pullProcess = processLauncher.start(
+                List.of("docker", "pull", dockerProperties.getImage()),
+                request.workspaceRoot(),
+                Map.of());
+        Thread logThread = new Thread(() -> captureOutput(pullProcess, logFile, lineCount), "docker-image-pull-log-capture");
+        logThread.start();
+
+        Duration pullTimeout = Duration.ofSeconds(Math.max(0, dockerProperties.getImagePullTimeoutSeconds()));
+        while (!pullProcess.waitFor(100, TimeUnit.MILLISECONDS)) {
+            if (request.cancellationRequested().getAsBoolean()) {
+                pullProcess.destroyForcibly();
+                waitForLogThread(logThread);
+                return new RunnerCommandResult(-1, false, true, elapsedMs(startedAt), logFile, lineCount.get());
+            }
+            if (Duration.between(startedAt, Instant.now()).compareTo(pullTimeout) > 0) {
+                pullProcess.destroyForcibly();
+                waitForLogThread(logThread);
+                return new RunnerCommandResult(-1, true, false, elapsedMs(startedAt), logFile, lineCount.get());
+            }
+        }
+
+        int pullExitCode = pullProcess.exitValue();
+        waitForLogThread(logThread);
+        if (pullExitCode != 0) {
+            throw new IllegalStateException("Failed to pull docker runner image: " + dockerProperties.getImage());
+        }
+        return null;
     }
 
     private Long resolveTaskId(Path workspaceRoot) {

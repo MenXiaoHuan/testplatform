@@ -10,14 +10,25 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 @Service
 public class TaskCaseResultParseServiceImpl implements TaskCaseResultParseService {
     private final ObjectMapper objectMapper;
+    private final String containerWorkspaceRoot;
+
+    @Autowired
+    public TaskCaseResultParseServiceImpl(
+            ObjectMapper objectMapper,
+            @Value("${platform.runner.docker.container-workspace-root:/workspace/task}") String containerWorkspaceRoot) {
+        this.objectMapper = objectMapper;
+        this.containerWorkspaceRoot = normalizePathString(containerWorkspaceRoot);
+    }
 
     public TaskCaseResultParseServiceImpl(ObjectMapper objectMapper) {
-        this.objectMapper = objectMapper;
+        this(objectMapper, "/workspace/task");
     }
 
     @Override
@@ -92,6 +103,13 @@ public class TaskCaseResultParseServiceImpl implements TaskCaseResultParseServic
     }
 
     private String normalizeRelativePath(Path workspaceRoot, String rawPath) {
+        String normalizedContainerWorkspaceRoot = normalizePathString(containerWorkspaceRoot);
+        String normalizedRawPath = normalizePathString(rawPath);
+        if (normalizedContainerWorkspaceRoot != null
+                && !normalizedContainerWorkspaceRoot.isBlank()
+                && normalizedRawPath.startsWith(normalizedContainerWorkspaceRoot + "/")) {
+            return normalizedRawPath.substring(normalizedContainerWorkspaceRoot.length() + 1);
+        }
         Path attachmentPath = Path.of(rawPath).normalize();
         Path normalizedWorkspace = toComparablePath(workspaceRoot);
         if (attachmentPath.isAbsolute()) {
@@ -110,6 +128,17 @@ public class TaskCaseResultParseServiceImpl implements TaskCaseResultParseServic
             // Fall back to normalized absolute path when real path resolution is unavailable.
         }
         return path.toAbsolutePath().normalize();
+    }
+
+    private String normalizePathString(String path) {
+        if (path == null || path.isBlank()) {
+            return "";
+        }
+        String normalized = path.replace('\\', '/');
+        if (normalized.endsWith("/")) {
+            return normalized.substring(0, normalized.length() - 1);
+        }
+        return normalized;
     }
 
     private String mapStatus(String status) {

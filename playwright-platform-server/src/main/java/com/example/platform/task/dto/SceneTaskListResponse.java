@@ -1,7 +1,7 @@
 package com.example.platform.task.dto;
 
 import com.example.platform.task.model.TaskEntity;
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 public record SceneTaskListResponse(
         Long id,
@@ -13,10 +13,10 @@ public record SceneTaskListResponse(
         String resultCode,
         boolean cancelRequested,
         String branch,
-        LocalDateTime queuedAt,
-        LocalDateTime startedAt,
+        Instant queuedAt,
+        Instant startedAt,
         Long durationMs,
-        LocalDateTime createdAt,
+        Instant createdAt,
         String runnerName,
         int passedCount,
         int failedCount,
@@ -32,10 +32,10 @@ public record SceneTaskListResponse(
                 task.getResultCode(),
                 Boolean.TRUE.equals(task.getCancelRequested()),
                 task.getBranch(),
-                task.getQueuedAt(),
-                task.getStartedAt(),
+                TaskTimeMapper.toInstant(task.getQueuedAt()),
+                TaskTimeMapper.toInstant(task.getStartedAt()),
                 task.getDurationMs(),
-                task.getCreatedAt(),
+                TaskTimeMapper.toInstant(task.getCreatedAt()),
                 task.getRunnerName(),
                 task.getPassedCount(),
                 task.getFailedCount(),

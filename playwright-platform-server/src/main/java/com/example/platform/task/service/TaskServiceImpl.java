@@ -1,5 +1,7 @@
 package com.example.platform.task.service;
 
+import com.example.platform.common.ApplicationErrorSummaryService;
+import com.example.platform.common.InMemoryApplicationErrorSummaryService;
 import com.example.platform.cache.DetailCacheService;
 import com.example.platform.common.PageResponse;
 import com.example.platform.repository.model.TestRepositoryEntity;
@@ -12,6 +14,7 @@ import com.example.platform.storage.service.ObjectStorageService;
 import com.example.platform.task.dto.SceneTaskListResponse;
 import com.example.platform.task.dto.CaseResultResponse;
 import com.example.platform.task.dto.TaskDetailResponse;
+import com.example.platform.task.dto.TaskDiagnosticsResponse;
 import com.example.platform.task.dto.TaskStageLogResponse;
 import com.example.platform.task.model.ArtifactEntity;
 import com.example.platform.task.mapper.ArtifactMapper;
@@ -20,7 +23,9 @@ import com.example.platform.task.mapper.CaseResultMapper;
 import com.example.platform.task.model.TaskEntity;
 import com.example.platform.task.mapper.TaskMapper;
 import com.example.platform.task.model.TaskStageLogEntity;
+import java.io.InputStream;
 import java.lang.reflect.Field;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -31,10 +36,15 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.core.io.InputStreamResource;
+import org.springframework.core.io.Resource;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.ContentDisposition;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.http.HttpStatus;
 
 /**
@@ -61,6 +71,9 @@ public class TaskServiceImpl implements TaskService {
     private final TaskCreationService taskCreationService;
     private final TaskExecutionMutationService taskExecutionMutationService;
     private final DetailCacheService detailCacheService;
+    private final ApplicationErrorSummaryService applicationErrorSummaryService;
+    private final ObjectStorageService objectStorageService;
+    private final String storageBucket;
 
     @Autowired
     public TaskServiceImpl(
@@ -79,6 +92,7 @@ public class TaskServiceImpl implements TaskService {
             TaskCreationService taskCreationService,
             DetailCacheService detailCacheService,
             TaskExecutionMutationService taskExecutionMutationService,
+            ApplicationErrorSummaryService applicationErrorSummaryService,
             @Qualifier("taskExecutionExecutor") Executor taskExecutionExecutor,
             TaskStageLogService taskStageLogService,
             TaskExecutionProperties taskExecutionProperties,
@@ -94,6 +108,9 @@ public class TaskServiceImpl implements TaskService {
         this.taskCreationService = taskCreationService;
         this.taskExecutionMutationService = taskExecutionMutationService;
         this.detailCacheService = detailCacheService;
+        this.applicationErrorSummaryService = applicationErrorSummaryService;
+        this.objectStorageService = objectStorageService;
+        this.storageBucket = storageBucket;
         this.taskExecutionOrchestrator = new TaskExecutionOrchestrator(
                 taskRepository,
                 sceneRepository,
@@ -105,13 +122,15 @@ public class TaskServiceImpl implements TaskService {
                 taskStageLogService,
                 taskExecutionProperties,
                 taskExecutionMutationService,
-                detailCacheService);
+                detailCacheService,
+                applicationErrorSummaryService);
         this.taskQueryViewService = new TaskQueryViewService(
                 sceneRepository,
                 repositoryRepository,
                 caseResultRepository,
                 objectStorageService,
-                storageBucket);
+                storageBucket,
+                applicationErrorSummaryService);
     }
 
     public TaskServiceImpl(
@@ -147,6 +166,7 @@ public class TaskServiceImpl implements TaskService {
                 new TaskCreationService(sceneRepository, repositoryRepository, taskRepository, taskCommandBuilder, detailCacheService),
                 detailCacheService,
                 new TaskExecutionMutationService(taskRepository, sceneRepository, detailCacheService),
+                new InMemoryApplicationErrorSummaryService(),
                 Runnable::run,
                 taskStageLogService,
                 new TaskExecutionProperties(),
@@ -186,6 +206,7 @@ public class TaskServiceImpl implements TaskService {
                 new TaskCreationService(sceneRepository, repositoryRepository, taskRepository, taskCommandBuilder),
                 null,
                 new TaskExecutionMutationService(taskRepository, sceneRepository),
+                new InMemoryApplicationErrorSummaryService(),
                 Runnable::run,
                 taskStageLogService,
                 new TaskExecutionProperties(),
@@ -225,6 +246,7 @@ public class TaskServiceImpl implements TaskService {
                 new TaskCreationService(sceneRepository, repositoryRepository, taskRepository, taskCommandBuilder),
                 null,
                 new TaskExecutionMutationService(taskRepository, sceneRepository),
+                new InMemoryApplicationErrorSummaryService(),
                 taskExecutionExecutor,
                 new NoopTaskStageLogService(),
                 new TaskExecutionProperties(),
@@ -265,6 +287,7 @@ public class TaskServiceImpl implements TaskService {
                 new TaskCreationService(sceneRepository, repositoryRepository, taskRepository, taskCommandBuilder, detailCacheService),
                 detailCacheService,
                 new TaskExecutionMutationService(taskRepository, sceneRepository, detailCacheService),
+                new InMemoryApplicationErrorSummaryService(),
                 taskExecutionExecutor,
                 new NoopTaskStageLogService(),
                 new TaskExecutionProperties(),
@@ -303,6 +326,7 @@ public class TaskServiceImpl implements TaskService {
                 new TaskCreationService(sceneRepository, repositoryRepository, taskRepository, new TaskCommandBuilderImpl()),
                 null,
                 new TaskExecutionMutationService(taskRepository, sceneRepository),
+                new InMemoryApplicationErrorSummaryService(),
                 Runnable::run,
                 taskStageLogService,
                 new TaskExecutionProperties(),
@@ -342,6 +366,7 @@ public class TaskServiceImpl implements TaskService {
                 new TaskCreationService(sceneRepository, repositoryRepository, taskRepository, taskCommandBuilder, detailCacheService),
                 detailCacheService,
                 new TaskExecutionMutationService(taskRepository, sceneRepository, detailCacheService),
+                new InMemoryApplicationErrorSummaryService(),
                 Runnable::run,
                 new NoopTaskStageLogService(),
                 new TaskExecutionProperties(),
@@ -380,6 +405,7 @@ public class TaskServiceImpl implements TaskService {
                 new TaskCreationService(sceneRepository, repositoryRepository, taskRepository, taskCommandBuilder),
                 null,
                 new TaskExecutionMutationService(taskRepository, sceneRepository),
+                new InMemoryApplicationErrorSummaryService(),
                 Runnable::run,
                 new NoopTaskStageLogService(),
                 new TaskExecutionProperties(),
@@ -417,6 +443,7 @@ public class TaskServiceImpl implements TaskService {
                 new TaskCreationService(sceneRepository, repositoryRepository, taskRepository, new TaskCommandBuilderImpl()),
                 null,
                 new TaskExecutionMutationService(taskRepository, sceneRepository),
+                new InMemoryApplicationErrorSummaryService(),
                 Runnable::run,
                 new NoopTaskStageLogService(),
                 new TaskExecutionProperties(),
@@ -427,6 +454,7 @@ public class TaskServiceImpl implements TaskService {
     @Override
     public TaskEntity createAndStart(Long sceneId) {
         TaskEntity createdTask = taskCreationService.createTask(sceneId, "MANUAL", "manual-run", null);
+        log.info("Task created and queued for background execution. taskId={}, sceneId={}", createdTask.getId(), sceneId);
         dispatchExistingTask(createdTask.getId(), true);
         return copyTask(createdTask);
     }
@@ -449,6 +477,7 @@ public class TaskServiceImpl implements TaskService {
     }
 
     TaskEntity runCreatedTask(Long taskId) {
+        log.info("Background task execution started. taskId={}", taskId);
         TaskEntity task = taskRepository.findById(taskId)
                 .orElseThrow(() -> new IllegalArgumentException("Task not found: " + taskId));
         TestRepositoryEntity repository = repositoryRepository.findById(task.getRepoId())
@@ -460,7 +489,7 @@ public class TaskServiceImpl implements TaskService {
 
     public void dispatchExistingTask(Long taskId, boolean failFastOnReject) {
         try {
-            taskExecutionExecutor.execute(() -> runCreatedTask(taskId));
+            taskExecutionExecutor.execute(TaskLogContext.wrap(() -> runCreatedTask(taskId)));
         } catch (RejectedExecutionException exception) {
             markTaskAsRejected(taskId, "任务执行队列已满，请稍后再试");
             if (failFastOnReject) {
@@ -483,6 +512,7 @@ public class TaskServiceImpl implements TaskService {
         if (task.getQueuedAt() != null) {
             task.setDurationMs(java.time.Duration.between(task.getQueuedAt(), task.getFinishedAt()).toMillis());
         }
+        recordApplicationError(task, "QUEUED", message, null);
         SceneEntity scene = sceneRepository.findById(task.getSceneId()).orElse(null);
         if (scene == null) {
             taskExecutionMutationService.saveTask(task);
@@ -537,8 +567,25 @@ public class TaskServiceImpl implements TaskService {
         if (detailCacheService == null) {
             return loadTaskDetail(taskId);
         }
-        return detailCacheService.getOrLoad("task", taskId, TaskDetailResponse.class, () -> java.util.Optional.of(loadTaskDetail(taskId)))
-                .orElseThrow(() -> new IllegalArgumentException("Task not found: " + taskId));
+        try {
+            return detailCacheService.getOrLoad("task", taskId, TaskDetailResponse.class, () -> java.util.Optional.of(loadTaskDetail(taskId)))
+                    .orElseThrow(() -> new IllegalArgumentException("Task not found: " + taskId));
+        } catch (IllegalStateException exception) {
+            if (!exception.getMessage().startsWith("Failed to read detail cache:")) {
+                throw exception;
+            }
+            TaskEntity task = get(taskId);
+            recordApplicationError(task, "DETAIL_CACHE", exception.getMessage(), exception);
+            invalidateTaskDetail(taskId);
+            return loadTaskDetail(taskId);
+        }
+    }
+
+    @Override
+    public TaskDiagnosticsResponse getDiagnostics(Long taskId) {
+        TaskEntity task = get(taskId);
+        List<TaskStageLogEntity> stageLogs = taskStageLogService.listByTaskId(taskId);
+        return taskQueryViewService.toTaskDiagnosticsResponse(task, stageLogs);
     }
 
     private TaskDetailResponse loadTaskDetail(Long taskId) {
@@ -594,6 +641,77 @@ public class TaskServiceImpl implements TaskService {
                 .toList();
     }
 
+    @Override
+    public ResponseEntity<Resource> downloadArtifact(Long taskId, Long artifactId) {
+        get(taskId);
+        ArtifactEntity artifact = artifactRepository.findAllByTaskIdOrderByIdAsc(taskId).stream()
+                .filter(item -> artifactId.equals(item.getId()))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Artifact not found: " + artifactId));
+        return buildStorageDownloadResponse(
+                artifact.getBucket(),
+                artifact.getObjectKey(),
+                artifact.getContentType(),
+                artifact.getSize());
+    }
+
+    @Override
+    public ResponseEntity<Resource> downloadStageLog(Long taskId, Long stageLogId) {
+        get(taskId);
+        TaskStageLogEntity stageLog = taskStageLogService.listByTaskId(taskId).stream()
+                .filter(item -> stageLogId.equals(item.getId()))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Task stage log not found: " + stageLogId));
+        return buildStorageDownloadResponse(
+                storageBucket,
+                stageLog.getObjectKey(),
+                stageLog.getContentType(),
+                stageLog.getSize());
+    }
+
+    private ResponseEntity<Resource> buildStorageDownloadResponse(
+            String bucket,
+            String objectKey,
+            String contentType,
+            Long size) {
+        String resolvedBucket = bucket == null || bucket.isBlank() ? storageBucket : bucket;
+        if (resolvedBucket == null || resolvedBucket.isBlank() || objectKey == null || objectKey.isBlank()) {
+            throw new IllegalArgumentException("Storage object is not available");
+        }
+
+        InputStream inputStream = objectStorageService.getObject(resolvedBucket, objectKey);
+        InputStreamResource resource = new InputStreamResource(inputStream);
+        MediaType mediaType = MediaType.APPLICATION_OCTET_STREAM;
+        if (contentType != null && !contentType.isBlank()) {
+            try {
+                mediaType = MediaType.parseMediaType(contentType);
+            } catch (Exception ignored) {
+                mediaType = MediaType.APPLICATION_OCTET_STREAM;
+            }
+        }
+
+        ResponseEntity.BodyBuilder response = ResponseEntity.ok()
+                .contentType(mediaType)
+                .header(
+                        "Content-Disposition",
+                        ContentDisposition.attachment()
+                                .filename(extractFilename(objectKey), StandardCharsets.UTF_8)
+                                .build()
+                                .toString());
+        if (size != null && size >= 0) {
+            response.contentLength(size);
+        }
+        return response.body(resource);
+    }
+
+    private String extractFilename(String objectKey) {
+        int slashIndex = objectKey.lastIndexOf('/');
+        if (slashIndex < 0 || slashIndex == objectKey.length() - 1) {
+            return objectKey;
+        }
+        return objectKey.substring(slashIndex + 1);
+    }
+
     private void invalidateTaskDetail(Long taskId) {
         if (detailCacheService != null && taskId != null) {
             detailCacheService.invalidate("task", taskId);
@@ -603,6 +721,16 @@ public class TaskServiceImpl implements TaskService {
     private void invalidateSceneDetail(Long sceneId) {
         if (detailCacheService != null && sceneId != null) {
             detailCacheService.invalidate("scene", sceneId);
+        }
+    }
+
+    private void recordApplicationError(TaskEntity task, String stage, String message, Throwable throwable) {
+        if (applicationErrorSummaryService == null) {
+            return;
+        }
+        try (TaskLogContext taskLogContext = TaskLogContext.open(task, null)) {
+            taskLogContext.setStage(stage);
+            applicationErrorSummaryService.recordError(log.getName(), message, throwable);
         }
     }
 

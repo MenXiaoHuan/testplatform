@@ -10,6 +10,7 @@ public class DockerRunnerProperties {
     private String cpus = "2";
     private String containerWorkspaceRoot = "/workspace/task";
     private boolean removeContainer = true;
+    private long imagePullTimeoutSeconds = 1800;
 
     public String getImage() {
         return image;
@@ -57,5 +58,13 @@ public class DockerRunnerProperties {
 
     public void setRemoveContainer(boolean removeContainer) {
         this.removeContainer = removeContainer;
+    }
+
+    public long getImagePullTimeoutSeconds() {
+        return imagePullTimeoutSeconds;
+    }
+
+    public void setImagePullTimeoutSeconds(long imagePullTimeoutSeconds) {
+        this.imagePullTimeoutSeconds = imagePullTimeoutSeconds;
     }
 }

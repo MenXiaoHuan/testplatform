@@ -2,6 +2,7 @@ package com.example.platform.task;
 
 import com.example.platform.cache.DetailCacheService;
 import com.example.platform.common.PageResponse;
+import com.example.platform.common.InMemoryApplicationErrorSummaryService;
 import com.example.platform.repository.mapper.TestRepositoryMapper;
 import com.example.platform.repository.model.TestRepositoryEntity;
 import com.example.platform.runner.service.DockerRunnerCommandExecutor;
@@ -51,6 +52,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mockito;
+import org.slf4j.MDC;
 import org.springframework.web.server.ResponseStatusException;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -134,11 +136,15 @@ class TaskExecutionServiceTest {
         Mockito.when(context.executionService.installDependencies(
                 Path.of("/tmp/task-101/playwright_framework"),
                 "npm install",
-                Map.of("PLAYWRIGHT_PLATFORM_MODE", "true"))).thenReturn(0);
+                Map.of(
+                        "PLAYWRIGHT_PLATFORM_MODE", "true",
+                        "BASE_URL", "https://example.com"))).thenReturn(0);
         Mockito.when(context.executionService.runTests(
                 Path.of("/tmp/task-101/playwright_framework"),
                 "node ./scripts/run-e2e.cjs --project chromium --target tests/login.spec.ts",
-                Map.of("PLAYWRIGHT_PLATFORM_MODE", "true"))).thenReturn(0);
+                Map.of(
+                        "PLAYWRIGHT_PLATFORM_MODE", "true",
+                        "BASE_URL", "https://example.com"))).thenReturn(0);
         Mockito.when(context.taskCaseResultParseService.parse(
                 101L,
                 Path.of("/tmp/task-101/playwright_framework/test-results/.playwright-results.json"),
@@ -231,6 +237,69 @@ class TaskExecutionServiceTest {
         Path workspace = Path.of("/tmp/task-101");
         Path executionDirectory = workspace.resolve("playwright_framework");
         Map<String, String> platformEnv = Map.of("PLAYWRIGHT_PLATFORM_MODE", "true");
+
+        Mockito.when(context.sceneRepository.findById(11L)).thenReturn(Optional.of(scene));
+        Mockito.when(context.repositoryRepository.findById(21L)).thenReturn(Optional.of(repository));
+        context.mockSaveWithGeneratedId();
+        Mockito.when(context.workspaceService.prepareWorkspace("git@demo/repo.git", "main", 101L)).thenReturn(workspace);
+        Mockito.when(context.executionService.runStage(
+                Mockito.eq(workspace),
+                Mockito.eq(executionDirectory),
+                Mockito.eq("INSTALL"),
+                Mockito.eq("npm install"),
+                Mockito.eq(platformEnv),
+                Mockito.any(),
+                Mockito.any()))
+                .thenReturn(new RunnerCommandResult(0, false, false, 10L, null, 0));
+        Mockito.when(context.executionService.runStage(
+                Mockito.eq(workspace),
+                Mockito.eq(executionDirectory),
+                Mockito.eq("TEST"),
+                Mockito.eq("npm run test:e2e"),
+                Mockito.eq(platformEnv),
+                Mockito.any(),
+                Mockito.any()))
+                .thenReturn(new RunnerCommandResult(0, false, false, 10L, null, 0));
+        Mockito.when(context.taskCaseResultParseService.parse(
+                101L,
+                executionDirectory.resolve("test-results/.playwright-results.json"),
+                executionDirectory))
+                .thenReturn(new ParsedTaskResults(List.of(), List.of()));
+        Mockito.when(context.taskCaseResultPersistenceService.persist(Mockito.anyList())).thenReturn(Map.of());
+
+        TaskEntity result = context.service().createAndRun(11L);
+
+        assertThat(result.getStatus()).isEqualTo("SUCCESS");
+        Mockito.verify(context.executionService).runStage(
+                Mockito.eq(workspace),
+                Mockito.eq(executionDirectory),
+                Mockito.eq("INSTALL"),
+                Mockito.eq("npm install"),
+                Mockito.eq(platformEnv),
+                Mockito.any(),
+                Mockito.any());
+        Mockito.verify(context.executionService).runStage(
+                Mockito.eq(workspace),
+                Mockito.eq(executionDirectory),
+                Mockito.eq("TEST"),
+                Mockito.eq("npm run test:e2e"),
+                Mockito.eq(platformEnv),
+                Mockito.any(),
+                Mockito.any());
+          Mockito.verify(context.workspaceService).cleanupWorkspace(101L);
+    }
+
+    @Test
+    void shouldMergeSceneEnvironmentVariablesIntoRunnerStages() {
+        TestContext context = new TestContext();
+        SceneEntity scene = context.scene();
+        scene.setEnvJson("{\"INTERVIEW_LOGIN_BASE_URL\":\"https://host.docker.internal:5172\"}");
+        TestRepositoryEntity repository = context.repository();
+        Path workspace = Path.of("/tmp/task-101");
+        Path executionDirectory = workspace.resolve("playwright_framework");
+        Map<String, String> platformEnv = Map.of(
+                "PLAYWRIGHT_PLATFORM_MODE", "true",
+                "INTERVIEW_LOGIN_BASE_URL", "https://host.docker.internal:5172");
 
         Mockito.when(context.sceneRepository.findById(11L)).thenReturn(Optional.of(scene));
         Mockito.when(context.repositoryRepository.findById(21L)).thenReturn(Optional.of(repository));
@@ -388,6 +457,74 @@ class TaskExecutionServiceTest {
     }
 
     @Test
+    void shouldPropagateRequestAndTaskLogContextIntoBackgroundExecution() {
+        TestContext context = new TestContext();
+        SceneEntity scene = context.scene();
+        TestRepositoryEntity repository = context.repository();
+
+        AtomicReference<Runnable> scheduledTask = new AtomicReference<>();
+        AtomicReference<String> requestIdSeen = new AtomicReference<>();
+        AtomicReference<String> taskIdSeen = new AtomicReference<>();
+        AtomicReference<String> sceneIdSeen = new AtomicReference<>();
+        AtomicReference<String> stageSeen = new AtomicReference<>();
+        Executor executor = scheduledTask::set;
+
+        Mockito.when(context.sceneRepository.findById(11L)).thenReturn(Optional.of(scene));
+        Mockito.when(context.repositoryRepository.findById(21L)).thenReturn(Optional.of(repository));
+        context.mockSaveWithGeneratedId();
+        Mockito.when(context.taskRepository.findById(101L)).thenAnswer(invocation -> {
+            TaskEntity task = new TaskEntity();
+            task.setId(101L);
+            task.setSceneId(11L);
+            task.setRepoId(21L);
+            task.setStatus("QUEUED");
+            task.setTriggerType("MANUAL");
+            task.setBranch("main");
+            task.setRunnerName("centralized-runner");
+            task.setResolvedBranch("main");
+            task.setResolvedBrowser("chromium");
+            task.setResolvedTestRoot("tests");
+            task.setResolvedRunCommand("npm run test:e2e");
+            return Optional.of(task);
+        });
+        Mockito.when(context.workspaceService.prepareWorkspace("git@demo/repo.git", "main", 101L)).thenAnswer(invocation -> {
+            requestIdSeen.set(MDC.get("requestId"));
+            taskIdSeen.set(MDC.get("taskId"));
+            sceneIdSeen.set(MDC.get("sceneId"));
+            stageSeen.set(MDC.get("stage"));
+            return Path.of("/tmp/task-101");
+        });
+        Mockito.when(context.executionService.installDependencies(
+                Path.of("/tmp/task-101/playwright_framework"),
+                "npm install",
+                Map.of("PLAYWRIGHT_PLATFORM_MODE", "true"))).thenReturn(0);
+        Mockito.when(context.executionService.runTests(
+                Path.of("/tmp/task-101/playwright_framework"),
+                "npm run test:e2e",
+                Map.of("PLAYWRIGHT_PLATFORM_MODE", "true"))).thenReturn(0);
+        Mockito.when(context.taskCaseResultParseService.parse(
+                101L,
+                Path.of("/tmp/task-101/playwright_framework/test-results/.playwright-results.json"),
+                Path.of("/tmp/task-101/playwright_framework")))
+                .thenReturn(new ParsedTaskResults(List.of(), List.of()));
+        Mockito.when(context.taskCaseResultPersistenceService.persist(Mockito.anyList())).thenReturn(Map.of());
+
+        MDC.put("requestId", "req-ctx-1");
+        try {
+            context.service(executor).createAndStart(11L);
+        } finally {
+            MDC.clear();
+        }
+
+        scheduledTask.get().run();
+
+        assertThat(requestIdSeen.get()).isEqualTo("req-ctx-1");
+        assertThat(taskIdSeen.get()).isEqualTo("101");
+        assertThat(sceneIdSeen.get()).isEqualTo("11");
+        assertThat(stageSeen.get()).isEqualTo("PREPARING");
+    }
+
+    @Test
     void shouldRestoreInterruptFlagWhenRunnerExecutionIsInterrupted() throws Exception {
         RunnerExecutionServiceImpl service = new RunnerExecutionServiceImpl(new LocalRunnerCommandExecutor());
         AtomicReference<Throwable> failure = new AtomicReference<>();
@@ -507,6 +644,7 @@ class TaskExecutionServiceTest {
                 null,
                 "centralized-runner",
                 null,
+                null,
                 "main",
                 "chromium",
                 null,
@@ -544,6 +682,39 @@ class TaskExecutionServiceTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Task not found: 404");
         Mockito.verify(context.taskRepository, Mockito.never()).findById(Mockito.anyLong());
+    }
+
+    @Test
+    void shouldRecoverFromBrokenDetailCacheAndRecordDiagnostic() {
+        TestContext context = new TestContext();
+        TaskEntity task = new TaskEntity();
+        task.setId(101L);
+        task.setSceneId(11L);
+        task.setRepoId(21L);
+        task.setStatus("FAILED");
+        task.setCurrentStage("FINISHED");
+        task.setResultCode("PREPARE_FAILED");
+        task.setResultMessage("Failed to prepare workspace");
+
+        Mockito.when(context.detailCacheService.getOrLoad(
+                        Mockito.eq("task"),
+                        Mockito.eq(101L),
+                        Mockito.eq(TaskDetailResponse.class),
+                        Mockito.any()))
+                .thenThrow(new IllegalStateException("Failed to read detail cache: detail:task:101"));
+        Mockito.when(context.taskRepository.findById(101L)).thenReturn(Optional.of(task));
+        Mockito.when(context.sceneRepository.findById(11L)).thenReturn(Optional.of(context.scene()));
+        Mockito.when(context.repositoryRepository.findById(21L)).thenReturn(Optional.of(context.repository()));
+        Mockito.when(context.artifactRepository.findAllByTaskIdOrderByIdAsc(101L)).thenReturn(List.of());
+
+        TaskServiceImpl service = context.service();
+        TaskDetailResponse detail = service.getDetail(101L);
+
+        assertThat(detail.id()).isEqualTo(101L);
+        Mockito.verify(context.detailCacheService).invalidate("task", 101L);
+        var diagnostics = service.getDiagnostics(101L);
+        assertThat(diagnostics.recentApplicationErrors()).isNotEmpty();
+        assertThat(diagnostics.recentApplicationErrors().getFirst().message()).contains("Failed to read detail cache");
     }
 
     @Test
@@ -600,6 +771,43 @@ class TaskExecutionServiceTest {
     }
 
     @Test
+    void shouldIncludeSystemBusyInDiagnostics() {
+        TestContext context = new TestContext();
+        SceneEntity scene = context.scene();
+        TestRepositoryEntity repository = context.repository();
+
+        TaskEntity[] savedTaskRef = new TaskEntity[1];
+        Executor rejectingExecutor = command -> {
+            throw new java.util.concurrent.RejectedExecutionException("queue full");
+        };
+
+        Mockito.when(context.sceneRepository.findById(11L)).thenReturn(Optional.of(scene));
+        Mockito.when(context.repositoryRepository.findById(21L)).thenReturn(Optional.of(repository));
+        Mockito.doAnswer(invocation -> {
+            TaskEntity task = invocation.getArgument(0);
+            if (task.getId() == null) {
+                task.setId(101L);
+            }
+            savedTaskRef[0] = task;
+            return 1;
+        }).when(context.taskRepository).insert(Mockito.any(TaskEntity.class));
+        Mockito.doAnswer(invocation -> {
+            savedTaskRef[0] = invocation.getArgument(0);
+            return 1;
+        }).when(context.taskRepository).update(Mockito.any(TaskEntity.class));
+        Mockito.when(context.taskRepository.findById(101L)).thenAnswer(invocation -> Optional.ofNullable(savedTaskRef[0]));
+
+        TaskServiceImpl service = context.service(rejectingExecutor);
+
+        assertThatThrownBy(() -> service.createAndStart(11L))
+                .isInstanceOf(IllegalStateException.class);
+
+        var diagnostics = service.getDiagnostics(101L);
+        assertThat(diagnostics.recentApplicationErrors()).isNotEmpty();
+        assertThat(diagnostics.recentApplicationErrors().getFirst().message()).contains("任务执行队列已满");
+    }
+
+    @Test
     void shouldSetStructuredResultCodeWhenInstallStageFails() throws Exception {
         TestContext context = new TestContext();
         SceneEntity scene = context.scene();
@@ -612,6 +820,17 @@ class TaskExecutionServiceTest {
         Mockito.when(context.sceneRepository.findById(11L)).thenReturn(Optional.of(scene));
         Mockito.when(context.repositoryRepository.findById(21L)).thenReturn(Optional.of(context.repository()));
         context.mockSaveWithGeneratedId();
+        Mockito.when(context.taskRepository.findById(101L)).thenAnswer(invocation -> {
+            TaskEntity task = new TaskEntity();
+            task.setId(101L);
+            task.setSceneId(11L);
+            task.setRepoId(21L);
+            task.setStatus("TIMEOUT");
+            task.setCurrentStage("FINISHED");
+            task.setResultCode("TIMEOUT");
+            task.setResultMessage("INSTALLING 阶段超时");
+            return Optional.of(task);
+        });
         Mockito.when(context.workspaceService.prepareWorkspace("git@demo/repo.git", "main", 101L)).thenReturn(tempDir);
         Mockito.when(context.executionService.runStage(
                 Mockito.any(),
@@ -630,7 +849,81 @@ class TaskExecutionServiceTest {
     }
 
     @Test
-    void shouldListStageLogsWithPresignedDownloadUrls() {
+    void shouldIncludeTimeoutInDiagnostics() throws Exception {
+        TestContext context = new TestContext();
+        SceneEntity scene = context.scene();
+
+        Mockito.when(context.sceneRepository.findById(11L)).thenReturn(Optional.of(scene));
+        Mockito.when(context.repositoryRepository.findById(21L)).thenReturn(Optional.of(context.repository()));
+        context.mockSaveWithGeneratedId();
+        Mockito.when(context.taskRepository.findById(101L)).thenAnswer(invocation -> {
+            TaskEntity task = new TaskEntity();
+            task.setId(101L);
+            task.setSceneId(11L);
+            task.setRepoId(21L);
+            task.setStatus("TIMEOUT");
+            task.setCurrentStage("FINISHED");
+            task.setResultCode("TIMEOUT");
+            task.setResultMessage("INSTALLING 阶段超时");
+            return Optional.of(task);
+        });
+        Mockito.when(context.workspaceService.prepareWorkspace("git@demo/repo.git", "main", 101L)).thenReturn(tempDir);
+        Mockito.when(context.executionService.runStage(
+                Mockito.any(),
+                Mockito.any(),
+                Mockito.anyString(),
+                Mockito.anyString(),
+                Mockito.anyMap(),
+                Mockito.any(),
+                Mockito.any()))
+                .thenReturn(new RunnerCommandResult(-1, true, false, 10L, null, 0));
+
+        TaskServiceImpl service = context.service();
+        TaskEntity result = service.createAndRun(11L);
+
+        assertThat(result.getStatus()).isEqualTo("TIMEOUT");
+        var diagnostics = service.getDiagnostics(101L);
+        assertThat(diagnostics.recentApplicationErrors()).isNotEmpty();
+        assertThat(diagnostics.recentApplicationErrors().getFirst().message()).contains("INSTALLING 阶段超时");
+    }
+
+    @Test
+    void shouldArchivePreparingStageLog() throws Exception {
+        TestContext context = new TestContext();
+        SceneEntity scene = context.scene();
+        TaskStageLogService taskStageLogService = Mockito.mock(TaskStageLogService.class);
+
+        Mockito.when(context.sceneRepository.findById(11L)).thenReturn(Optional.of(scene));
+        Mockito.when(context.repositoryRepository.findById(21L)).thenReturn(Optional.of(context.repository()));
+        context.mockSaveWithGeneratedId();
+        Mockito.when(context.workspaceService.prepareWorkspace("git@demo/repo.git", "main", 101L)).thenReturn(tempDir);
+        Mockito.when(context.executionService.runStage(
+                Mockito.any(),
+                Mockito.any(),
+                Mockito.anyString(),
+                Mockito.anyString(),
+                Mockito.anyMap(),
+                Mockito.any(),
+                Mockito.any()))
+                .thenReturn(new RunnerCommandResult(0, false, false, 10L, null, 0));
+        Mockito.when(context.taskCaseResultParseService.parse(
+                101L,
+                tempDir.resolve("playwright_framework/test-results/.playwright-results.json"),
+                tempDir.resolve("playwright_framework")))
+                .thenReturn(new ParsedTaskResults(List.of(), List.of()));
+        Mockito.when(context.taskCaseResultPersistenceService.persist(Mockito.anyList())).thenReturn(Map.of());
+
+        context.service(taskStageLogService).createAndRun(11L);
+
+        Mockito.verify(taskStageLogService).archiveStageLog(
+                Mockito.eq(101L),
+                Mockito.eq("PREPARING"),
+                Mockito.any(Path.class),
+                Mockito.anyInt());
+    }
+
+    @Test
+    void shouldListStageLogsWithPlatformDownloadUrls() {
         TestContext context = new TestContext();
         TaskStageLogService taskStageLogService = Mockito.mock(TaskStageLogService.class);
 
@@ -644,18 +937,16 @@ class TaskExecutionServiceTest {
         entity.setObjectKey("runs/101/logs/testing.log");
 
         Mockito.when(taskStageLogService.listByTaskId(101L)).thenReturn(List.of(entity));
-        Mockito.when(context.objectStorageService.createPresignedGetUrl("qa-report", "runs/101/logs/testing.log"))
-                .thenReturn("http://minio/presigned/testing.log");
 
         List<TaskStageLogResponse> logs = context.service(taskStageLogService).listStageLogs(101L);
 
         assertThat(logs).hasSize(1);
         assertThat(logs.getFirst().stage()).isEqualTo("TESTING");
-        assertThat(logs.getFirst().downloadUrl()).isEqualTo("http://minio/presigned/testing.log");
+        assertThat(logs.getFirst().downloadUrl()).isEqualTo("/api/tasks/101/logs/1/download");
     }
 
     @Test
-    void shouldReturnPresignedUrlsForArtifacts() {
+    void shouldReturnPlatformProxyUrlsForArtifacts() {
         TestContext context = new TestContext();
 
         TaskEntity task = new TaskEntity();
@@ -672,36 +963,76 @@ class TaskExecutionServiceTest {
         Mockito.when(context.taskRepository.countAll()).thenReturn(1L);
         Mockito.when(context.artifactRepository.findAllByTaskIdOrderByIdAsc(101L)).thenReturn(List.of(artifact));
         Mockito.when(context.caseResultRepository.findAllByTaskIdOrderByIdAsc(101L)).thenReturn(List.of());
-        Mockito.when(context.objectStorageService.createPresignedGetUrl("qa-report", "runs/101/artifacts/trace.zip"))
-                .thenReturn("http://minio/presigned/artifact");
 
         PageResponse<SceneTaskListResponse> tasks = context.service().list(1, 10);
-        List<ArtifactEntity> artifacts = context.service().listArtifacts(101L);
+        TaskServiceImpl service = context.service();
+        List<ArtifactEntity> artifacts = service.listArtifacts(101L);
 
         assertThat(tasks.items()).hasSize(1);
         assertThat(artifacts).hasSize(1);
-        assertThat(artifacts.getFirst().getUrl()).isEqualTo("http://minio/presigned/artifact");
+        assertThat(artifacts.getFirst().getUrl()).isEqualTo("/api/tasks/101/artifacts/1/download");
     }
 
     @Test
-    void shouldFallbackToStoredArtifactUrlWhenPresignedUrlCreationFails() {
+    void shouldDownloadArtifactThroughObjectStorageProxy() throws Exception {
         TestContext context = new TestContext();
+        TaskEntity task = new TaskEntity();
+        task.setId(101L);
+        task.setSceneId(11L);
+        task.setRepoId(21L);
+        task.setStatus("SUCCESS");
 
         ArtifactEntity artifact = new ArtifactEntity();
         artifact.setId(1L);
         artifact.setTaskId(101L);
         artifact.setBucket("qa-report");
         artifact.setObjectKey("runs/101/artifacts/trace.zip");
-        artifact.setUrl("http://127.0.0.1:9000/qa-report/runs/101/artifacts/trace.zip");
+        artifact.setContentType("application/zip");
+        artifact.setSize(9L);
 
         Mockito.when(context.artifactRepository.findAllByTaskIdOrderByIdAsc(101L)).thenReturn(List.of(artifact));
-        Mockito.when(context.objectStorageService.createPresignedGetUrl("qa-report", "runs/101/artifacts/trace.zip"))
-                .thenThrow(new IllegalStateException("Failed to create presigned url"));
+        Mockito.when(context.taskRepository.findById(101L)).thenReturn(Optional.of(task));
+        Mockito.when(context.objectStorageService.getObject("qa-report", "runs/101/artifacts/trace.zip"))
+                .thenReturn(new java.io.ByteArrayInputStream("zip-data".getBytes()));
 
-        List<ArtifactEntity> artifacts = context.service().listArtifacts(101L);
+        TaskServiceImpl service = context.service();
+        var response = service.downloadArtifact(101L, 1L);
 
-        assertThat(artifacts.getFirst().getUrl())
-                .isEqualTo("http://127.0.0.1:9000/qa-report/runs/101/artifacts/trace.zip");
+        assertThat(response.getHeaders().getContentType()).hasToString("application/zip");
+        assertThat(response.getHeaders().getFirst("Content-Disposition")).contains("trace.zip");
+        assertThat(new String(((org.springframework.core.io.InputStreamResource) response.getBody()).getInputStream().readAllBytes()))
+                .isEqualTo("zip-data");
+    }
+
+    @Test
+    void shouldDownloadStageLogThroughObjectStorageProxy() throws Exception {
+        TestContext context = new TestContext();
+        TaskStageLogEntity logEntity = new TaskStageLogEntity();
+        logEntity.setId(7L);
+        logEntity.setTaskId(101L);
+        logEntity.setObjectKey("runs/101/logs/testing.log");
+        logEntity.setContentType("text/plain");
+        logEntity.setSize(8L);
+
+        TaskEntity task = new TaskEntity();
+        task.setId(101L);
+        task.setSceneId(11L);
+        task.setRepoId(21L);
+        task.setStatus("SUCCESS");
+
+        TaskStageLogService taskStageLogService = Mockito.mock(TaskStageLogService.class);
+        Mockito.when(taskStageLogService.listByTaskId(101L)).thenReturn(List.of(logEntity));
+        Mockito.when(context.taskRepository.findById(101L)).thenReturn(Optional.of(task));
+        Mockito.when(context.objectStorageService.getObject("qa-report", "runs/101/logs/testing.log"))
+                .thenReturn(new java.io.ByteArrayInputStream("log-data".getBytes()));
+
+        TaskServiceImpl service = context.service(taskStageLogService);
+        var response = service.downloadStageLog(101L, 7L);
+
+        assertThat(response.getHeaders().getContentType()).hasToString("text/plain");
+        assertThat(response.getHeaders().getFirst("Content-Disposition")).contains("testing.log");
+        assertThat(new String(((org.springframework.core.io.InputStreamResource) response.getBody()).getInputStream().readAllBytes()))
+                .isEqualTo("log-data");
     }
 
     @Test
@@ -714,6 +1045,18 @@ class TaskExecutionServiceTest {
         Mockito.when(context.sceneRepository.findById(11L)).thenReturn(Optional.of(scene));
         Mockito.when(context.repositoryRepository.findById(21L)).thenReturn(Optional.of(repository));
         context.mockSaveWithGeneratedId();
+        Mockito.when(context.taskRepository.findById(101L)).thenAnswer(invocation -> {
+            TaskEntity task = new TaskEntity();
+            task.setId(101L);
+            task.setSceneId(11L);
+            task.setRepoId(21L);
+            task.setStatus("SUCCESS");
+            task.setCurrentStage("FINISHED");
+            task.setResultCode("SUCCESS");
+            task.setResultMessage(null);
+            task.setLogUrl("parse case results failed: results index missing");
+            return Optional.of(task);
+        });
         Mockito.when(context.workspaceService.prepareWorkspace("git@demo/repo.git", "main", 101L)).thenReturn(Path.of("/tmp/task-101"));
         Mockito.when(context.executionService.installDependencies(
                 Path.of("/tmp/task-101"),
@@ -730,7 +1073,8 @@ class TaskExecutionServiceTest {
                 .thenReturn(new ParsedTaskResults(List.of(), List.of()));
         Mockito.when(context.taskCaseResultPersistenceService.persist(Mockito.anyList())).thenReturn(Map.of());
 
-        TaskEntity result = context.service().createAndRun(11L);
+        TaskServiceImpl service = context.service();
+        TaskEntity result = service.createAndRun(11L);
 
         assertThat(result.getStatus()).isEqualTo("SUCCESS");
         Mockito.verify(context.executionService).installDependencies(
@@ -764,6 +1108,18 @@ class TaskExecutionServiceTest {
         Mockito.when(context.sceneRepository.findById(11L)).thenReturn(Optional.of(scene));
         Mockito.when(context.repositoryRepository.findById(21L)).thenReturn(Optional.of(repository));
         context.mockSaveWithGeneratedId();
+        Mockito.when(context.taskRepository.findById(101L)).thenAnswer(invocation -> {
+            TaskEntity task = new TaskEntity();
+            task.setId(101L);
+            task.setSceneId(11L);
+            task.setRepoId(21L);
+            task.setStatus("SUCCESS");
+            task.setCurrentStage("FINISHED");
+            task.setResultCode("SUCCESS");
+            task.setResultMessage(null);
+            task.setLogUrl("parse case results failed: results index missing");
+            return Optional.of(task);
+        });
         Mockito.when(context.workspaceService.prepareWorkspace("git@demo/repo.git", "main", 101L)).thenReturn(Path.of("/tmp/task-101"));
         Mockito.when(context.executionService.installDependencies(
                 Path.of("/tmp/task-101/playwright_framework"),
@@ -779,10 +1135,14 @@ class TaskExecutionServiceTest {
                 Path.of("/tmp/task-101/playwright_framework")))
                 .thenThrow(new IllegalStateException("results index missing"));
 
-        TaskEntity result = context.service().createAndRun(11L);
+        TaskServiceImpl service = context.service();
+        TaskEntity result = service.createAndRun(11L);
 
         assertThat(result.getStatus()).isEqualTo("SUCCESS");
         assertThat(result.getLogUrl()).contains("results index missing");
+        var diagnostics = service.getDiagnostics(101L);
+        assertThat(diagnostics.recentApplicationErrors()).isNotEmpty();
+        assertThat(diagnostics.recentApplicationErrors().getFirst().message()).contains("parse case results failed");
     }
 
     @Test
@@ -835,6 +1195,7 @@ class TaskExecutionServiceTest {
         private final ObjectStorageService objectStorageService = Mockito.mock(ObjectStorageService.class);
         private final TaskCommandBuilder taskCommandBuilder = Mockito.mock(TaskCommandBuilder.class);
         private final DetailCacheService detailCacheService = Mockito.mock(DetailCacheService.class);
+        private final InMemoryApplicationErrorSummaryService applicationErrorSummaryService = new InMemoryApplicationErrorSummaryService();
 
         private TestContext() {
             Mockito.when(taskCommandBuilder.buildRunCommand(Mockito.any(), Mockito.any())).thenReturn("npm run test:e2e");

@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useTaskStore } from '../../stores/task'
 import type { CaseArtifactLinkRecord, CaseResultRecord } from '../../types/report'
 import type { TaskStageLogRecord } from '../../types/task'
 import { toErrorMessage } from '../../utils/error'
+import { fetchStageLogContent } from '../../utils/stage-log'
 import { showAppToast } from '../../utils/ui-feedback'
 import {
   caseFilterLabel,
@@ -119,28 +120,27 @@ function openUrl(url?: string | null) {
   }
 }
 
+function isExternalUrl(value?: string | null) {
+  return typeof value === 'string' && /^https?:\/\//i.test(value)
+}
+
 function openTraceViewer(traceUrl?: string | null) {
   if (!traceUrl) {
     return
   }
-  const viewerUrl = `${TRACE_VIEWER_BASE_URL}?trace=${encodeURIComponent(traceUrl)}`
+  const resolvedTraceUrl = isExternalUrl(traceUrl)
+    ? traceUrl
+    : new URL(traceUrl, window.location.origin).toString()
+  const viewerUrl = `${TRACE_VIEWER_BASE_URL}?trace=${encodeURIComponent(resolvedTraceUrl)}`
   window.open(viewerUrl, '_blank', 'noopener')
 }
 
-function stageLogText(logId: number) {
-  return stageLogContentMap.value[logId] ?? '暂无日志内容'
+function stageLogText(item: TaskStageLogRecord) {
+  return stageLogContentMap.value[item.id] ?? item.previewText ?? '暂无日志内容'
 }
 
 async function loadStageLogContent(item: TaskStageLogRecord) {
-  if (stageLogContentMap.value[item.id] || stageLogLoadingMap.value[item.id]) {
-    return
-  }
-
-  if (!item.downloadUrl) {
-    stageLogContentMap.value = {
-      ...stageLogContentMap.value,
-      [item.id]: item.previewText || '暂无日志内容',
-    }
+  if (stageLogLoadingMap.value[item.id] || !item.downloadUrl) {
     return
   }
 
@@ -150,19 +150,10 @@ async function loadStageLogContent(item: TaskStageLogRecord) {
   }
 
   try {
-    const response = await fetch(item.downloadUrl)
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`)
-    }
-    const text = (await response.text()).replace(/\r\n/g, '\n')
+    const text = await fetchStageLogContent(item.downloadUrl, item.previewText)
     stageLogContentMap.value = {
       ...stageLogContentMap.value,
-      [item.id]: text || item.previewText || '暂无日志内容',
-    }
-  } catch {
-    stageLogContentMap.value = {
-      ...stageLogContentMap.value,
-      [item.id]: item.previewText || '日志暂时无法加载，请使用下载日志查看完整内容。',
+      [item.id]: text,
     }
   } finally {
     stageLogLoadingMap.value = {
@@ -274,13 +265,7 @@ useTaskDetailLoader({
   onLoadError: (error) => {
     showAppToast(toErrorMessage(error, '任务详情加载失败'), 'error')
   },
-})
-
-watch(stageLogs, (logs) => {
-  logs.forEach((item) => {
-    void loadStageLogContent(item)
   })
-}, { immediate: true })
 </script>
 
 <template>
@@ -455,17 +440,28 @@ watch(stageLogs, (logs) => {
                     <h3>{{ taskStageText(item.stage) }}</h3>
                     <p>{{ item.streamType }} · {{ item.lineCount }} 行</p>
                   </div>
-                  <el-button
-                    link
-                    type="primary"
-                    :disabled="!item.downloadUrl"
-                    @click="openUrl(item.downloadUrl)"
-                  >
-                    下载日志
-                  </el-button>
                 </div>
-                <div v-if="stageLogLoadingMap[item.id]" class="page-empty-text task-stage-log-card__empty">日志加载中...</div>
-                <pre v-else class="task-stage-log-card__preview">{{ stageLogText(item.id) }}</pre>
+                  <div class="task-stage-log-card__actions">
+                    <el-button
+                      link
+                      type="primary"
+                      :disabled="!item.downloadUrl"
+                      :loading="Boolean(stageLogLoadingMap[item.id])"
+                      @click="loadStageLogContent(item)"
+                    >
+                      加载完整日志
+                    </el-button>
+                    <el-button
+                      link
+                      type="primary"
+                      :disabled="!item.downloadUrl"
+                      @click="openUrl(item.downloadUrl)"
+                    >
+                      下载日志
+                    </el-button>
+                  </div>
+                  <div v-if="stageLogLoadingMap[item.id]" class="page-empty-text task-stage-log-card__empty">日志加载中...</div>
+                  <pre class="task-stage-log-card__preview">{{ stageLogText(item) }}</pre>
               </article>
             </div>
             <div v-else class="page-empty-text task-detail-empty">暂无阶段日志</div>
@@ -514,6 +510,14 @@ watch(stageLogs, (logs) => {
 .task-detail-grid {
   display: grid;
   gap: 16px;
+}
+
+.task-stage-log-card__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-bottom: 12px;
 }
 
 .task-detail-card {

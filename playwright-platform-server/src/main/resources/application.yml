@@ -17,6 +17,9 @@ spring:
 mybatis:
   configuration:
     map-underscore-to-camel-case: true
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %5p [%thread] [requestId=%X{requestId:-}, traceId=%X{traceId:-}, taskId=%X{taskId:-}, sceneId=%X{sceneId:-}, repoId=%X{repoId:-}, stage=%X{stage:-}] %logger{36} - %msg%n"
 server:
   port: ${SERVER_PORT:8080}
   tomcat:
@@ -56,5 +59,6 @@ platform:
     bucket: ${PLATFORM_STORAGE_BUCKET:qa-report}
     minio:
       endpoint: ${PLATFORM_MINIO_ENDPOINT}
+      public-endpoint: ${PLATFORM_MINIO_PUBLIC_ENDPOINT:${PLATFORM_MINIO_ENDPOINT}}
       access-key: ${PLATFORM_MINIO_ACCESS_KEY}
       secret-key: ${PLATFORM_MINIO_SECRET_KEY}

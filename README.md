@@ -13,7 +13,7 @@
 - 管理 E2E 场景：关联仓库、浏览器、测试选择器、环境变量、定时执行配置
 - 手动触发场景执行，按场景查看任务历史
 - 查看任务详情、阶段状态、阶段日志、用例结果
-- 展示运行产物，包括截图、视频、Trace 等
+- 展示运行产物，包括截图、视频、Trace 等，下载与 Trace 查看统一通过平台后端代理
 - 支持任务取消和任务重新执行
 
 ## 技术栈
@@ -79,28 +79,29 @@ PLATFORM_DB_NAME=playwright_platform
 PLATFORM_DB_URL=jdbc:mysql://mysql:3306/playwright_platform?useSSL=false&allowPublicKeyRetrieval=true&createDatabaseIfNotExist=true&serverTimezone=UTC
 PLATFORM_DB_USERNAME=root
 PLATFORM_DB_PASSWORD=<your-db-password>
-PLATFORM_MYSQL_HOST_PORT=3307
+PLATFORM_MYSQL_HOST_PORT=4306
 
 # Backend - Redis
 PLATFORM_REDIS_HOST=redis
 PLATFORM_REDIS_PORT=6379
-PLATFORM_REDIS_HOST_PORT=6379
+PLATFORM_REDIS_HOST_PORT=7379
 PLATFORM_REDIS_PASSWORD=<your-redis-password>
 
 # Backend - MinIO
 PLATFORM_MINIO_ENDPOINT=http://minio:9000
 PLATFORM_MINIO_INTERNAL_ENDPOINT=http://minio:9000
-PLATFORM_MINIO_API_HOST_PORT=9000
-PLATFORM_MINIO_CONSOLE_HOST_PORT=9001
+PLATFORM_MINIO_PUBLIC_ENDPOINT=http://localhost:10000
+PLATFORM_MINIO_API_HOST_PORT=10000
+PLATFORM_MINIO_CONSOLE_HOST_PORT=10001
 PLATFORM_MINIO_ACCESS_KEY=<your-minio-access-key>
 PLATFORM_MINIO_SECRET_KEY=<your-minio-secret-key>
 PLATFORM_STORAGE_BUCKET=qa-report
 
 # Backend - Runner
 PLATFORM_RUNNER_MODE=docker
-PLATFORM_RUNNER_WORKSPACE_ROOT=/workspace/.runner-workspaces
-PLATFORM_RUNNER_HOST_WORKSPACE_ROOT=./.runner-workspaces
-PLATFORM_RUNNER_DOCKER_IMAGE=mcr.microsoft.com/playwright:v1.44.0-jammy
+PLATFORM_RUNNER_WORKSPACE_ROOT=/runner-workspaces
+PLATFORM_RUNNER_HOST_WORKSPACE_ROOT=/Users/<your-user>/test_platform/.runner-workspaces
+PLATFORM_RUNNER_DOCKER_IMAGE=mcr.microsoft.com/playwright:v1.61.1-noble
 PLATFORM_RUNNER_DOCKER_NETWORK=bridge
 PLATFORM_RUNNER_DOCKER_MEMORY=2g
 PLATFORM_RUNNER_DOCKER_CPUS=2
@@ -112,6 +113,7 @@ PLATFORM_RUNNER_DOCKER_CONTAINER_WORKSPACE_ROOT=/workspace/task
 - MySQL：账号和密码来自 `PLATFORM_DB_USERNAME`、`PLATFORM_DB_PASSWORD`
 - Redis：连接地址和密码来自 `PLATFORM_REDIS_HOST`、`PLATFORM_REDIS_PORT`、`PLATFORM_REDIS_PASSWORD`
 - MinIO：账号和密码来自 `PLATFORM_MINIO_ACCESS_KEY`、`PLATFORM_MINIO_SECRET_KEY`
+- MinIO 对外下载地址：浏览器通过 `PLATFORM_MINIO_PUBLIC_ENDPOINT` 访问对象存储
 - 前端代理：容器内开发服务器通过 `PLATFORM_WEB_API_PROXY_TARGET` 转发到后端
 - 端口映射：宿主机端口来自 `PLATFORM_WEB_HOST_PORT`、`PLATFORM_SERVER_HOST_PORT`、`PLATFORM_MYSQL_HOST_PORT`、`PLATFORM_REDIS_HOST_PORT`、`PLATFORM_MINIO_API_HOST_PORT`、`PLATFORM_MINIO_CONSOLE_HOST_PORT`
 - Runner 工作区：宿主机路径来自 `PLATFORM_RUNNER_HOST_WORKSPACE_ROOT`，容器内路径来自 `PLATFORM_RUNNER_WORKSPACE_ROOT`
@@ -167,6 +169,15 @@ docker compose -f docker-compose.prod.yml up -d --build
 Compose 开发环境默认启用 `PLATFORM_RUNNER_MODE=docker`。后端会通过 Docker socket 启动短生命周期 Runner 容器来执行安装和测试命令，任务工作区由 `PLATFORM_RUNNER_HOST_WORKSPACE_ROOT` 和 `PLATFORM_RUNNER_WORKSPACE_ROOT` 控制。
 
 该模式会把宿主机 `/var/run/docker.sock` 挂载给 server 容器。Docker socket 具备较高权限，仅建议用于本地开发或受控环境。Runner 容器本身不会挂载 Docker socket，只挂载当前任务 workspace。
+
+平台在 Docker Runner 模式下会把场景环境变量传递给执行容器，因此可以用场景 `envJson` 覆盖测试仓库中的基础地址等运行参数。例如本地通过 Docker Runner 执行前端站点测试时，可以将 `INTERVIEW_LOGIN_BASE_URL=https://host.docker.internal:5172` 写入场景环境变量，让 Runner 容器访问宿主机上的前端服务。
+
+运行产物不会再直接暴露 MinIO 内网地址或 presigned URL。后端会统一暴露平台代理下载接口，例如：
+
+- `/api/tasks/{taskId}/artifacts/{artifactId}/download`
+- `/api/tasks/{taskId}/logs/{logId}/download`
+
+浏览器、截图预览和 Playwright Trace Viewer 都通过这些平台接口下载文件；后端再到内网 MinIO 读取对象流返回给客户端。
 
 如需回退到本地执行模式，在 `.env` 中设置：
 
@@ -394,19 +405,25 @@ npm test
 - `GET /api/scenes/{sceneId}/tasks`
 - `GET /api/tasks/{taskId}`
 - `POST /api/tasks/{taskId}/cancel`
+- `GET /api/tasks/{taskId}/artifacts`
+- `GET /api/tasks/{taskId}/artifacts/{artifactId}/download`
+- `GET /api/tasks/{taskId}/cases`
 - `GET /api/tasks/{taskId}/logs`
+- `GET /api/tasks/{taskId}/logs/{logId}/download`
 
 ## 仓库接入说明
 
 平台中的“测试仓库”指被平台拉取并执行的 Playwright 自动化项目。接入时建议使用以下约定：
 
 - `工作目录`：单仓库项目可留空；Monorepo 可填写子目录
-- `安装命令`：例如 `npm install && npx playwright install`
+- `安装命令`：默认建议使用 `npm install`
 - `测试执行命令`：例如 `npx playwright test`
 - 如果使用 npm script 包装测试命令，必须保持参数透传，例如 `npm run test:e2e --`
 - `测试目录`：相对工作目录，例如 `tests`
 - `结果索引文件`：相对工作目录，例如 `test-results/.playwright-results.json`
 - `运行产物目录`：相对工作目录，例如 `.playwright-artifacts`
+
+如果 Runner 镜像已经内置浏览器环境，通常不建议把 `npx playwright install` 写进默认安装命令，否则容器内会重复下载浏览器，增加超时和 CDN 失败概率。更稳妥的做法是让测试仓库的 `@playwright/test` 版本与 Runner 镜像版本对齐。
 
 ## 测试
 

@@ -5,12 +5,17 @@ import com.example.platform.task.parser.ParsedTaskResults;
 import com.example.platform.task.service.TaskCaseResultParseService;
 import com.example.platform.task.service.TaskCaseResultParseServiceImpl;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 class TaskCaseResultParseServiceTest {
+    @TempDir
+    Path tempDir;
+
     @Test
     void shouldParseCaseResultsAndArtifactBindings() {
         TaskCaseResultParseService service = new TaskCaseResultParseServiceImpl(new ObjectMapper());
@@ -45,6 +50,65 @@ class TaskCaseResultParseServiceTest {
         assertThat(parsed.caseResults().getFirst().storyName()).isEqualTo("输入正确的账号和密码");
         assertThat(parsed.caseResults().getFirst().status()).isEqualTo("FAILED");
         assertThat(parsed.artifactBindings()).hasSize(2);
+        assertThat(parsed.artifactBindings())
+                .extracting(ParsedArtifactBinding::relativePath)
+                .containsExactlyInAnyOrder(
+                        ".playwright-artifacts/interview_agent/login/trace.zip",
+                        ".playwright-artifacts/interview_agent/login/error.png");
+    }
+
+    @Test
+    void shouldMapContainerWorkspaceAttachmentsBackToWorkspaceRelativePaths() throws Exception {
+        TaskCaseResultParseService service = new TaskCaseResultParseServiceImpl(new ObjectMapper());
+        Path resultsFile = tempDir.resolve("container-results.json");
+        Files.writeString(
+                resultsFile,
+                """
+                        {
+                          "suites": [
+                            {
+                              "title": "interview_agent/login/login.spec.ts",
+                              "specs": [],
+                              "suites": [
+                                {
+                                  "title": "登录模块",
+                                  "specs": [
+                                    {
+                                      "title": "输入正确的账号和密码",
+                                      "tests": [
+                                        {
+                                          "projectName": "chromium",
+                                          "results": [
+                                            {
+                                              "status": "failed",
+                                              "duration": 60,
+                                              "attachments": [
+                                                {
+                                                  "name": "trace",
+                                                  "contentType": "application/zip",
+                                                  "path": "/workspace/task/.playwright-artifacts/interview_agent/login/trace.zip"
+                                                },
+                                                {
+                                                  "name": "screenshot",
+                                                  "contentType": "image/png",
+                                                  "path": "/workspace/task/.playwright-artifacts/interview_agent/login/error.png"
+                                                }
+                                              ]
+                                            }
+                                          ]
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                        """);
+
+        ParsedTaskResults parsed = service.parse(103L, resultsFile, Path.of("/runner-workspaces/13"));
+
         assertThat(parsed.artifactBindings())
                 .extracting(ParsedArtifactBinding::relativePath)
                 .containsExactlyInAnyOrder(

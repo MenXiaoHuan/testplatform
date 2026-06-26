@@ -5,11 +5,14 @@ import com.example.platform.common.PageResponse;
 import com.example.platform.task.dto.CaseResultResponse;
 import com.example.platform.task.dto.SceneTaskListResponse;
 import com.example.platform.task.dto.TaskDetailResponse;
+import com.example.platform.task.dto.TaskDiagnosticsResponse;
+import com.example.platform.task.dto.TaskRunResponse;
 import com.example.platform.task.dto.TaskStageLogResponse;
 import com.example.platform.task.model.ArtifactEntity;
-import com.example.platform.task.model.TaskEntity;
 import com.example.platform.task.service.TaskService;
 import java.util.List;
+import org.springframework.core.io.Resource;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 /**
@@ -27,8 +30,8 @@ public class TaskController {
     }
 
     @PostMapping("/api/scenes/{sceneId}/run")
-    public ApiResponse<TaskEntity> runScene(@PathVariable Long sceneId) {
-        return ApiResponse.ok(taskService.createAndStart(sceneId));
+    public ApiResponse<TaskRunResponse> runScene(@PathVariable Long sceneId) {
+        return ApiResponse.ok(TaskRunResponse.from(taskService.createAndStart(sceneId)));
     }
 
     @PostMapping("/api/tasks/{taskId}/cancel")
@@ -57,6 +60,11 @@ public class TaskController {
         return ApiResponse.ok(taskService.getDetail(taskId));
     }
 
+    @GetMapping("/api/tasks/{taskId}/diagnostics")
+    public ApiResponse<TaskDiagnosticsResponse> getTaskDiagnostics(@PathVariable Long taskId) {
+        return ApiResponse.ok(taskService.getDiagnostics(taskId));
+    }
+
     @GetMapping("/api/tasks/{taskId}/artifacts")
     public ApiResponse<List<ArtifactEntity>> listTaskArtifacts(@PathVariable Long taskId) {
         return ApiResponse.ok(taskService.listArtifacts(taskId));
@@ -72,8 +80,20 @@ public class TaskController {
         return ApiResponse.ok(taskService.listArtifactsByCaseResult(caseResultId));
     }
 
+    @CrossOrigin(origins = "https://trace.playwright.dev")
+    @GetMapping("/api/tasks/{taskId}/artifacts/{artifactId}/download")
+    public ResponseEntity<Resource> downloadArtifact(@PathVariable Long taskId, @PathVariable Long artifactId) {
+        return taskService.downloadArtifact(taskId, artifactId);
+    }
+
     @GetMapping("/api/tasks/{taskId}/logs")
     public ApiResponse<List<TaskStageLogResponse>> listTaskLogs(@PathVariable Long taskId) {
         return ApiResponse.ok(taskService.listStageLogs(taskId));
+    }
+
+    @CrossOrigin(origins = "https://trace.playwright.dev")
+    @GetMapping("/api/tasks/{taskId}/logs/{logId}/download")
+    public ResponseEntity<Resource> downloadTaskLog(@PathVariable Long taskId, @PathVariable Long logId) {
+        return taskService.downloadStageLog(taskId, logId);
     }
 }

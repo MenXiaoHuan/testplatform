@@ -2,6 +2,7 @@ package com.example.platform.common;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -13,6 +14,11 @@ import org.springframework.web.server.ResponseStatusException;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+    private final ApplicationErrorSummaryService applicationErrorSummaryService;
+
+    public GlobalExceptionHandler(ObjectProvider<ApplicationErrorSummaryService> applicationErrorSummaryServiceProvider) {
+        this.applicationErrorSummaryService = applicationErrorSummaryServiceProvider.getIfAvailable(NoopApplicationErrorSummaryService::new);
+    }
 
     @ExceptionHandler(IllegalArgumentException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
@@ -53,10 +59,24 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     public ApiErrorResponse handleUnexpectedException(Exception ex) {
         log.error("Unhandled server exception", ex);
+        applicationErrorSummaryService.recordError(log.getName(), ex.getMessage(), ex);
         String message = ex.getMessage();
         if (message != null && !message.isBlank()) {
             return new ApiErrorResponse("INTERNAL_SERVER_ERROR", null, message);
         }
         return new ApiErrorResponse("INTERNAL_SERVER_ERROR", null, "Internal server error");
+    }
+
+    private static final class NoopApplicationErrorSummaryService implements ApplicationErrorSummaryService {
+        @Override
+        public void recordError(String loggerName, String message, Throwable throwable) {
+        }
+
+        @Override
+        public java.util.List<com.example.platform.task.dto.ApplicationErrorSummaryResponse> listRecentForTask(
+                com.example.platform.task.model.TaskEntity task,
+                int limit) {
+            return java.util.List.of();
+        }
     }
 }

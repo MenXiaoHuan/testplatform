@@ -23,7 +23,9 @@ class DockerRunnerCommandExecutorTest {
 
     @Test
     void shouldReturnSuccessfulResultWhenDockerProcessExitsZero() throws IOException {
-        FakeRunnerProcessLauncher launcher = new FakeRunnerProcessLauncher(new CompletedProcess(0, "docker output\n"));
+        FakeRunnerProcessLauncher launcher = new FakeRunnerProcessLauncher(
+                new CompletedProcess(0, ""),
+                new CompletedProcess(0, "docker output\n"));
         DockerRunnerCommandExecutor executor = executor(launcher);
         RunnerCommandRequest request = request(false, Duration.ofSeconds(5));
 
@@ -34,12 +36,34 @@ class DockerRunnerCommandExecutorTest {
         assertThat(result.canceled()).isFalse();
         assertThat(result.lineCount()).isEqualTo(1);
         assertThat(Files.readString(result.combinedLogFile())).contains("docker output");
-        assertThat(launcher.startedCommands().getFirst()).contains("docker", "run", "--name", "container-name");
+        assertThat(launcher.startedCommands().getFirst()).containsExactly(
+                "docker", "image", "inspect", "mcr.microsoft.com/playwright:v1.44.0-jammy");
+        assertThat(launcher.startedCommands().get(1)).contains("docker", "run", "--name", "container-name");
+    }
+
+    @Test
+    void shouldPullImageBeforeRunWhenDockerImageIsMissing() throws IOException {
+        FakeRunnerProcessLauncher launcher = new FakeRunnerProcessLauncher(
+                new CompletedProcess(1, "missing\n"),
+                new CompletedProcess(0, "pulling image\n"),
+                new CompletedProcess(0, "docker output\n"));
+        DockerRunnerCommandExecutor executor = executor(launcher);
+
+        RunnerCommandResult result = executor.execute(request(false, Duration.ofSeconds(5)));
+
+        assertThat(result.exitCode()).isEqualTo(0);
+        assertThat(launcher.startedCommands().getFirst()).containsExactly(
+                "docker", "image", "inspect", "mcr.microsoft.com/playwright:v1.44.0-jammy");
+        assertThat(launcher.startedCommands().get(1)).containsExactly(
+                "docker", "pull", "mcr.microsoft.com/playwright:v1.44.0-jammy");
+        assertThat(launcher.startedCommands().get(2)).contains("docker", "run", "--name", "container-name");
     }
 
     @Test
     void shouldRemoveContainerWhenCancellationIsRequested() {
-        FakeRunnerProcessLauncher launcher = new FakeRunnerProcessLauncher(new RunningProcess());
+        FakeRunnerProcessLauncher launcher = new FakeRunnerProcessLauncher(
+                new CompletedProcess(0, ""),
+                new RunningProcess());
         AtomicBoolean canceled = new AtomicBoolean(false);
         DockerRunnerCommandExecutor executor = executor(launcher);
         RunnerCommandRequest request = request(canceled::get, Duration.ofSeconds(5));
@@ -55,7 +79,9 @@ class DockerRunnerCommandExecutorTest {
 
     @Test
     void shouldRemoveContainerWhenCommandTimesOut() {
-        FakeRunnerProcessLauncher launcher = new FakeRunnerProcessLauncher(new RunningProcess());
+        FakeRunnerProcessLauncher launcher = new FakeRunnerProcessLauncher(
+                new CompletedProcess(0, ""),
+                new RunningProcess());
         DockerRunnerCommandExecutor executor = executor(launcher);
         RunnerCommandRequest request = request(false, Duration.ZERO);
 
@@ -65,6 +91,21 @@ class DockerRunnerCommandExecutorTest {
         assertThat(result.canceled()).isFalse();
         assertThat(launcher.startedCommands()).anySatisfy(command ->
                 assertThat(command).containsExactly("docker", "rm", "-f", "container-name"));
+    }
+
+    @Test
+    void shouldTimeoutWhenImagePullExceedsConfiguredTimeout() {
+        FakeRunnerProcessLauncher launcher = new FakeRunnerProcessLauncher(
+                new CompletedProcess(1, "missing\n"),
+                new RunningProcess());
+        DockerRunnerCommandExecutor executor = executor(launcher, dockerPropertiesWithPullTimeout(Duration.ZERO));
+
+        RunnerCommandResult result = executor.execute(request(false, Duration.ofSeconds(5)));
+
+        assertThat(result.timedOut()).isTrue();
+        assertThat(result.exitCode()).isEqualTo(-1);
+        assertThat(launcher.startedCommands().get(1)).containsExactly(
+                "docker", "pull", "mcr.microsoft.com/playwright:v1.44.0-jammy");
     }
 
     @Test
@@ -79,8 +120,11 @@ class DockerRunnerCommandExecutorTest {
     }
 
     private DockerRunnerCommandExecutor executor(FakeRunnerProcessLauncher launcher) {
+        return executor(launcher, dockerProperties());
+    }
+
+    private DockerRunnerCommandExecutor executor(FakeRunnerProcessLauncher launcher, DockerRunnerProperties dockerProperties) {
         RunnerProperties runnerProperties = runnerProperties();
-        DockerRunnerProperties dockerProperties = dockerProperties();
         return new DockerRunnerCommandExecutor(
                 dockerProperties,
                 runnerProperties,
@@ -113,6 +157,12 @@ class DockerRunnerCommandExecutorTest {
         return properties;
     }
 
+    private DockerRunnerProperties dockerPropertiesWithPullTimeout(Duration timeout) {
+        DockerRunnerProperties properties = dockerProperties();
+        properties.setImagePullTimeoutSeconds(timeout.toSeconds());
+        return properties;
+    }
+
     private DockerRunnerProperties dockerProperties() {
         DockerRunnerProperties properties = new DockerRunnerProperties();
         properties.setImage("mcr.microsoft.com/playwright:v1.44.0-jammy");
@@ -132,11 +182,11 @@ class DockerRunnerCommandExecutorTest {
     }
 
     private static final class FakeRunnerProcessLauncher implements RunnerProcessLauncher {
-        private final Process dockerRunProcess;
+        private final List<Process> scriptedProcesses;
         private final List<List<String>> startedCommands = new ArrayList<>();
 
-        private FakeRunnerProcessLauncher(Process dockerRunProcess) {
-            this.dockerRunProcess = dockerRunProcess;
+        private FakeRunnerProcessLauncher(Process... scriptedProcesses) {
+            this.scriptedProcesses = new ArrayList<>(List.of(scriptedProcesses));
         }
 
         @Override
@@ -145,7 +195,7 @@ class DockerRunnerCommandExecutorTest {
             if (command.equals(List.of("docker", "rm", "-f", "container-name"))) {
                 return new CompletedProcess(0, "");
             }
-            return dockerRunProcess;
+            return scriptedProcesses.removeFirst();
         }
 
         private List<List<String>> startedCommands() {

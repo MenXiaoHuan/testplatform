@@ -1,6 +1,6 @@
 import { get, post } from './http'
 import type { PageResult } from '../types/common'
-import type { ArtifactRecord, TaskRecord, TaskStageLogRecord } from '../types/task'
+import type { ArtifactRecord, TaskDiagnosticsRecord, TaskRecord, TaskStageLogRecord } from '../types/task'
 import type { CaseResultRecord } from '../types/report'
 
 export const listTasks = async (page = 1, size = 10) => {
@@ -37,4 +37,8 @@ export const listTaskCases = async (taskId: number) => {
 
 export const listTaskLogs = async (taskId: number) => {
   return get<TaskStageLogRecord[]>(`/tasks/${taskId}/logs`)
+}
+
+export const getTaskDiagnostics = async (taskId: number) => {
+  return get<TaskDiagnosticsRecord>(`/tasks/${taskId}/diagnostics`)
 }

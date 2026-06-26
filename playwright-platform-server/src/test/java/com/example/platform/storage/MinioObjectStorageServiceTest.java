@@ -40,4 +40,44 @@ class MinioObjectStorageServiceTest {
         assertThat(result).isEqualTo("http://localhost:9000/artifacts/101/trace.zip");
         Mockito.verify(minioClient, Mockito.never()).getPresignedObjectUrl(Mockito.any(GetPresignedObjectUrlArgs.class));
     }
+
+    @Test
+    void shouldReturnUrlSignedByPublicMinioClientWithoutRewritingHost() throws Exception {
+        MinioClient internalMinioClient = Mockito.mock(MinioClient.class);
+        MinioClient publicMinioClient = Mockito.mock(MinioClient.class);
+        Mockito.when(publicMinioClient.getPresignedObjectUrl(Mockito.any(GetPresignedObjectUrlArgs.class)))
+                .thenReturn("http://minio:9000/qa-report/runs/101/logs/testing.log?X-Amz-Signature=test");
+
+        MinioObjectStorageService service = new MinioObjectStorageService(
+                internalMinioClient,
+                publicMinioClient,
+                "http://minio:9000",
+                "http://localhost:10000");
+
+        String result = service.createPresignedGetUrl("qa-report", "runs/101/logs/testing.log");
+
+        assertThat(result).isEqualTo("http://minio:9000/qa-report/runs/101/logs/testing.log?X-Amz-Signature=test");
+        Mockito.verify(publicMinioClient).getPresignedObjectUrl(Mockito.any(GetPresignedObjectUrlArgs.class));
+        Mockito.verify(internalMinioClient, Mockito.never()).getPresignedObjectUrl(Mockito.any(GetPresignedObjectUrlArgs.class));
+    }
+
+    @Test
+    void shouldUsePublicMinioClientToCreatePresignedUrl() throws Exception {
+        MinioClient internalMinioClient = Mockito.mock(MinioClient.class);
+        MinioClient publicMinioClient = Mockito.mock(MinioClient.class);
+        Mockito.when(publicMinioClient.getPresignedObjectUrl(Mockito.any(GetPresignedObjectUrlArgs.class)))
+                .thenReturn("http://localhost:10000/qa-report/runs/101/artifacts/trace.zip?X-Amz-Signature=test");
+
+        MinioObjectStorageService service = new MinioObjectStorageService(
+                internalMinioClient,
+                publicMinioClient,
+                "http://minio:9000",
+                "http://localhost:10000");
+
+        String result = service.createPresignedGetUrl("qa-report", "runs/101/artifacts/trace.zip");
+
+        assertThat(result).isEqualTo("http://localhost:10000/qa-report/runs/101/artifacts/trace.zip?X-Amz-Signature=test");
+        Mockito.verify(publicMinioClient).getPresignedObjectUrl(Mockito.any(GetPresignedObjectUrlArgs.class));
+        Mockito.verifyNoInteractions(internalMinioClient);
+    }
 }

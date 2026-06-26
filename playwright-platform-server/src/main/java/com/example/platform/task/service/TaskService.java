@@ -4,11 +4,14 @@ import com.example.platform.common.PageResponse;
 import com.example.platform.task.dto.SceneTaskListResponse;
 import com.example.platform.task.dto.CaseResultResponse;
 import com.example.platform.task.dto.TaskDetailResponse;
+import com.example.platform.task.dto.TaskDiagnosticsResponse;
 import com.example.platform.task.dto.TaskStageLogResponse;
 import com.example.platform.task.model.ArtifactEntity;
 import com.example.platform.task.model.CaseResultEntity;
 import com.example.platform.task.model.TaskEntity;
 import java.util.List;
+import org.springframework.core.io.Resource;
+import org.springframework.http.ResponseEntity;
 
 public interface TaskService {
     TaskEntity createAndStart(Long sceneId);
@@ -17,6 +20,7 @@ public interface TaskService {
     PageResponse<SceneTaskListResponse> list(int page, int size);
     PageResponse<SceneTaskListResponse> listByScene(Long sceneId, int page, int size);
     TaskDetailResponse getDetail(Long taskId);
+    TaskDiagnosticsResponse getDiagnostics(Long taskId);
     TaskEntity get(Long taskId);
     List<ArtifactEntity> listArtifacts(Long taskId);
     List<CaseResultResponse> listCaseResultResponses(Long taskId);
@@ -24,4 +28,6 @@ public interface TaskService {
     List<ArtifactEntity> listArtifactsByCaseResult(Long caseResultId);
     void cancelTask(Long taskId, String operatorName);
     List<TaskStageLogResponse> listStageLogs(Long taskId);
+    ResponseEntity<Resource> downloadArtifact(Long taskId, Long artifactId);
+    ResponseEntity<Resource> downloadStageLog(Long taskId, Long stageLogId);
 }

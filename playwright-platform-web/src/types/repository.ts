@@ -30,7 +30,7 @@ export const createRepositoryForm = (): RepositoryForm => ({
   gitUrl: '',
   defaultBranch: 'main',
   workingDirectory: '',
-  installCommand: 'npm install && npx playwright install',
+  installCommand: 'npm install',
   runCommandTemplate: 'npx playwright test',
   testRoot: 'tests',
   resultsIndexRelativePath: 'test-results/.playwright-results.json',

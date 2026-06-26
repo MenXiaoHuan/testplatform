@@ -7,6 +7,7 @@ import com.example.platform.scene.mapper.SceneMapper;
 import com.example.platform.scene.mapper.SceneScheduleStateMapper;
 import com.example.platform.task.dto.CaseResultResponse;
 import com.example.platform.task.dto.SceneTaskListResponse;
+import com.example.platform.task.dto.TaskDiagnosticsResponse;
 import com.example.platform.task.dto.TaskDetailResponse;
 import com.example.platform.task.dto.TaskStageLogResponse;
 import com.example.platform.task.mapper.ArtifactMapper;
@@ -16,20 +17,26 @@ import com.example.platform.task.mapper.TaskStageLogMapper;
 import com.example.platform.task.model.ArtifactEntity;
 import com.example.platform.task.model.TaskEntity;
 import com.example.platform.task.service.TaskService;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.core.io.Resource;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.server.ResponseStatusException;
 
 import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -84,11 +91,12 @@ class TaskControllerTest {
                 "SUCCESS",
                 false,
                 null,
-                null,
-                null,
+                Instant.parse("2026-06-25T06:23:15Z"),
+                Instant.parse("2026-06-25T06:25:15Z"),
                 1234L,
                 "centralized-runner",
                 "http://localhost:9000/logs/1.txt",
+                "all good",
                 "main",
                 "chromium",
                 "{\"BASE_URL\":\"https://example.com\"}",
@@ -110,9 +118,12 @@ class TaskControllerTest {
         Mockito.when(taskService.getDetail(1L)).thenReturn(detail);
         Mockito.when(taskService.listArtifacts(1L)).thenReturn(List.of(artifact));
 
-        mockMvc.perform(get("/api/tasks/1"))
+        mockMvc.perform(get("/api/tasks/1").header("X-Request-Id", "req-123"))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.resultMessage").value("all good"))
                 .andExpect(jsonPath("$.code").value("OK"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header().string("X-Request-Id", "req-123"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header().exists("X-Trace-Id"))
                 .andExpect(jsonPath("$.data.status").value("SUCCESS"))
                 .andExpect(jsonPath("$.data.currentStage").value("FINISHED"))
                 .andExpect(jsonPath("$.data.resultCode").value("SUCCESS"))
@@ -126,6 +137,8 @@ class TaskControllerTest {
                 .andExpect(jsonPath("$.data.environmentVariableCount").value(1))
                 .andExpect(jsonPath("$.data.resolvedBrowser").value("chromium"))
                 .andExpect(jsonPath("$.data.resolvedMatchValue").value("login.spec.ts"))
+                .andExpect(jsonPath("$.data.startedAt").value("2026-06-25T06:23:15Z"))
+                .andExpect(jsonPath("$.data.finishedAt").value("2026-06-25T06:25:15Z"))
                 .andExpect(jsonPath("$.data.resolvedRunCommand").value("node ./scripts/run-e2e.cjs --project chromium --target tests/login.spec.ts"))
                 .andExpect(jsonPath("$.msg").value("success"));
 
@@ -164,6 +177,82 @@ class TaskControllerTest {
                 .andExpect(jsonPath("$.code").value("OK"))
                 .andExpect(jsonPath("$.data[0].stage").value("TESTING"))
                 .andExpect(jsonPath("$.data[0].downloadUrl").value("http://minio/presigned/testing-log"))
+                .andExpect(jsonPath("$.msg").value("success"));
+    }
+
+    @Test
+    void shouldProxyArtifactDownloadThroughPlatform() throws Exception {
+        ByteArrayResource resource = new ByteArrayResource("trace-data".getBytes());
+        ResponseEntity<Resource> response = ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType("application/zip"))
+                .header("Content-Disposition", "attachment; filename=\"trace.zip\"")
+                .body(resource);
+        Mockito.when(taskService.downloadArtifact(101L, 11L)).thenReturn(response);
+
+        mockMvc.perform(get("/api/tasks/101/artifacts/11/download"))
+                .andExpect(status().isOk())
+                .andExpect(content().bytes("trace-data".getBytes()))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header().string("Content-Disposition", "attachment; filename=\"trace.zip\""))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header().string("Content-Type", "application/zip"));
+
+        mockMvc.perform(get("/api/tasks/101/artifacts/11/download")
+                        .header("Origin", "https://trace.playwright.dev"))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
+                        .string("Access-Control-Allow-Origin", "https://trace.playwright.dev"));
+    }
+
+    @Test
+    void shouldProxyStageLogDownloadThroughPlatform() throws Exception {
+        ByteArrayResource resource = new ByteArrayResource("log-data".getBytes());
+        ResponseEntity<Resource> response = ResponseEntity.ok()
+                .contentType(MediaType.TEXT_PLAIN)
+                .header("Content-Disposition", "attachment; filename=\"testing.log\"")
+                .body(resource);
+        Mockito.when(taskService.downloadStageLog(101L, 7L)).thenReturn(response);
+
+        mockMvc.perform(get("/api/tasks/101/logs/7/download"))
+                .andExpect(status().isOk())
+                .andExpect(content().bytes("log-data".getBytes()))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header().string("Content-Disposition", "attachment; filename=\"testing.log\""))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header().string("Content-Type", "text/plain"));
+
+        mockMvc.perform(get("/api/tasks/101/logs/7/download")
+                        .header("Origin", "https://trace.playwright.dev"))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
+                        .string("Access-Control-Allow-Origin", "https://trace.playwright.dev"));
+    }
+
+    @Test
+    void shouldExposeTaskDiagnosticsEndpoint() throws Exception {
+        TaskDiagnosticsResponse diagnostics = new TaskDiagnosticsResponse(
+                101L,
+                "PREPARING",
+                "PREPARE_FAILED",
+                "Failed to prepare workspace",
+                "git clone failed",
+                2,
+                List.of(new com.example.platform.task.dto.ApplicationErrorSummaryResponse(
+                        Instant.parse("2026-06-25T06:30:00Z"),
+                        "com.example.platform.task.service.TaskExecutionOrchestrator",
+                        "Git clone failed",
+                        "IllegalStateException",
+                        "req-1",
+                        "trace-1",
+                        101L,
+                        11L,
+                        7L,
+                        "PREPARING")));
+
+        Mockito.when(taskService.getDiagnostics(101L)).thenReturn(diagnostics);
+
+        mockMvc.perform(get("/api/tasks/101/diagnostics"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("OK"))
+                .andExpect(jsonPath("$.data.taskId").value(101))
+                .andExpect(jsonPath("$.data.stageLogCount").value(2))
+                .andExpect(jsonPath("$.data.recentApplicationErrors[0].message").value("Git clone failed"))
                 .andExpect(jsonPath("$.msg").value("success"));
     }
 
@@ -236,10 +325,10 @@ class TaskControllerTest {
                 "SUCCESS",
                 false,
                 "main",
-                LocalDateTime.of(2026, 6, 10, 10, 4),
-                LocalDateTime.of(2026, 6, 10, 10, 4, 5),
+                Instant.parse("2026-06-10T10:04:00Z"),
+                Instant.parse("2026-06-10T10:04:05Z"),
                 1520L,
-                LocalDateTime.of(2026, 6, 10, 10, 5),
+                Instant.parse("2026-06-10T10:05:00Z"),
                 "centralized-runner",
                 2,
                 1,
@@ -255,6 +344,9 @@ class TaskControllerTest {
                 .andExpect(jsonPath("$.data.items[0].id").value(101))
                 .andExpect(jsonPath("$.data.items[0].status").value("SUCCESS"))
                 .andExpect(jsonPath("$.data.items[0].detailAvailable").value(true))
+                .andExpect(jsonPath("$.data.items[0].queuedAt").value("2026-06-10T10:04:00Z"))
+                .andExpect(jsonPath("$.data.items[0].startedAt").value("2026-06-10T10:04:05Z"))
+                .andExpect(jsonPath("$.data.items[0].createdAt").value("2026-06-10T10:05:00Z"))
                 .andExpect(jsonPath("$.data.items[0].passedCount").value(2))
                 .andExpect(jsonPath("$.data.items[0].failedCount").value(1))
                 .andExpect(jsonPath("$.data.items[0].skippedCount").value(0))
@@ -311,6 +403,7 @@ class TaskControllerTest {
         createdTask.setTriggerType("MANUAL");
         createdTask.setBranch("main");
         createdTask.setRunnerName("centralized-runner");
+        createdTask.setQueuedAt(LocalDateTime.of(2026, 6, 25, 6, 23, 15));
 
         Mockito.when(taskService.createAndStart(11L)).thenReturn(createdTask);
 
@@ -321,6 +414,7 @@ class TaskControllerTest {
                 .andExpect(jsonPath("$.data.sceneId").value(11))
                 .andExpect(jsonPath("$.data.status").value("QUEUED"))
                 .andExpect(jsonPath("$.data.currentStage").value("QUEUED"))
+                .andExpect(jsonPath("$.data.queuedAt").value("2026-06-25T06:23:15Z"))
                 .andExpect(jsonPath("$.data.runnerName").value("centralized-runner"))
                 .andExpect(jsonPath("$.msg").value("success"));
     }

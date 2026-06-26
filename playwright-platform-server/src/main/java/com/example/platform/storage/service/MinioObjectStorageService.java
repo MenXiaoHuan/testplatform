@@ -4,6 +4,7 @@ import io.minio.BucketExistsArgs;
 import io.minio.GetPresignedObjectUrlArgs;
 import io.minio.MakeBucketArgs;
 import io.minio.MinioClient;
+import io.minio.GetObjectArgs;
 import io.minio.PutObjectArgs;
 import io.minio.RemoveObjectArgs;
 import io.minio.http.Method;
@@ -14,6 +15,8 @@ import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.concurrent.TimeUnit;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -27,13 +30,25 @@ import org.springframework.stereotype.Service;
 public class MinioObjectStorageService implements ObjectStorageService {
     private static final String DEFAULT_CONTENT_TYPE = "application/octet-stream";
 
-    private final MinioClient minioClient;
+    private final MinioClient internalMinioClient;
+    private final MinioClient publicMinioClient;
     private final String endpoint;
+    private final String publicEndpoint;
 
-    public MinioObjectStorageService(MinioClient minioClient,
-                                     @Value("${platform.storage.minio.endpoint}") String endpoint) {
-        this.minioClient = minioClient;
+    @Autowired
+    public MinioObjectStorageService(
+                                         @Qualifier("internalMinioClient") MinioClient internalMinioClient,
+                                         @Qualifier("publicMinioClient") MinioClient publicMinioClient,
+                                       @Value("${platform.storage.minio.endpoint}") String endpoint,
+                                       @Value("${platform.storage.minio.public-endpoint:${platform.storage.minio.endpoint}}") String publicEndpoint) {
+        this.internalMinioClient = internalMinioClient;
+        this.publicMinioClient = publicMinioClient;
         this.endpoint = endpoint;
+        this.publicEndpoint = publicEndpoint;
+    }
+
+    public MinioObjectStorageService(MinioClient minioClient, String endpoint) {
+        this(minioClient, minioClient, endpoint, endpoint);
     }
 
     @Override
@@ -54,7 +69,7 @@ public class MinioObjectStorageService implements ObjectStorageService {
     public String uploadFile(String bucket, String objectKey, Path sourceFile) {
         ensureBucket(bucket);
         try (InputStream inputStream = Files.newInputStream(sourceFile)) {
-            minioClient.putObject(
+            internalMinioClient.putObject(
                     PutObjectArgs.builder()
                             .bucket(bucket)
                             .object(objectKey)
@@ -74,22 +89,40 @@ public class MinioObjectStorageService implements ObjectStorageService {
             return objectKey;
         }
         try {
-            return minioClient.getPresignedObjectUrl(
+            String signedUrl = publicMinioClient.getPresignedObjectUrl(
                     GetPresignedObjectUrlArgs.builder()
                             .method(Method.GET)
                             .bucket(bucket)
                             .object(normalizedObjectKey)
                             .expiry(1, TimeUnit.HOURS)
                             .build());
+            return signedUrl;
         } catch (Exception exception) {
             throw new IllegalStateException("Failed to create presigned url", exception);
         }
     }
 
     @Override
+    public InputStream getObject(String bucket, String objectKey) {
+        String normalizedObjectKey = normalizeObjectKey(bucket, objectKey);
+        if (normalizedObjectKey == null || normalizedObjectKey.isBlank()) {
+            throw new IllegalArgumentException("Object key must not be blank");
+        }
+        try {
+            return internalMinioClient.getObject(
+                    GetObjectArgs.builder()
+                            .bucket(bucket)
+                            .object(normalizedObjectKey)
+                            .build());
+        } catch (Exception exception) {
+            throw new IllegalStateException("Failed to read object from storage", exception);
+        }
+    }
+
+    @Override
     public void deleteObject(String bucket, String objectKey) {
         try {
-            minioClient.removeObject(
+            internalMinioClient.removeObject(
                     RemoveObjectArgs.builder()
                             .bucket(bucket)
                             .object(objectKey)
@@ -101,9 +134,9 @@ public class MinioObjectStorageService implements ObjectStorageService {
 
     private void ensureBucket(String bucket) {
         try {
-            boolean exists = minioClient.bucketExists(BucketExistsArgs.builder().bucket(bucket).build());
+            boolean exists = internalMinioClient.bucketExists(BucketExistsArgs.builder().bucket(bucket).build());
             if (!exists) {
-                minioClient.makeBucket(MakeBucketArgs.builder().bucket(bucket).build());
+                internalMinioClient.makeBucket(MakeBucketArgs.builder().bucket(bucket).build());
             }
         } catch (Exception exception) {
             throw new IllegalStateException("Failed to ensure bucket exists", exception);

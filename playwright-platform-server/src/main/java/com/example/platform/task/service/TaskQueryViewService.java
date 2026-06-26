@@ -1,14 +1,17 @@
 package com.example.platform.task.service;
 
+import com.example.platform.common.ApplicationErrorSummaryService;
 import com.example.platform.repository.mapper.TestRepositoryMapper;
 import com.example.platform.repository.model.TestRepositoryEntity;
 import com.example.platform.scene.mapper.SceneMapper;
 import com.example.platform.scene.model.SceneEntity;
 import com.example.platform.storage.service.ObjectStorageService;
+import com.example.platform.task.dto.ApplicationErrorSummaryResponse;
 import com.example.platform.task.dto.CaseArtifactLinkResponse;
 import com.example.platform.task.dto.CaseResultResponse;
 import com.example.platform.task.dto.SceneTaskListResponse;
 import com.example.platform.task.dto.TaskDetailResponse;
+import com.example.platform.task.dto.TaskDiagnosticsResponse;
 import com.example.platform.task.dto.TaskStageLogResponse;
 import com.example.platform.task.model.ArtifactEntity;
 import com.example.platform.task.model.CaseResultEntity;
@@ -34,18 +37,21 @@ final class TaskQueryViewService {
     private final CaseResultMapper caseResultRepository;
     private final ObjectStorageService objectStorageService;
     private final String storageBucket;
+    private final ApplicationErrorSummaryService applicationErrorSummaryService;
 
     TaskQueryViewService(
             SceneMapper sceneMapper,
             TestRepositoryMapper repositoryMapper,
             CaseResultMapper caseResultRepository,
             ObjectStorageService objectStorageService,
-            String storageBucket) {
+            String storageBucket,
+            ApplicationErrorSummaryService applicationErrorSummaryService) {
         this.sceneMapper = sceneMapper;
         this.repositoryMapper = repositoryMapper;
         this.caseResultRepository = caseResultRepository;
         this.objectStorageService = objectStorageService;
         this.storageBucket = storageBucket;
+        this.applicationErrorSummaryService = applicationErrorSummaryService;
     }
 
     SceneTaskListResponse toSceneTaskListResponse(TaskEntity task) {
@@ -68,6 +74,20 @@ final class TaskQueryViewService {
                 artifactCount);
     }
 
+    TaskDiagnosticsResponse toTaskDiagnosticsResponse(TaskEntity task, List<TaskStageLogEntity> stageLogs) {
+        List<ApplicationErrorSummaryResponse> recentErrors = applicationErrorSummaryService == null
+                ? List.of()
+                : applicationErrorSummaryService.listRecentForTask(task, 10);
+        return new TaskDiagnosticsResponse(
+                task.getId(),
+                task.getCurrentStage(),
+                task.getResultCode(),
+                task.getResultMessage(),
+                task.getLogUrl(),
+                stageLogs == null ? 0 : stageLogs.size(),
+                recentErrors);
+    }
+
     CaseResultResponse toCaseResultResponse(CaseResultEntity caseResult, List<ArtifactEntity> caseArtifacts) {
         List<CaseArtifactLinkResponse> artifactLinks = toCaseArtifactLinks(caseArtifacts);
         return CaseResultResponse.from(
@@ -83,8 +103,8 @@ final class TaskQueryViewService {
 
     ArtifactEntity withAccessibleArtifactUrl(ArtifactEntity artifact) {
         ArtifactEntity copy = copyArtifact(artifact);
-        if (artifact.getBucket() != null && artifact.getObjectKey() != null) {
-            copy.setUrl(safePresignedUrl(artifact.getBucket(), artifact.getObjectKey(), artifact.getUrl()));
+        if (artifact.getTaskId() != null && artifact.getId() != null) {
+            copy.setUrl(buildArtifactDownloadUrl(artifact.getTaskId(), artifact.getId()));
         }
         return copy;
     }
@@ -92,23 +112,21 @@ final class TaskQueryViewService {
     TaskStageLogResponse toTaskStageLogResponse(TaskStageLogEntity logEntity) {
         return TaskStageLogResponse.from(
                 logEntity,
-                safePresignedUrl(storageBucket, logEntity.getObjectKey(), logEntity.getObjectKey()));
+                buildStageLogDownloadUrl(logEntity.getTaskId(), logEntity.getId()));
     }
 
-    private String safePresignedUrl(String bucket, String objectKeyOrUrl, String fallbackUrl) {
-        if (objectKeyOrUrl == null || objectKeyOrUrl.isBlank()) {
-            return fallbackUrl;
+    private String buildArtifactDownloadUrl(Long taskId, Long artifactId) {
+        if (taskId == null || artifactId == null) {
+            return null;
         }
-        try {
-            return objectStorageService.createPresignedGetUrl(bucket, objectKeyOrUrl);
-        } catch (IllegalStateException exception) {
-            log.warn(
-                    "Failed to create presigned url, fallback to stored url. bucket={}, source={}, reason={}",
-                    bucket,
-                    objectKeyOrUrl,
-                    exception.getMessage());
-            return fallbackUrl != null && !fallbackUrl.isBlank() ? fallbackUrl : objectKeyOrUrl;
+        return "/api/tasks/" + taskId + "/artifacts/" + artifactId + "/download";
+    }
+
+    private String buildStageLogDownloadUrl(Long taskId, Long logId) {
+        if (taskId == null || logId == null) {
+            return null;
         }
+        return "/api/tasks/" + taskId + "/logs/" + logId + "/download";
     }
 
     private TaskEntity withTaskSummary(TaskEntity task) {

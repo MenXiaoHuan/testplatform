@@ -32,6 +32,7 @@ class ApplicationConfigurationTest {
 
         assertThat(devApplicationYaml).contains("url: ${PLATFORM_DB_URL}");
         assertThat(devApplicationYaml).contains("endpoint: ${PLATFORM_MINIO_ENDPOINT}");
+          assertThat(devApplicationYaml).contains("public-endpoint: ${PLATFORM_MINIO_PUBLIC_ENDPOINT:${PLATFORM_MINIO_ENDPOINT}}");
         assertThat(devApplicationYaml).doesNotContain("jdbc:mysql://localhost");
         assertThat(devApplicationYaml).doesNotContain("http://127.0.0.1");
         assertThat(devApplicationYaml).contains("${PLATFORM_DB_USERNAME}");
@@ -69,6 +70,7 @@ class ApplicationConfigurationTest {
         assertThat(compose).contains("${PLATFORM_WEB_HOST_PORT");
         assertThat(compose).contains("${PLATFORM_WEB_API_PROXY_TARGET");
         assertThat(compose).contains("${PLATFORM_MINIO_INTERNAL_ENDPOINT");
+          assertThat(compose).contains("${PLATFORM_MINIO_PUBLIC_ENDPOINT");
         assertThat(compose).contains("${PLATFORM_RUNNER_HOST_WORKSPACE_ROOT");
         assertThat(compose).doesNotContain("\"3307:3306\"");
         assertThat(compose).doesNotContain("\"9000:9000\"");
@@ -166,5 +168,7 @@ class ApplicationConfigurationTest {
         assertThat(applicationYaml).contains("memory: ${PLATFORM_RUNNER_DOCKER_MEMORY:2g}");
         assertThat(applicationYaml).contains("cpus: ${PLATFORM_RUNNER_DOCKER_CPUS:2}");
         assertThat(applicationYaml).contains("container-workspace-root: ${PLATFORM_RUNNER_DOCKER_CONTAINER_WORKSPACE_ROOT:/workspace/task}");
+        assertThat(Files.readString(Path.of("../docker-compose.yml")))
+                .contains("${PLATFORM_RUNNER_HOST_WORKSPACE_ROOT:?Set PLATFORM_RUNNER_HOST_WORKSPACE_ROOT in .env}:${PLATFORM_RUNNER_WORKSPACE_ROOT:?Set PLATFORM_RUNNER_WORKSPACE_ROOT in .env}");
     }
 }
