@@ -5,6 +5,8 @@ import java.time.LocalDateTime;
 public class TaskEntity {
     private Long id;
 
+    private Long spaceId;
+
     private Long sceneId;
 
     private Long repoId;
@@ -69,6 +71,8 @@ public class TaskEntity {
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
+    public Long getSpaceId() { return spaceId; }
+    public void setSpaceId(Long spaceId) { this.spaceId = spaceId; }
     public Long getSceneId() { return sceneId; }
     public void setSceneId(Long sceneId) { this.sceneId = sceneId; }
     public Long getRepoId() { return repoId; }

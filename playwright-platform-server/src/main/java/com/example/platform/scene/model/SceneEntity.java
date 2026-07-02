@@ -5,6 +5,8 @@ import java.time.LocalDateTime;
 public class SceneEntity {
     private Long id;
 
+    private Long spaceId;
+
     private Long repoId;
 
     private String name;
@@ -43,6 +45,8 @@ public class SceneEntity {
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
+    public Long getSpaceId() { return spaceId; }
+    public void setSpaceId(Long spaceId) { this.spaceId = spaceId; }
     public Long getRepoId() { return repoId; }
     public void setRepoId(Long repoId) { this.repoId = repoId; }
     public String getName() { return name; }

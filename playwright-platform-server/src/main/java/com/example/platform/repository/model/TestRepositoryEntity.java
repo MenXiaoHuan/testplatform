@@ -5,6 +5,8 @@ import java.time.LocalDateTime;
 public class TestRepositoryEntity {
     private Long id;
 
+    private Long spaceId;
+
     private String name;
 
     private String gitUrl;
@@ -31,6 +33,8 @@ public class TestRepositoryEntity {
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
+    public Long getSpaceId() { return spaceId; }
+    public void setSpaceId(Long spaceId) { this.spaceId = spaceId; }
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }
     public String getGitUrl() { return gitUrl; }

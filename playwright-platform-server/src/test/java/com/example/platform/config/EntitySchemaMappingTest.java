@@ -3,6 +3,7 @@ package com.example.platform.config;
 import com.example.platform.audit.model.PlatformAuditLogEntity;
 import com.example.platform.repository.model.TestRepositoryEntity;
 import com.example.platform.scene.model.SceneEntity;
+import com.example.platform.scene.model.ScheduleEventEntity;
 import com.example.platform.scene.model.SceneScheduleStateEntity;
 import com.example.platform.task.model.ArtifactEntity;
 import com.example.platform.task.model.CaseResultEntity;
@@ -20,6 +21,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class EntitySchemaMappingTest {
     private static final Path INIT_SCHEMA = Path.of("src/main/resources/db/migration/V1__init_schema.sql");
+    private static final Path SCHEDULE_EVENT_SCHEMA = Path.of("src/main/resources/db/migration/V2__add_schedule_event.sql");
+    private static final Path SPACE_SCHEMA = Path.of("src/main/resources/db/migration/V4__add_space_model.sql");
     private static final List<Class<?>> ENTITY_TYPES = List.of(
             TestRepositoryEntity.class,
             SceneEntity.class,
@@ -28,6 +31,7 @@ class EntitySchemaMappingTest {
             ArtifactEntity.class,
             TaskStageLogEntity.class,
             SceneScheduleStateEntity.class,
+            ScheduleEventEntity.class,
             PlatformAuditLogEntity.class
     );
 
@@ -151,8 +155,45 @@ class EntitySchemaMappingTest {
         assertThat(fieldOf(PlatformAuditLogEntity.class, "detailJson").getType()).isEqualTo(String.class);
     }
 
+    @Test
+    void shouldDefineScheduleEventTableInFlyway() throws Exception {
+        String schema = normalizedSchema();
+
+        assertThat(schema).contains("create table schedule_event");
+        assertThat(schema).contains("planned_fire_at datetime not null");
+        assertThat(schema).contains("retry_count int not null default 0");
+        assertThat(schema).contains("next_retry_at datetime null");
+        assertThat(schema).contains("last_error_at datetime null");
+        assertThat(schema).contains("constraint uk_schedule_event_scene_fire unique (scene_id, planned_fire_at)");
+        assertThat(schema).contains("create index idx_schedule_event_retry");
+        assertThat(schema).contains("create index idx_schedule_event_issue_status_updated");
+        assertThat(schema).contains("create index idx_schedule_event_issue_scene_status_updated");
+        assertThat(fieldOf(ScheduleEventEntity.class, "sceneId").getType()).isEqualTo(Long.class);
+        assertThat(fieldOf(ScheduleEventEntity.class, "plannedFireAt").getType().getSimpleName()).isEqualTo("LocalDateTime");
+        assertThat(fieldOf(ScheduleEventEntity.class, "retryCount").getType()).isEqualTo(Integer.class);
+    }
+
+    @Test
+    void shouldDefineSpaceSchemaAndSpaceBoundResourceColumnsInFlyway() throws Exception {
+        String schema = normalizedSchema();
+
+        assertThat(schema).contains("create table space");
+        assertThat(schema).contains("create table space_member");
+        assertThat(schema).contains("create table space_access_request");
+        assertThat(schema).contains("alter table test_repository add column space_id bigint");
+        assertThat(schema).contains("alter table scene add column space_id bigint");
+        assertThat(schema).contains("alter table task add column space_id bigint");
+        assertThat(schema).contains("alter table schedule_event add column space_id bigint");
+        assertThat(fieldOf(TestRepositoryEntity.class, "spaceId").getType()).isEqualTo(Long.class);
+        assertThat(fieldOf(SceneEntity.class, "spaceId").getType()).isEqualTo(Long.class);
+        assertThat(fieldOf(TaskEntity.class, "spaceId").getType()).isEqualTo(Long.class);
+        assertThat(fieldOf(ScheduleEventEntity.class, "spaceId").getType()).isEqualTo(Long.class);
+    }
+
     private String normalizedSchema() throws IOException {
-        return Files.readString(INIT_SCHEMA).toLowerCase();
+        return (Files.readString(INIT_SCHEMA)
+                + "\n" + Files.readString(SCHEDULE_EVENT_SCHEMA)
+                + "\n" + Files.readString(SPACE_SCHEMA)).toLowerCase();
     }
 
     private Field fieldOf(Class<?> type, String fieldName) throws NoSuchFieldException {
