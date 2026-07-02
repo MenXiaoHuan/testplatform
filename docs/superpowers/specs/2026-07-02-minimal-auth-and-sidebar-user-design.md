@@ -1,267 +1,448 @@
-# 最小化登录态、权限体系与侧边栏用户区设计
+# 平台最小化认证、空间体系、权限审批与侧边栏用户区设计
 
 ## 1. 背景
 
-当前测试平台已经具备仓库、场景、任务、调度事件等核心业务能力，但还没有真实登录态和权限体系。现状存在几个直接问题：
+当前测试平台已经具备仓库、场景、任务、调度事件等核心业务能力，但仍处于“单全局工作区”阶段。系统缺少三个关键能力：
 
-- 所有页面默认可访问，没有统一的登录校验。
-- 写操作没有最小权限边界，前后端都缺少明确约束。
-- 调度事件重试等操作人仍使用硬编码值，例如 `anonymous`。
-- 应用侧边栏没有承载当前用户信息的入口，无法自然容纳“切换账号”“退出登录”“设置”等登录相关操作。
+- 没有真实登录态，所有业务页默认可访问。
+- 没有统一权限边界，写操作与操作人审计不可靠。
+- 没有“空间”概念，所有资源默认处于全局域中，无法支持成员隔离、权限申请和审批。
 
-本次需求目标不是引入完整企业级 SSO，而是在现有代码结构上补一层可工作的最小闭环认证能力，保证后续接入真实权限体系时不需要推倒重来。
+用户已经明确提出平台演进方向：
 
-## 2. 用户确认的范围
+- 先有登录，再有空间。
+- 新用户登录后先进入 `Home` 页。
+- 用户可创建空间，创建者自动成为该空间管理员。
+- 非成员访问空间时，应看到无权限提示并可发起申请。
+- 申请时必须填写申请原因，并选择申请角色：管理员 / 访问者 / 运维。
+- 审批者可以看到申请人信息、申请角色、申请原因，并进行同意或拒绝。
+- 侧边栏左下角需要展示带头像和昵称的用户区，头像来源于 MinIO，未配置时回退默认头像。
 
-本设计基于以下已确认要求：
+本次设计目标不是引入完整企业级 IAM 或复杂 RBAC，而是在现有项目架构上补一个“能运行、能隔离、能审批、后续能平滑升级”的最小闭环方案。
 
-- 采用“前后端最小闭环”，不是纯前端伪登录。
-- 登录口令在登录接口参数中不能直接以明文出现。
-- 登录态采用滑动过期，连续使用时保持 14 天有效。
-- 换设备访问时必须重新登录。
-- 侧边栏左下角增加用户区，显示头像和昵称，点击后弹出工具栏。
-- 用户头像文件存储在 MinIO。
-- 系统提供默认头像作为兜底。
+## 2. 已确认范围
+
+本设计基于已确认的用户要求：
+
+- 采用前后端最小闭环，不做纯前端伪登录。
+- 登录接口参数中的密码不能以明文直接出现。
+- 登录态采用滑动 14 天有效期。
+- 换设备访问需要重新登录。
+- 头像文件存储在 MinIO。
+- 系统提供默认头像兜底。
+- 平台引入一级业务概念“空间”。
+- 现有仓库、场景、任务、调度事件全部归属于某个空间。
+- 登录后先进入 `Home`，再进入具体空间。
+- 空间内成员关系与权限审批是本次范围的一部分。
 
 ## 3. 目标
 
-- 为现有前后端应用增加最小可用的登录态。
-- 用最小成本增加 `viewer`、`operator`、`admin` 三档权限。
-- 把业务写操作与当前登录用户绑定，替代硬编码操作人。
-- 为侧边栏增加稳定的当前用户入口，承载用户信息和会话操作。
-- 为未来接入真实登录体系保留清晰替换点。
+- 为平台增加最小可用的登录态、会话恢复与登出能力。
+- 把所有业务资源收口到空间维度，形成空间隔离。
+- 支持空间创建、空间访问申请、审批、成员关系和角色控制。
+- 把现有仓库、场景、任务、调度事件页面改造成“当前空间上下文”工作模式。
+- 用侧边栏承载空间切换与用户身份展示。
+- 把操作人、审计与当前登录用户和当前空间角色绑定。
+- 为未来接入真实用户表、Redis Session、统一身份源保留平滑替换点。
 
 ## 4. 非目标
 
 - 本次不引入 Spring Security、OAuth、OIDC 或企业 SSO。
-- 本次不做复杂 RBAC、菜单级动态权限配置、权限管理后台。
-- 本次不做头像上传编辑能力，只支持读取 MinIO 中既有头像。
+- 本次不做复杂 RBAC 权限编排、权限管理后台、细粒度资源授权。
 - 本次不做用户注册、找回密码、修改密码、短信或邮箱验证。
-- 本次不做多端会话管理、设备列表、强制下线。
+- 本次不做头像上传、裁剪、个人资料编辑。
+- 本次不做空间删除。
+- 本次不做多端设备管理、登录设备列表、强制下线。
+- 本次不做多实例共享 Session；先接受单实例内存 Session。
 
 ## 5. 总体方案
 
-整体方案采用“内置用户目录 + RSA 登录口令加密 + 服务端 Session + HttpOnly Cookie + 前端路由守卫 + 最小角色权限控制”的组合。
+整体方案采用以下组合：
 
-### 5.1 认证核心原则
+- 内置用户目录
+- RSA 登录口令加密提交
+- 服务端 Session
+- `HttpOnly Cookie`
+- 滑动 14 天续期
+- `Home -> 空间 -> 业务页面` 的三级访问模型
+- 空间成员关系与空间角色权限
+- 空间访问申请与审批流
 
-- 登录时，前端不直接提交明文密码，而是先获取后端公钥，对密码加密后再提交。
+系统权限分为两层：
+
+1. 认证层：用户是否已登录。
+2. 空间层：该用户在当前空间是否具有对应角色。
+
+登录只证明“你是谁”，真正的业务操作权限由“你在当前空间里是什么角色”决定。
+
+## 6. 认证模型
+
+### 6.1 认证核心原则
+
+- 登录时前端不直接提交明文密码，而是先获取后端公钥，对密码加密后提交。
 - 后端解密后使用密码哈希校验，不存储明文密码。
 - 登录成功后由后端创建服务端 Session，并通过 `HttpOnly Cookie` 持久化会话。
-- 后续请求通过 Cookie 自动携带会话标识，前端不在 `localStorage` 存储 token。
-- 每次请求只要会话仍然有效，就刷新过期时间，形成“滑动 14 天”。
-- 换设备无 Cookie，因此需要重新登录。
+- 前端不在 `localStorage` 中存储认证 token。
+- 只要 Session 仍有效，每次请求都刷新到“当前时间 + 14 天”，形成滑动过期。
+- 换设备无 Cookie，因此必须重新登录。
 
-### 5.2 为什么不采用前端持久化 Bearer Token
+### 6.2 为什么采用 Cookie Session
 
-当前前端所有请求都通过同域 `/api` 访问后端，开发态由 Vite 代理，生产态由 Nginx 反代。这个拓扑更适合采用 Cookie Session：
+当前前端所有请求都通过同域 `/api` 访问后端，开发态由 Vite 代理，生产态由 Nginx 反代。这个拓扑最适合采用 Cookie Session：
 
-- 接入成本更低，不需要为所有请求手动拼接 `Authorization`。
-- `HttpOnly Cookie` 比前端存储 token 更适合作为最小实现。
-- 14 天滑动续期与“换设备重新登录”天然匹配。
+- 接入成本低，不需要为每个请求显式拼接 `Authorization`
+- `HttpOnly Cookie` 比前端持久化 token 更适合当前最小实现
+- 滑动续期与“换设备重新登录”天然匹配
 
-## 6. 用户与权限模型
+## 7. 登录口令加密策略
 
-### 6.1 内置用户模型
+### 7.1 目标
 
-后端维护一份最小内置用户目录。每个用户包含：
+满足“登录接口参数中不直接出现明文密码”的要求。
 
-- `username`：登录账号，唯一标识
-- `nickname`：显示昵称，用于侧边栏展示
-- `passwordHash`：密码哈希，使用 `bcrypt`
-- `role`：角色，取值为 `VIEWER`、`OPERATOR`、`ADMIN`
-- `avatarObjectKey`：MinIO 中头像对象 key，可为空
-
-### 6.2 权限矩阵
-
-#### `VIEWER`
-
-- 可访问：仓库列表、场景列表、任务列表、任务详情、调度事件页
-- 不可执行：仓库新增/编辑/删除、场景新增/编辑/删除、任务取消、调度事件重试
-
-#### `OPERATOR`
-
-- 具备 `VIEWER` 全部读权限
-- 可执行：任务取消、调度事件重试
-- 不可执行：仓库新增/编辑/删除、场景新增/编辑/删除
-
-#### `ADMIN`
-
-- 拥有全部读写权限
-
-### 6.3 权限分层
-
-- 前端负责按钮显隐或禁用，减少误操作。
-- 后端负责最终权限校验，避免前端绕过。
-- 审计与业务操作人统一以后端认证上下文为准，不信任前端透传的操作人名称。
-
-## 7. 登录与会话流程
-
-### 7.1 登录流程
-
-1. 前端进入登录页。
-2. 前端调用 `GET /api/auth/public-key` 获取登录加密公钥。
-3. 前端使用公钥对用户输入的密码做 RSA 加密。
-4. 前端调用 `POST /api/auth/login`，提交 `username` 与 `encryptedPassword`。
-5. 后端用私钥解密密码，并对比对应用户的 `passwordHash`。
-6. 校验通过后创建 Session。
-7. 后端下发 `HttpOnly Cookie`，并返回当前用户信息。
-8. 前端保存当前用户展示态，跳转业务首页。
-
-### 7.2 会话恢复流程
-
-1. 前端应用启动时调用 `GET /api/auth/me`。
-2. 若 Cookie 对应 Session 仍有效，则返回当前用户信息。
-3. 后端刷新 Session 过期时间为“当前时间 + 14 天”。
-4. 前端恢复登录态并正常进入业务页。
-
-### 7.3 会话失效与登出
-
-- 当 Session 不存在、过期或 Cookie 无效时，后端返回 `401`。
-- 前端收到 `401` 后清空本地用户状态并跳转登录页。
-- 调用 `POST /api/auth/logout` 时，后端删除 Session 并清 Cookie。
-
-## 8. 登录口令加密策略
-
-本次明确满足“登录接口参数中不直接出现明文密码”的要求。
-
-### 8.1 方案
+### 7.2 方案
 
 - 仅对“登录提交”这一跳增加口令加密。
 - 后端提供 RSA 公钥。
 - 前端在登录页中把原始密码加密为 Base64 密文后提交。
 - 登录接口只接收 `encryptedPassword`，不接收明文 `password` 字段。
 
-### 8.2 安全边界说明
+### 7.3 安全边界
 
-- 该方案解决“登录接口载荷中不直接暴露明文密码”的要求。
-- 正式环境仍然要求使用 HTTPS/TLS 保护整体传输链路。
+- 该方案解决“接口载荷中不直接出现明文密码”的要求。
+- 正式环境仍然必须依赖 HTTPS/TLS 保护整体传输链路。
 - 后端日志、异常、审计、数据库中都不得输出或存储明文密码。
 
-## 9. 头像与默认头像策略
+## 8. 用户模型与头像策略
 
-### 9.1 用户头像存储
+### 8.1 内置用户模型
+
+后端维护一份最小内置用户目录。每个用户至少包含：
+
+- `id`
+- `username`
+- `nickname`
+- `passwordHash`
+- `avatarObjectKey`
+- `enabled`
+
+说明：
+
+- `username` 用于登录和唯一标识。
+- `nickname` 用于侧边栏和审批页展示。
+- `passwordHash` 使用 `bcrypt`。
+- `avatarObjectKey` 指向 MinIO 中头像对象。
+
+### 8.2 头像与默认头像
 
 - 用户头像文件存储在 MinIO。
 - 后端用户配置中保存 `avatarObjectKey`。
-- 后端在返回当前用户信息时，将 `avatarObjectKey` 转换为前端可访问的头像 URL。
+- 返回用户信息时，后端把 `avatarObjectKey` 转换为可访问 URL。
+- 当前端头像加载失败、对象不存在或用户未配置头像时，统一回退前端内置默认头像。
 
-### 9.2 默认头像
+### 8.3 本次限制
 
-- 系统内置一张默认头像静态资源，放在前端项目内。
-- 当用户未配置头像、MinIO 对象不存在、URL 生成失败或图片加载失败时，统一回退默认头像。
+- 不做头像上传、编辑、裁剪。
+- 默认头像作为前端静态资源内置，不依赖 MinIO 可用性。
 
-### 9.3 本次限制
+## 9. 空间模型
 
-- 本次只做头像展示与兜底，不做头像上传、裁剪、替换。
-- 这样既满足 UI 需求，又避免本次扩展到个人资料管理。
+空间是一级业务概念。现有所有核心资源都归属于某个空间。
 
-## 10. 前端设计
+### 9.1 为什么要把所有资源挂到空间
 
-## 10.1 新增模块
+如果空间只是入口概念，而资源仍然全局共享，则以下能力无法真正成立：
 
-新增以下前端文件：
+- 访问无权限空间时禁止查看其数据
+- 空间角色决定写权限
+- 空间维度审批与成员治理
+- 跨空间资源隔离
+
+因此本设计明确采用“强空间归属”：
+
+- 仓库属于空间
+- 场景属于空间
+- 任务属于空间
+- 调度事件属于空间
+
+### 9.2 空间角色
+
+空间内角色使用三档：
+
+- `ADMIN`
+- `OPERATOR`
+- `VIEWER`
+
+语义如下：
+
+#### `ADMIN`
+
+- 管理空间成员与审批
+- 管理空间内仓库和场景
+- 继承运维和访问者能力
+
+#### `OPERATOR`
+
+- 查看空间内资源
+- 取消任务
+- 重试调度事件
+
+#### `VIEWER`
+
+- 只读访问空间内资源
+
+### 9.3 空间规则
+
+- 创建空间的用户自动成为首个 `ADMIN`
+- 空间必须始终至少存在一个 `ACTIVE ADMIN`
+- 已是成员的用户不能重复申请加入同一空间
+- 已存在 `PENDING` 申请时不能重复提交申请
+
+## 10. 业务资源与空间归属
+
+以下现有资源必须增加 `spaceId`：
+
+- 仓库
+- 场景
+- 任务
+- 调度事件
+
+### 10.1 直接落 `spaceId` 的原因
+
+虽然任务可以通过场景间接推导空间，调度事件也可以通过场景推导空间，但仍建议直接落 `spaceId`：
+
+- 任务列表和任务详情会频繁做空间级过滤
+- 调度事件需要直接按空间筛选与鉴权
+- 减少查询链路复杂度
+- 降低遗漏空间过滤的风险
+
+### 10.2 资源创建规则
+
+- 在当前空间下新建仓库或场景时，后端自动写入当前 `spaceId`
+- 前端不允许用户手动选择归属空间
+- 任务和调度事件在创建时自动继承对应空间的 `spaceId`
+
+## 11. 登录与会话流程
+
+### 11.1 登录流程
+
+1. 前端进入登录页。
+2. 调用 `GET /api/auth/public-key` 获取登录公钥。
+3. 前端使用公钥加密用户密码。
+4. 调用 `POST /api/auth/login`，提交 `username` 与 `encryptedPassword`。
+5. 后端解密密码并校验 `passwordHash`。
+6. 校验通过后创建 Session。
+7. 后端下发 `HttpOnly Cookie`。
+8. 后端返回当前用户基本信息。
+9. 前端跳转到 `Home` 页，而不是直接跳业务页。
+
+### 11.2 会话恢复流程
+
+1. 应用启动时调用 `GET /api/auth/me`。
+2. 若 Cookie 对应 Session 有效，则返回当前用户。
+3. 后端刷新 Session 过期时间为“当前时间 + 14 天”。
+4. 前端恢复登录态。
+5. 若用户有最近访问空间且仍有权限，可从 `Home` 引导回该空间；否则停留在 `Home`。
+
+### 11.3 会话失效与登出
+
+- Session 不存在、过期或 Cookie 无效时，后端返回 `401`
+- 前端收到 `401` 后清空登录态并跳转 `/login`
+- 调用 `POST /api/auth/logout` 时，后端删除 Session 并清 Cookie
+
+## 12. 主要用户流程
+
+### 12.1 新用户首次进入
+
+1. 登录成功后进入 `Home`
+2. 若当前用户没有任何可访问空间，则展示空态
+3. 空态主操作为“创建第一个空间”
+4. 创建完成后自动成为该空间 `ADMIN`
+5. 跳转到该空间的默认落地页
+
+### 12.2 普通用户进入已有空间
+
+1. 登录后进入 `Home`
+2. 查看可访问空间列表
+3. 点击某个空间进入该空间的业务页面
+
+### 12.3 无权限访问空间
+
+1. 用户直接访问某个空间链接
+2. 后端或前端判断其不是该空间成员
+3. 页面显示“暂无权限访问该空间”
+4. 提供“申请加入”入口
+5. 若已存在待审批申请，则显示“申请已提交，等待审批”
+
+### 12.4 空间申请与审批
+
+申请人提交：
+
+- 申请角色：管理员 / 运维 / 访问者
+- 申请原因：必填
+
+审批人看到：
+
+- 申请人昵称
+- 申请人账号
+- 申请角色
+- 申请原因
+- 申请时间
+- 当前状态
+
+审批动作：
+
+- 同意
+- 拒绝
+
+处理结果：
+
+- 同意：新增或恢复成员关系，申请状态变为 `APPROVED`
+- 拒绝：申请状态变为 `REJECTED`
+
+## 13. 前端设计
+
+### 13.1 路由结构
+
+前端路由分三层：
+
+#### 认证层
+
+- `/login`
+
+#### 平台入口层
+
+- `/home`
+
+#### 空间工作层
+
+- `/spaces/:spaceId/repos`
+- `/spaces/:spaceId/scenes`
+- `/spaces/:spaceId/tasks`
+- `/spaces/:spaceId/schedule-events`
+- `/spaces/:spaceId/settings`
+- `/spaces/:spaceId/access-requests`
+
+说明：
+
+- 业务路由必须显式携带 `spaceId`
+- 不继续使用全局 `/repos`、`/scenes` 作为长期形态
+
+### 13.2 新增前端模块
+
+建议新增：
 
 - `src/types/auth.ts`
+- `src/types/space.ts`
 - `src/api/auth.ts`
+- `src/api/space.ts`
 - `src/stores/auth.ts`
+- `src/stores/space.ts`
 - `src/views/auth/LoginView.vue`
-- `src/utils/auth-crypto.ts`
+- `src/views/home/HomeView.vue`
+- `src/views/space/SpaceNoAccessView.vue`
+- `src/views/space/SpaceAccessRequestListView.vue`
+- `src/views/space/SpaceSettingsView.vue`
 - `src/components/layout/SidebarUserPanel.vue`
-- `src/assets/default-avatar.png` 或同等静态资源路径
+- `src/components/layout/SpaceSwitcher.vue`
+- `src/utils/auth-crypto.ts`
+- `src/assets/default-avatar.png`
 
-## 10.2 路由与启动
+### 13.3 `Home` 页
 
-### 路由
+`Home` 页承担以下职责：
 
-- 新增 `/login`
-- 为现有业务路由标记需要登录
-- 增加全局路由守卫
+- 展示我可访问的空间列表
+- 支持创建空间
+- 展示我的申请记录
+- 对空间管理员展示待审批申请摘要
 
-### 启动恢复
+### 13.4 侧边栏结构
 
-- 应用启动时由 `auth` store 执行 `bootstrap()`
-- 调用 `/api/auth/me` 恢复登录态
-- 未登录时引导到 `/login`
+引入空间后，侧边栏承载两个不同上下文：
 
-## 10.3 HTTP 行为
+1. 空间上下文
+2. 用户上下文
 
-在 `src/api/http.ts` 中增加：
+建议布局：
 
-- `withCredentials: true`
-- 统一 `401` 处理：
-  - 清空认证状态
-  - 若当前不在登录页，则跳转 `/login`
-- 统一 `403` 处理：
-  - 提示“当前账号无此操作权限”
+- 顶部：空间切换器
+- 中部：当前空间导航菜单
+- 底部：用户区卡片
 
-## 10.4 侧边栏用户区
+### 13.5 空间切换器
 
-当前 `App.vue` 已持有全局侧边栏布局，本次在侧边栏左下角增加固定用户区。
+展示内容：
+
+- 当前空间名称
+- 当前空间角色
+- 下拉箭头
+
+点击后弹出：
+
+- 我的空间列表
+- 回到 `Home`
+- 创建空间
+
+切换空间后：
+
+- 更新当前 `spaceId`
+- 跳转到对应空间默认页，例如 `/spaces/{spaceId}/scenes`
+- 重新拉取当前空间数据
+
+### 13.6 用户区卡片
+
+当前 `App.vue` 适合作为全局布局壳子，本次在侧边栏左下角增加固定用户区。
 
 展示内容：
 
 - 头像
 - 昵称
-- 右侧箭头图标
+- 右侧箭头
 
-交互方式：
+点击后弹出工具菜单。
 
-- 点击后弹出工具菜单
-- 建议使用 Element Plus 的 `el-popover` 或 `el-dropdown`
-
-### 本次真实落地菜单项
+本次真实落地菜单项：
 
 - `设置`
 - `切换账号`
 - `退出登录`
 
-### 可保留 UI 壳子的菜单项
+可先保留 UI 壳子的菜单项：
 
 - `收藏夹`
 - `官网`
 - `API 服务`
 - `帮助与反馈`
 
-这些可先展示为静态菜单项，点击后提示“暂未开放”，避免扩展到无关范围。
+### 13.7 页面级权限控制
 
-### 设置页
+#### 仓库页
 
-设置页本次只需最小展示：
+- 仅 `ADMIN` 可新增、编辑、删除
 
-- 昵称
-- 账号
-- 角色
-- 当前头像
-- 会话状态说明
+#### 场景页
 
-不包含头像上传或资料编辑。
+- 仅 `ADMIN` 可新增、编辑、复制、删除
 
-## 10.5 页面级权限控制
-
-### `SceneListView.vue`
-
-- `ADMIN` 才显示“新增场景”“编辑”“复制”“删除”等写操作
-
-### `ScheduleEventListView.vue`
-
-- `OPERATOR` 与 `ADMIN` 可见并可用“重试”
-- `VIEWER` 不显示或禁用“重试”
-- 重试请求不再传递硬编码 `anonymous`
-
-### `TaskListView.vue` / `TaskDetailView.vue`
+#### 任务页
 
 - `OPERATOR` 与 `ADMIN` 可取消任务
 
-### `RepositoryListView.vue`
+#### 调度事件页
 
-- `ADMIN` 才可新增、编辑、删除仓库
+- `OPERATOR` 与 `ADMIN` 可重试事件
+- `VIEWER` 不显示或禁用重试按钮
 
-## 11. 后端设计
+#### 成员与审批页
 
-## 11.1 新增模块
+- 仅 `ADMIN` 可见
 
-建议新增如下认证领域文件：
+## 14. 后端设计
+
+### 14.1 认证模块
+
+建议新增：
 
 - `auth/controller/AuthController.java`
 - `auth/service/AuthService.java`
@@ -274,54 +455,143 @@
 - `auth/context/AuthContextHolder.java`
 - `auth/crypto/AuthKeyProvider.java`
 
-## 11.2 用户配置
+### 14.2 空间模块
 
-用户信息通过配置提供，例如：
+建议新增：
 
-- `platform.auth.users[].username`
-- `platform.auth.users[].nickname`
-- `platform.auth.users[].password-hash`
-- `platform.auth.users[].role`
-- `platform.auth.users[].avatar-object-key`
+- `space/controller/SpaceController.java`
+- `space/controller/SpaceAccessRequestController.java`
+- `space/service/SpaceService.java`
+- `space/service/SpaceMemberService.java`
+- `space/service/SpaceAccessRequestService.java`
+- `space/mapper/SpaceMapper.java`
+- `space/mapper/SpaceMemberMapper.java`
+- `space/mapper/SpaceAccessRequestMapper.java`
+- `space/model/SpaceEntity.java`
+- `space/model/SpaceMemberEntity.java`
+- `space/model/SpaceAccessRequestEntity.java`
 
-本次不引入用户表迁移，避免扩展数据库建模范围。
+### 14.3 Session 存储
 
-## 11.3 Session 存储
-
-服务端使用最小内存 Session 仓库：
+服务端采用最小内存 Session 仓库：
 
 - `ConcurrentHashMap<String, AuthSession>`
-- key 为随机生成的 Session ID
-- value 记录：
-  - `username`
-  - `role`
-  - `nickname`
-  - `avatarObjectKey`
-  - `expiresAt`
 
-该实现适用于本次单实例/最小闭环需求。后续若要多实例部署，可替换为 Redis，不影响前端和大部分后端接口形态。
+Session 至少保存：
 
-## 11.4 认证过滤器
+- `userId`
+- `username`
+- `nickname`
+- `avatarObjectKey`
+- `lastSpaceId`
+- `expiresAt`
 
-过滤器职责：
+### 14.4 认证过滤器职责
 
 - 从 Cookie 读取 Session ID
-- 查找对应 Session
-- 校验是否过期
-- 未过期时刷新到“当前时间 + 14 天”
-- 把当前用户信息写入 `AuthContextHolder`
+- 查找 Session
+- 校验过期
+- 未过期则刷新到“当前时间 + 14 天”
+- 写入 `AuthContextHolder`
 
-过滤器应对登录、登出、公钥等匿名接口做放行。
+匿名放行接口：
 
-## 11.5 MinIO 头像解析
+- 登录
+- 登出
+- 公钥
 
-- 若用户配置了 `avatarObjectKey`，则通过现有 MinIO 能力生成可访问 URL
-- 若无配置或生成失败，则返回空值或默认占位，由前端回退默认头像
-- 后续若需要，也可由后端直接返回默认头像 URL；本次优先保持后端简单
+### 14.5 空间权限校验职责
 
-## 12. 接口设计
+每个空间级业务请求都需要完成两步判断：
 
-### 12.1 `GET /api/auth/public-key`
+1. 当前用户已登录
+2. 当前用户在对应 `spaceId` 下具有足够角色
+
+推荐新增通用的空间鉴权组件，避免在各业务 service 中重复手写。
+
+## 15. 数据库设计
+
+### 15.1 新增表 `space`
+
+建议字段：
+
+- `id`
+- `name`
+- `description`
+- `owner_user_id`
+- `created_by`
+- `created_at`
+- `updated_at`
+
+### 15.2 新增表 `space_member`
+
+建议字段：
+
+- `id`
+- `space_id`
+- `user_id`
+- `role`
+- `status`
+- `joined_at`
+- `created_at`
+- `updated_at`
+
+建议枚举：
+
+- `role`：`ADMIN`、`OPERATOR`、`VIEWER`
+- `status`：`ACTIVE`、`LEFT`、`REMOVED`
+
+建议约束：
+
+- `uk_space_member(space_id, user_id)`
+
+### 15.3 新增表 `space_access_request`
+
+建议字段：
+
+- `id`
+- `space_id`
+- `applicant_user_id`
+- `requested_role`
+- `reason`
+- `status`
+- `review_comment`
+- `reviewed_by`
+- `reviewed_at`
+- `created_at`
+- `updated_at`
+
+建议枚举：
+
+- `status`：`PENDING`、`APPROVED`、`REJECTED`、`CANCELLED`
+
+建议索引：
+
+- `(space_id, status, created_at)`
+- `(applicant_user_id, status, created_at)`
+
+### 15.4 现有表补 `space_id`
+
+建议补到以下核心表：
+
+- 仓库表
+- 场景表
+- 任务表
+- 调度事件表
+
+### 15.5 旧数据迁移
+
+现有系统已存在全局资源，因此引入 `space_id` 时必须给出迁移策略：
+
+- 建立一个系统默认空间
+- 将现有旧资源迁移到该默认空间
+- 初始化管理员成为默认空间的 `ADMIN`
+
+## 16. 接口设计
+
+### 16.1 认证接口
+
+#### `GET /api/auth/public-key`
 
 响应：
 
@@ -332,7 +602,7 @@
 }
 ```
 
-### 12.2 `POST /api/auth/login`
+#### `POST /api/auth/login`
 
 请求：
 
@@ -347,10 +617,11 @@
 
 ```json
 {
+  "id": 1,
   "username": "admin",
   "nickname": "平台管理员",
   "avatarUrl": "https://minio.example/avatar/admin.png",
-  "role": "ADMIN"
+  "lastSpaceId": 12
 }
 ```
 
@@ -359,126 +630,149 @@
 - `HttpOnly`
 - `SameSite=Lax`
 - `Path=/`
-- `Max-Age=1209600`（14 天）
+- `Max-Age=1209600`
 
-### 12.3 `GET /api/auth/me`
+#### `GET /api/auth/me`
 
 未登录返回 `401`。
 
-已登录响应：
+已登录返回：
 
 ```json
 {
+  "id": 2,
   "username": "alice",
   "nickname": "徐个愿",
   "avatarUrl": "https://minio.example/avatar/alice.png",
-  "role": "OPERATOR"
+  "lastSpaceId": 8
 }
 ```
 
-### 12.4 `POST /api/auth/logout`
+#### `POST /api/auth/logout`
 
 - 清理服务端 Session
-- 让 Cookie 过期
-- 响应可为 `204` 或标准成功包体
+- 清理 Cookie
 
-## 13. 现有业务接口接入方式
+### 16.2 空间接口
 
-### 13.1 登录校验
+#### `GET /api/spaces`
 
-以下现有页面对应接口均要求登录：
+- 返回当前用户可访问的空间列表
 
-- 仓库管理相关接口
-- 场景管理相关接口
-- 任务查询和详情接口
-- 调度事件查询与重试接口
+#### `POST /api/spaces`
 
-### 13.2 权限校验
+- 创建空间
+- 创建者自动成为该空间 `ADMIN`
 
-后端在 controller 或 service 入口对写操作做角色校验：
+#### `GET /api/spaces/{spaceId}`
 
-- 仓库新增/编辑/删除：`ADMIN`
-- 场景新增/编辑/删除：`ADMIN`
-- 任务取消：`OPERATOR` 或 `ADMIN`
-- 调度事件重试：`OPERATOR` 或 `ADMIN`
+- 获取空间详情
 
-## 13.3 操作人透传收口
+#### `GET /api/spaces/{spaceId}/members`
 
-- `ScheduleEventRetryRequest.operatorName` 保留兼容期，但后端不再作为真实操作人来源
-- 审计日志 `operatorName` 统一从 `AuthContext` 读取
-- `TaskController` 中写死的 `system-user` 替换为当前登录用户昵称或账号
+- 获取成员列表
 
-## 14. 错误处理
+#### `POST /api/spaces/{spaceId}/access-requests`
 
-### 前端
+请求：
+
+```json
+{
+  "requestedRole": "OPERATOR",
+  "reason": "需要负责空间内任务运维和调度事件处理"
+}
+```
+
+#### `GET /api/spaces/{spaceId}/access-requests`
+
+- 获取该空间申请列表
+
+#### `POST /api/spaces/{spaceId}/access-requests/{requestId}/approve`
+
+- 同意申请
+
+#### `POST /api/spaces/{spaceId}/access-requests/{requestId}/reject`
+
+- 拒绝申请
+
+#### `GET /api/my/access-requests`
+
+- 查看我自己的申请记录
+
+### 16.3 业务接口路径调整
+
+建议把现有业务接口调整为显式带 `spaceId` 的路径：
+
+- `/api/spaces/{spaceId}/repositories`
+- `/api/spaces/{spaceId}/scenes`
+- `/api/spaces/{spaceId}/tasks`
+- `/api/spaces/{spaceId}/schedule-events`
+
+采用显式路径而不是 Header 隐式传空间上下文，原因是：
+
+- URL 自带上下文，更清晰
+- 后端不容易漏校验
+- 页面刷新和复制链接更自然
+
+## 17. 现有业务接入方式
+
+### 17.1 仓库与场景
+
+- 查询时必须带当前 `spaceId`
+- 创建时后端自动写入当前 `spaceId`
+- 写操作仅 `ADMIN` 可执行
+
+### 17.2 任务
+
+- 查询和详情均按当前 `spaceId` 限制
+- 取消任务需要 `OPERATOR` 或 `ADMIN`
+
+### 17.3 调度事件
+
+- 查询和重试均按当前 `spaceId` 限制
+- 重试需要 `OPERATOR` 或 `ADMIN`
+- 审计操作人来自登录上下文，不再透传 `anonymous`
+
+## 18. 错误处理
+
+### 18.1 前端
 
 - `401`：清空登录态并跳登录页
-- `403`：提示“当前账号无此操作权限”
+- `403`：提示无权限
 - 登录失败：统一提示“用户名或密码错误”
 - 公钥获取失败：提示“登录服务暂不可用”
+- 访问无权限空间：显示完整无权限页，而不是只有 toast
 
-### 后端
+### 18.2 后端
 
 - 用户不存在、密码错误、解密失败统一按登录失败处理
-- 不向前端暴露“用户名不存在”或“解密失败”等细节
-- Session 失效时返回 `401`
-- 角色不足时返回 `403`
+- Session 失效返回 `401`
+- 非空间成员访问空间资源时返回 `403`
+- 角色不足返回 `403`
 
-## 15. 配置项
+## 19. 测试策略
 
-建议新增以下配置：
+### 19.1 前端测试
 
-- `platform.auth.session.cookie-name`
-- `platform.auth.session.sliding-days`
-- `platform.auth.rsa.public-key`
-- `platform.auth.rsa.private-key`
-- `platform.auth.users`
+- `auth store`：登录、恢复、登出、`401` 清理
+- `space store`：空间列表、当前空间切换、申请提交流程
+- 路由守卫：未登录跳登录页，已登录进入 `Home`，空间路径带 `spaceId`
+- `LoginView`：获取公钥、加密提交、登录失败提示
+- `HomeView`：空间列表、创建空间、我的申请
+- `SidebarUserPanel`：头像昵称展示、菜单展开、切换账号、退出登录
+- `SpaceSwitcher`：切换当前空间
+- 权限测试：不同空间角色下按钮显隐正确
 
-开发环境可支持自动生成临时 RSA 密钥；生产环境建议通过配置或密钥管理系统注入。
+### 19.2 后端测试
 
-## 16. 测试策略
+- `AuthService`：公钥、密码解密、登录成功失败、续期、登出
+- `AuthSessionFilter`：匿名放行、Session 恢复、过期处理
+- `SpaceService`：创建空间、创建者自动成为管理员
+- `SpaceAccessRequestService`：提交申请、重复申请限制、审批通过/拒绝
+- 控制器测试：未登录返回 `401`、非成员访问返回 `403`、角色不足返回 `403`
+- 审计测试：操作人来自登录上下文
 
-### 16.1 前端测试
-
-- `auth store` 单测：
-  - 登录态恢复
-  - 登录成功
-  - 登出清理
-  - `401` 清理
-- 路由守卫测试：
-  - 未登录跳登录页
-  - 已登录进入业务页
-- `LoginView` 测试：
-  - 获取公钥
-  - 加密提交
-  - 登录失败提示
-- `SidebarUserPanel` 测试：
-  - 显示头像和昵称
-  - 菜单展开
-  - 点击切换账号和退出登录
-- 业务页面权限测试：
-  - `VIEWER` 不显示写操作
-  - `OPERATOR`/`ADMIN` 显示对应按钮
-
-### 16.2 后端测试
-
-- `AuthService` 单测：
-  - 公钥获取
-  - 密码解密
-  - 登录成功与失败
-  - Session 创建、续期、登出
-- `AuthSessionFilter` 测试：
-  - 匿名接口放行
-  - 无效 Session 返回 `401`
-  - 有效 Session 恢复上下文
-- 现有控制器测试：
-  - 未登录返回 `401`
-  - 权限不足返回 `403`
-  - 合法角色访问成功
-- 审计日志测试：
-  - 记录的操作人来自认证上下文
-
-## 17. 验收标准
+## 20. 验收标准
 
 满足以下条件即可认为本次需求完成：
 
@@ -487,24 +781,32 @@
 3. 后端只保存密码哈希，不保存明文密码。
 4. 登录态使用 `HttpOnly Cookie`，并支持滑动 14 天续期。
 5. 换设备访问时需要重新登录。
-6. 侧边栏左下角展示用户头像和昵称。
-7. 点击用户区可展开工具菜单。
-8. 用户头像优先显示 MinIO 头像，无可用头像时回退默认头像。
-9. `VIEWER`、`OPERATOR`、`ADMIN` 三档权限生效。
-10. 调度事件重试、任务取消、仓库/场景写操作都有后端权限校验。
-11. 审计日志操作人来自当前登录用户。
+6. 登录后先进入 `Home`，而不是直接进入业务页。
+7. 新用户无空间时可创建第一个空间，创建者自动成为管理员。
+8. 仓库、场景、任务、调度事件全部归属于空间。
+9. 非成员访问空间时会看到无权限页，并可提交申请。
+10. 申请必须填写申请原因并选择申请角色。
+11. 空间管理员可以查看申请并同意或拒绝。
+12. 侧边栏左下角展示用户头像和昵称。
+13. 用户头像优先使用 MinIO 头像，失败时回退默认头像。
+14. 侧边栏可切换当前空间。
+15. `ADMIN`、`OPERATOR`、`VIEWER` 三档空间角色生效。
+16. 调度事件重试、任务取消、仓库/场景写操作都有空间级后端权限校验。
+17. 审计日志操作人来自当前登录用户。
 
-## 18. 风险与后续演进
+## 21. 风险与后续演进
 
-### 18.1 本次已知限制
+### 21.1 本次已知限制
 
-- Session 先使用内存存储，不支持服务重启后保活。
+- Session 先使用内存存储，服务重启后会失效。
 - 多实例部署时需替换为共享 Session 存储，例如 Redis。
-- 头像上传与资料编辑不在本次范围内。
+- 用户资料编辑与头像上传不在本次范围。
+- 空间删除不在本次范围。
 
-### 18.2 后续可平滑替换部分
+### 21.2 后续可平滑替换点
 
-- 内置用户目录替换为数据库用户表或企业统一身份源
+- 内置用户目录替换为数据库用户表或统一身份源
 - 内存 Session 替换为 Redis Session
-- 最小角色权限替换为真实 RBAC
-- 登录页保留不变，仅替换后端认证实现
+- 空间角色替换为更完整 RBAC
+- 头像只读替换为上传与编辑能力
+- 审批流可增加通知、备注模板、历史审计详情
