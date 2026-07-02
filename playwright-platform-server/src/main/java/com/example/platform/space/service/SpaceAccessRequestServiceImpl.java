@@ -8,6 +8,7 @@ import com.example.platform.space.mapper.SpaceMemberMapper;
 import com.example.platform.space.model.SpaceAccessRequestEntity;
 import com.example.platform.space.model.SpaceMemberEntity;
 import java.time.LocalDateTime;
+import java.util.List;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -41,6 +42,11 @@ public class SpaceAccessRequestServiceImpl implements SpaceAccessRequestService 
     }
 
     @Override
+    public List<SpaceAccessRequestEntity> listBySpace(Long spaceId, AuthContext actor) {
+        return spaceAccessRequestMapper.findBySpaceId(spaceId);
+    }
+
+    @Override
     public void approveRequest(AuthContext actor, Long spaceId, Long requestId, ReviewSpaceAccessRequestRequest request) {
         SpaceAccessRequestEntity entity = spaceAccessRequestMapper.findById(requestId)
                 .filter(item -> item.getSpaceId().equals(spaceId))
@@ -57,5 +63,13 @@ public class SpaceAccessRequestServiceImpl implements SpaceAccessRequestService 
             member.setJoinedAt(LocalDateTime.now());
             spaceMemberMapper.insert(member);
         }
+    }
+
+    @Override
+    public void rejectRequest(AuthContext actor, Long spaceId, Long requestId, ReviewSpaceAccessRequestRequest request) {
+        SpaceAccessRequestEntity entity = spaceAccessRequestMapper.findById(requestId)
+                .filter(item -> item.getSpaceId().equals(spaceId))
+                .orElseThrow(() -> new IllegalArgumentException("space access request not found"));
+        spaceAccessRequestMapper.updateReview(entity.getId(), "REJECTED", request.reviewComment(), actor.userId());
     }
 }

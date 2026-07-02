@@ -14,6 +14,16 @@ public final class AuthContextHolder {
         return CONTEXT.get();
     }
 
+    public static AuthContext require() {
+        AuthContext context = CONTEXT.get();
+        if (context == null) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.UNAUTHORIZED,
+                    "login required");
+        }
+        return context;
+    }
+
     public static void clear() {
         CONTEXT.remove();
     }
