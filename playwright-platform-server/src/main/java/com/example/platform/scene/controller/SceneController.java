@@ -24,7 +24,7 @@ import org.springframework.web.bind.annotation.RestController;
  * requests into service calls.
  */
 @RestController
-@RequestMapping("/api/scenes")
+@RequestMapping("/api/spaces/{spaceId}/scenes")
 public class SceneController {
     private final SceneService sceneService;
 
@@ -33,30 +33,33 @@ public class SceneController {
     }
 
     @PostMapping
-    public ApiResponse<SceneEntity> create(@RequestBody SceneEntity entity) {
+    public ApiResponse<SceneEntity> create(@PathVariable Long spaceId, @RequestBody SceneEntity entity) {
+        entity.setSpaceId(spaceId);
         return ApiResponse.ok(sceneService.create(entity));
     }
 
     @GetMapping
     public ApiResponse<PageResponse<SceneCardResponse>> list(
+            @PathVariable Long spaceId,
             @org.springframework.web.bind.annotation.RequestParam(defaultValue = "1") int page,
             @org.springframework.web.bind.annotation.RequestParam(defaultValue = "10") int size) {
         return ApiResponse.ok(sceneService.listCards(page, size));
     }
 
     @GetMapping("/{id}")
-    public ApiResponse<SceneEntity> get(@PathVariable Long id) {
+    public ApiResponse<SceneEntity> get(@PathVariable Long spaceId, @PathVariable Long id) {
         return ApiResponse.ok(sceneService.get(id));
     }
 
     @PutMapping("/{id}")
-    public ApiResponse<SceneEntity> update(@PathVariable Long id, @RequestBody SceneEntity entity) {
+    public ApiResponse<SceneEntity> update(@PathVariable Long spaceId, @PathVariable Long id, @RequestBody SceneEntity entity) {
+        entity.setSpaceId(spaceId);
         return ApiResponse.ok(sceneService.update(id, entity));
     }
 
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void delete(@PathVariable Long id) {
+    public void delete(@PathVariable Long spaceId, @PathVariable Long id) {
         sceneService.delete(id);
     }
 }

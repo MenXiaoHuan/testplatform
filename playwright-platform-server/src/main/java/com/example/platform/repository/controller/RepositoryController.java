@@ -23,7 +23,7 @@ import org.springframework.web.bind.annotation.RestController;
  * and wraps responses in the platform envelope.
  */
 @RestController
-@RequestMapping("/api/repos")
+@RequestMapping("/api/spaces/{spaceId}/repos")
 public class RepositoryController {
     private final RepositoryService repositoryService;
 
@@ -32,30 +32,33 @@ public class RepositoryController {
     }
 
     @PostMapping
-    public ApiResponse<TestRepositoryEntity> create(@RequestBody TestRepositoryEntity entity) {
+    public ApiResponse<TestRepositoryEntity> create(@PathVariable Long spaceId, @RequestBody TestRepositoryEntity entity) {
+        entity.setSpaceId(spaceId);
         return ApiResponse.ok(repositoryService.create(entity));
     }
 
     @GetMapping
     public ApiResponse<PageResponse<TestRepositoryEntity>> list(
+            @PathVariable Long spaceId,
             @org.springframework.web.bind.annotation.RequestParam(defaultValue = "1") int page,
             @org.springframework.web.bind.annotation.RequestParam(defaultValue = "10") int size) {
         return ApiResponse.ok(repositoryService.list(page, size));
     }
 
     @GetMapping("/{id}")
-    public ApiResponse<TestRepositoryEntity> get(@PathVariable Long id) {
+    public ApiResponse<TestRepositoryEntity> get(@PathVariable Long spaceId, @PathVariable Long id) {
         return ApiResponse.ok(repositoryService.get(id));
     }
 
     @PutMapping("/{id}")
-    public ApiResponse<TestRepositoryEntity> update(@PathVariable Long id, @RequestBody TestRepositoryEntity entity) {
+    public ApiResponse<TestRepositoryEntity> update(@PathVariable Long spaceId, @PathVariable Long id, @RequestBody TestRepositoryEntity entity) {
+        entity.setSpaceId(spaceId);
         return ApiResponse.ok(repositoryService.update(id, entity));
     }
 
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void delete(@PathVariable Long id) {
+    public void delete(@PathVariable Long spaceId, @PathVariable Long id) {
         repositoryService.delete(id);
     }
 }

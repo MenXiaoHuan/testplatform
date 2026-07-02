@@ -29,71 +29,73 @@ public class TaskController {
         this.taskService = taskService;
     }
 
-    @PostMapping("/api/scenes/{sceneId}/run")
-    public ApiResponse<TaskRunResponse> runScene(@PathVariable Long sceneId) {
+    @PostMapping("/api/spaces/{spaceId}/scenes/{sceneId}/run")
+    public ApiResponse<TaskRunResponse> runScene(@PathVariable Long spaceId, @PathVariable Long sceneId) {
         return ApiResponse.ok(TaskRunResponse.from(taskService.createAndStart(sceneId)));
     }
 
-    @PostMapping("/api/tasks/{taskId}/cancel")
-    public ApiResponse<Void> cancelTask(@PathVariable Long taskId) {
+    @PostMapping("/api/spaces/{spaceId}/tasks/{taskId}/cancel")
+    public ApiResponse<Void> cancelTask(@PathVariable Long spaceId, @PathVariable Long taskId) {
         taskService.cancelTask(taskId, "system-user");
         return ApiResponse.ok(null);
     }
 
-    @GetMapping("/api/tasks")
+    @GetMapping("/api/spaces/{spaceId}/tasks")
     public ApiResponse<PageResponse<SceneTaskListResponse>> listTasks(
+            @PathVariable Long spaceId,
             @org.springframework.web.bind.annotation.RequestParam(defaultValue = "1") int page,
             @org.springframework.web.bind.annotation.RequestParam(defaultValue = "10") int size) {
         return ApiResponse.ok(taskService.list(page, size));
     }
 
-    @GetMapping("/api/scenes/{sceneId}/tasks")
+    @GetMapping("/api/spaces/{spaceId}/scenes/{sceneId}/tasks")
     public ApiResponse<PageResponse<SceneTaskListResponse>> listSceneTasks(
+            @PathVariable Long spaceId,
             @PathVariable Long sceneId,
             @org.springframework.web.bind.annotation.RequestParam(defaultValue = "1") int page,
             @org.springframework.web.bind.annotation.RequestParam(defaultValue = "10") int size) {
         return ApiResponse.ok(taskService.listByScene(sceneId, page, size));
     }
 
-    @GetMapping("/api/tasks/{taskId}")
-    public ApiResponse<TaskDetailResponse> getTask(@PathVariable Long taskId) {
+    @GetMapping("/api/spaces/{spaceId}/tasks/{taskId}")
+    public ApiResponse<TaskDetailResponse> getTask(@PathVariable Long spaceId, @PathVariable Long taskId) {
         return ApiResponse.ok(taskService.getDetail(taskId));
     }
 
-    @GetMapping("/api/tasks/{taskId}/diagnostics")
-    public ApiResponse<TaskDiagnosticsResponse> getTaskDiagnostics(@PathVariable Long taskId) {
+    @GetMapping("/api/spaces/{spaceId}/tasks/{taskId}/diagnostics")
+    public ApiResponse<TaskDiagnosticsResponse> getTaskDiagnostics(@PathVariable Long spaceId, @PathVariable Long taskId) {
         return ApiResponse.ok(taskService.getDiagnostics(taskId));
     }
 
-    @GetMapping("/api/tasks/{taskId}/artifacts")
-    public ApiResponse<List<ArtifactEntity>> listTaskArtifacts(@PathVariable Long taskId) {
+    @GetMapping("/api/spaces/{spaceId}/tasks/{taskId}/artifacts")
+    public ApiResponse<List<ArtifactEntity>> listTaskArtifacts(@PathVariable Long spaceId, @PathVariable Long taskId) {
         return ApiResponse.ok(taskService.listArtifacts(taskId));
     }
 
-    @GetMapping("/api/tasks/{taskId}/cases")
-    public ApiResponse<List<CaseResultResponse>> listTaskCases(@PathVariable Long taskId) {
+    @GetMapping("/api/spaces/{spaceId}/tasks/{taskId}/cases")
+    public ApiResponse<List<CaseResultResponse>> listTaskCases(@PathVariable Long spaceId, @PathVariable Long taskId) {
         return ApiResponse.ok(taskService.listCaseResultResponses(taskId));
     }
 
-    @GetMapping("/api/tasks/{taskId}/cases/{caseResultId}/artifacts")
-    public ApiResponse<List<ArtifactEntity>> listCaseArtifacts(@PathVariable Long taskId, @PathVariable Long caseResultId) {
+    @GetMapping("/api/spaces/{spaceId}/tasks/{taskId}/cases/{caseResultId}/artifacts")
+    public ApiResponse<List<ArtifactEntity>> listCaseArtifacts(@PathVariable Long spaceId, @PathVariable Long taskId, @PathVariable Long caseResultId) {
         return ApiResponse.ok(taskService.listArtifactsByCaseResult(caseResultId));
     }
 
     @CrossOrigin(origins = "https://trace.playwright.dev")
-    @GetMapping("/api/tasks/{taskId}/artifacts/{artifactId}/download")
-    public ResponseEntity<Resource> downloadArtifact(@PathVariable Long taskId, @PathVariable Long artifactId) {
+    @GetMapping("/api/spaces/{spaceId}/tasks/{taskId}/artifacts/{artifactId}/download")
+    public ResponseEntity<Resource> downloadArtifact(@PathVariable Long spaceId, @PathVariable Long taskId, @PathVariable Long artifactId) {
         return taskService.downloadArtifact(taskId, artifactId);
     }
 
-    @GetMapping("/api/tasks/{taskId}/logs")
-    public ApiResponse<List<TaskStageLogResponse>> listTaskLogs(@PathVariable Long taskId) {
+    @GetMapping("/api/spaces/{spaceId}/tasks/{taskId}/logs")
+    public ApiResponse<List<TaskStageLogResponse>> listTaskLogs(@PathVariable Long spaceId, @PathVariable Long taskId) {
         return ApiResponse.ok(taskService.listStageLogs(taskId));
     }
 
     @CrossOrigin(origins = "https://trace.playwright.dev")
-    @GetMapping("/api/tasks/{taskId}/logs/{logId}/download")
-    public ResponseEntity<Resource> downloadTaskLog(@PathVariable Long taskId, @PathVariable Long logId) {
+    @GetMapping("/api/spaces/{spaceId}/tasks/{taskId}/logs/{logId}/download")
+    public ResponseEntity<Resource> downloadTaskLog(@PathVariable Long spaceId, @PathVariable Long taskId, @PathVariable Long logId) {
         return taskService.downloadStageLog(taskId, logId);
     }
 }
