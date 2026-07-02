@@ -8,7 +8,9 @@ import java.security.PrivateKey;
 import java.security.PublicKey;
 import java.util.Base64;
 import javax.crypto.Cipher;
+import org.springframework.stereotype.Component;
 
+@Component
 public class AuthKeyProvider {
     private final KeyPair keyPair;
 
@@ -18,6 +20,12 @@ public class AuthKeyProvider {
 
     public PublicKey publicKey() {
         return keyPair.getPublic();
+    }
+
+    public String publicKeyPem() {
+        String body = Base64.getMimeEncoder(64, "\n".getBytes(StandardCharsets.UTF_8))
+                .encodeToString(publicKey().getEncoded());
+        return "-----BEGIN PUBLIC KEY-----\n" + body + "\n-----END PUBLIC KEY-----";
     }
 
     public String decrypt(String encryptedValue) {
