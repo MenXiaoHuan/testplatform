@@ -1,132 +1,137 @@
 # Distributed Scheduler Hardening Design
 
-## Background
-
-The current scheduler is driven by Spring `@Scheduled(fixedDelay = 60000)` in `SceneServiceImpl`. Each application instance scans due scenes and delegates to `SceneSchedulerServiceImpl`, which attempts to guard duplicate triggers through `SceneScheduleLeaseServiceImpl` and the `scene_schedule_state` table.
-
-This works reasonably in a single-instance deployment, but it is not yet a strict distributed scheduler design. The current lease logic is optimistic at the Java layer:
-
-- It reads `scene_schedule_state`
-- Compares `lastPlannedFireAt`
-- Writes the updated state
-
-That leaves concurrency windows under multi-instance scans. Two instances can race on the same `sceneId + plannedFireAt` and both believe they are allowed to trigger. The current `lease_owner` value is also static (`local-scheduler`), so the system cannot accurately identify the holder of a lease.
-
-The task execution pipeline itself is already good enough for this phase:
-
-- Scheduler creates a scheduled task
-- Task enters the existing task execution executor
-- Runner and artifact pipeline remain unchanged
-
-The goal of this design is to harden the scheduling layer without introducing a message queue or rewriting the execution model.
-
 ## Goal
 
-Make scheduled scene triggering safe under multi-instance deployment by ensuring that, for a given `scene` and `plannedFireAt`, at most one task is created.
+在不引入 MQ、不过度改造任务执行链路的前提下，把当前基于 `@Scheduled` 的场景定时调度提升为更严格的多实例防重实现，确保同一个 `scene` 在同一个 `plannedFireAt` 上只能成功触发一次，同时保留不同场景同一时刻可并发创建任务的能力。
 
-## Non-Goals
+## Context
 
-This phase does **not** include:
-
-- Introducing RabbitMQ, Kafka, RocketMQ, or Redis queue consumers
-- Splitting scheduler and executor into separate services
-- Adding lease heartbeats or lease renewal
-- Adding automatic retry or compensation for failed scheduled trigger events
-- Reworking task execution concurrency or the Playwright runner model
-
-## Recommended Approach
-
-Use a two-layer database-backed safety model:
-
-1. **Atomic schedule-state claim**
-   Use `scene_schedule_state` as the per-scene scheduling concurrency record. Replace the current read-check-write flow with mapper-level conditional SQL so that only one instance can successfully claim a given scheduling point.
-
-2. **Idempotent schedule event record**
-   Introduce a new `schedule_event` table with a unique key on `(scene_id, planned_fire_at)`. Even if the schedule-state claim layer sees an edge-case race or a retried code path, the unique key guarantees that only one persistent scheduling event exists for a given scene and planned fire time.
-
-This preserves the current system shape:
+当前仓库的调度主链路如下：
 
 ```text
-@Scheduled scan
--> find due scenes
--> atomically claim scene scheduling point
--> insert idempotent schedule_event
--> advance scene.next_run_at
--> createScheduledTask(...)
--> update schedule_event with task result
+SceneServiceImpl.@Scheduled
+-> SceneSchedulerServiceImpl.triggerDueScenes(now)
+-> SceneScheduleLeaseService.tryAcquire(sceneId, plannedFireAt)
+-> taskService.createScheduledTask(sceneId, triggerReason)
+-> taskExecutionExecutor 异步执行任务
 ```
 
-This is the best fit for the current repository because it materially improves correctness without forcing a queueing system into a codebase that does not yet model scheduling as an event bus.
+当前实现的优点是简单直接，且已经把定时调度与任务执行分开到了“扫描创建任务”和“线程池执行任务”两个阶段。  
+当前实现的不足在于：
 
-## Alternatives Considered
+1. `SceneScheduleLeaseServiceImpl` 仍然是“先查后改”的 Java 侧判断，不是严格的数据库原子竞争。
+2. `lease_owner` 固定为 `"local-scheduler"`，无法区分实例。
+3. 没有独立的调度事件幂等表，无法在数据库层明确表示“这个场景在这个触发点已经被处理过”。
+4. 多实例场景下虽有基础防重能力，但还不能视为严格成熟的分布式调度。
 
-### 1. Keep the current implementation and tighten Java-side checks
+## Requirements
 
-This was rejected because the concurrency problem is fundamentally at the persistence boundary. More Java-side checks still leave races between read and write operations across instances.
+### Functional Requirements
 
-### 2. Introduce MQ-based single-consumer scheduling now
+1. 保留现有 `scene.next_run_at` 作为“到期场景”的判断依据。
+2. 同一个 `scene` 在同一个 `plannedFireAt` 上只能成功调度一次。
+3. 不同 `scene` 在同一时刻到期时，仍然要能够分别创建自己的 `task`。
+4. 保留现有 `taskService.createScheduledTask(...)` 和 `taskExecutionExecutor` 执行链路，不引入 MQ。
+5. 调度失败要有结构化落点，便于后续排查和恢复。
 
-This was rejected for this phase because the codebase does not yet have a scheduling event producer/consumer architecture. Adding MQ now would widen the scope from “scheduler hardening” to “scheduler redesign”.
+### Non-Functional Requirements
 
-### 3. Redis queue plus distributed lock
+1. 改造应尽量贴合现有 MyBatis + Spring Boot + Flyway 架构。
+2. 不引入 RabbitMQ、RocketMQ、Kafka、Redis List 队列等新基础设施。
+3. 改动应控制在调度与调度事件边界内，不扩展到任务执行编排主体。
+4. 所有并发防重逻辑必须具备单元测试或集成测试覆盖。
 
-This was rejected because it adds queue semantics and lock semantics without giving the reliability guarantees of a dedicated message system, while still requiring application-level idempotency.
+## Options Considered
 
-## Functional Requirements
+### Option A: 继续沿用当前方案，仅做少量 Java 逻辑增强
 
-### FR1. Due scene detection remains unchanged
+做法：
 
-The system continues to treat a scene as due when:
+- 继续使用 `scene_schedule_state`
+- 在 Java 层强化 `lastPlannedFireAt` 判断
+- 尽量少改 mapper / schema
 
-- `schedule_enabled = true`
-- `cron_expression` is present
-- `next_run_at <= now`
+优点：
 
-No changes are required to the current query contract in `SceneMapper.findDueScheduledScenes`.
+- 改动最小
 
-### FR2. A planned fire point can be claimed only once
+缺点：
 
-For a given `sceneId` and `plannedFireAt`, only one application instance may successfully claim the right to proceed with scheduling logic.
+- 仍然不是原子竞争
+- 多实例下仍有并发空隙
+- 没有显式的调度事件幂等记录
 
-This must be enforced by conditional database mutation, not only by Java-side checks.
+结论：
 
-### FR3. A schedule event exists at most once per scene and planned fire time
+- 不推荐。它只能改善现状，不能从根上把调度幂等拉到数据库层。
 
-The system must persist exactly one schedule event row for a given:
+### Option B: 数据库原子租约 + 调度事件幂等表
 
-- `scene_id`
-- `planned_fire_at`
+做法：
 
-If duplicate insertion is attempted, it must be treated as an already-processed scheduling point rather than as a trigger to create another task.
+- 强化 `scene_schedule_state` 为数据库原子认领状态
+- 新增 `schedule_event` 表
+- 以 `(scene_id, planned_fire_at)` 唯一约束表示一次调度点
+- 仍沿用 `createScheduledTask(...)` 进入现有任务链路
 
-### FR4. Different scenes with the same fire time still trigger independently
+优点：
 
-If multiple scenes share the same `plannedFireAt`, each scene may create its own schedule event and scheduled task. The deduplication boundary is:
+- 和现有架构最贴合
+- 改动可控
+- 能明确解决当前最关键的问题：多实例重复触发
+- 为后续 MQ 化保留清晰演进路径
 
-- per scene
-- per planned fire time
+缺点：
 
-It is **not** global by timestamp.
+- 调度器和任务创建仍然耦合在同一服务里
+- 不包含消息重试、续租心跳、worker 解耦等更完整能力
 
-### FR5. The existing task creation guard remains in place
+结论：
 
-The system must continue to block concurrent active tasks for the same scene through the existing `TaskCreationService` logic that checks `QUEUED` and `RUNNING` tasks.
+- 推荐，作为本轮实施方案。
 
-The new scheduling hardening complements that guard; it does not replace it.
+### Option C: 直接引入 MQ 做单消费者调度
 
-### FR6. Failed scheduled dispatch must be persisted
+做法：
 
-If a schedule event is successfully claimed and inserted, but task creation fails, the system must keep a record of that failure in the schedule event table.
+- 引入 RabbitMQ / RocketMQ / Kafka / Redis 队列
+- 调度器只发消息
+- 通过排他消费者或单分区消费组保证单实例消费
 
-This phase does not retry automatically, but it must leave enough state for diagnosis.
+优点：
 
-## Data Model Changes
+- 更接近完整分布式调度架构
 
-### Existing Table: `scene_schedule_state`
+缺点：
 
-Keep the existing table and use it more strictly.
+- 需要重构现有调度链路
+- 超出本轮目标
+- 会引入新的运维和测试复杂度
 
-Current relevant fields:
+结论：
+
+- 暂不采用，留作下一阶段演进方案。
+
+## Selected Approach
+
+采用 **Option B: 数据库原子租约 + 调度事件幂等表**。
+
+这轮实现目标不是把系统直接做成完整事件驱动调度平台，而是先在现有代码框架下，把“定时扫描”和“调度去重”做对。  
+设计原则如下：
+
+1. 扫描入口保留：仍由 `@Scheduled(fixedDelay = 60000)` 每分钟扫描。
+2. 到期判断保留：仍以 `scene.next_run_at <= now` 判定到期场景。
+3. 认领必须原子：由数据库条件更新来决定谁成功认领这个 `scene + plannedFireAt`。
+4. 幂等必须落库：由 `schedule_event(scene_id, planned_fire_at)` 唯一约束兜底。
+5. 执行链路不扩张：成功创建调度事件后，仍然调用 `taskService.createScheduledTask(...)`。
+
+## Design Details
+
+### 1. `scene_schedule_state` 的职责
+
+`scene_schedule_state` 继续表示“某个场景当前调度状态”，但职责从“辅助记录状态”增强为“原子认领控制”。
+
+现有关键字段继续保留：
 
 - `scene_id`
 - `last_planned_fire_at`
@@ -136,220 +141,200 @@ Current relevant fields:
 - `lease_until`
 - `version`
 
-#### Required behavior changes
+本轮对字段的使用约束：
 
-- `lease_owner` must contain a real instance identifier, not a static constant
-- updates must be conditional and atomic
-- `version` should be incremented on successful claim/update
+- `lease_owner` 改为真实实例 ID，而不是固定值
+- `last_planned_fire_at` 用于标识上一次成功认领的计划触发点
+- `version` 将用于条件更新或后续乐观锁演进
+- `lease_until` 本轮保留并写入，但不实现续租流程
 
-### New Table: `schedule_event`
+### 2. 新增 `schedule_event` 表
 
-Add a new table with the following fields:
+新增一张调度事件表，表示“某个场景在某个计划触发点的一次调度事件”。
 
-- `id` bigint primary key auto increment
-- `scene_id` bigint not null
-- `planned_fire_at` datetime not null
-- `status` varchar(32) not null
-- `task_id` bigint null
-- `trigger_reason` varchar(128) not null
-- `error_message` varchar(512) null
-- `created_at` datetime not null default current_timestamp
-- `updated_at` datetime not null default current_timestamp on update current_timestamp
+建议字段：
 
-Constraints:
-
-- foreign key from `scene_id` to `scene(id)`
-- foreign key from `task_id` to `task(id)` if task is created
-- unique key on `(scene_id, planned_fire_at)`
-
-#### Status values
-
-This phase uses a small, explicit status model:
-
-- `CLAIMED`: scheduling point was persisted, task not yet created
-- `TASK_CREATED`: scheduled task was successfully created
-- `FAILED`: task creation failed after claim
-
-No retry state is introduced in this phase.
-
-## Instance Identity
-
-Add a scheduler instance identifier resolved at application startup. It should be stable for the process lifetime and usable in logs and schedule-state records.
-
-Preferred shape:
-
-- environment variable override if provided
-- otherwise generated from hostname + process identifier + random suffix
-
-This identifier is only for observability and lease ownership. It is not an authentication boundary.
-
-## Detailed Flow
-
-### Step 1. Scheduled scan
-
-`SceneServiceImpl.triggerScheduledScenes()` continues to run every minute and delegates to `SceneSchedulerServiceImpl.triggerDueScenes(now)`.
-
-### Step 2. Legacy initialization
-
-Legacy scenes with `next_run_at is null` continue to be initialized through the existing resolver path before due-scene processing.
-
-### Step 3. Atomic claim of scheduling point
-
-For each due scene:
-
-- read `plannedFireAt = scene.nextRunAt`
-- attempt to claim the scheduling point through a conditional mapper update
-
-Successful claim requires:
-
-- the row for the scene is absent and can be inserted, or
-- the stored `last_planned_fire_at` is older than the current `plannedFireAt`
-
-Failed claim means another instance already processed or claimed that exact fire point. Processing must stop for this scene.
-
-### Step 4. Insert `schedule_event`
-
-After claim succeeds, insert a `schedule_event` row with:
-
+- `id`
 - `scene_id`
 - `planned_fire_at`
-- `status = CLAIMED`
-- `trigger_reason = cron:<expression>`
+- `status`
+- `task_id`
+- `trigger_reason`
+- `error_message`
+- `created_at`
+- `updated_at`
 
-If insertion fails on the unique constraint, treat that as “already processed” and stop for this scene without creating a task.
+关键约束：
 
-This unique insert is the second safety barrier.
+- 唯一键：`(scene_id, planned_fire_at)`
 
-### Step 5. Advance `scene.next_run_at`
+状态建议：
 
-Resolve and persist the next scheduled fire time immediately after the current scheduling point is accepted for processing.
+- `ACQUIRED`：已认领，尚未创建任务
+- `TASK_CREATED`：已成功创建任务
+- `FAILED`：尝试创建任务失败
 
-This preserves the existing design where the scene moves forward as part of scheduling.
+作用：
 
-### Step 6. Create scheduled task
+1. 在数据库层表示“这个触发点已经处理过”
+2. 为失败排查和后续补偿保留结构化记录
+3. 为后续 MQ 化演进提供自然落点
 
-Call `taskService.createScheduledTask(sceneId, triggerReason)` as today.
+### 3. 实例标识
 
-If task creation succeeds:
+新增一个实例标识提供者，用于写入 `lease_owner`。  
+本轮不做复杂服务发现，采用轻量且可测试的方式：
 
-- update `schedule_event.status = TASK_CREATED`
-- set `schedule_event.task_id`
-- update `scene_schedule_state.last_triggered_at`
-- update `scene_schedule_state.last_task_id`
+- 优先读取环境变量或配置项
+- 若未配置，则在启动时生成稳定的本实例 UUID
 
-If task creation fails:
+要求：
 
-- update `schedule_event.status = FAILED`
-- store a concise error message
-- keep the event row for diagnosis
+- 同一实例生命周期内值稳定
+- 测试中可注入伪值
 
-## Persistence Strategy
+### 4. 原子认领逻辑
 
-### Atomic claim mapper contract
+不再使用单纯的“查 state -> Java 判断 -> update”流程。  
+推荐流程：
 
-The mapper layer must expose explicit methods for:
+1. 尝试读取 `scene_schedule_state`
+2. 若不存在，插入初始记录
+3. 通过条件更新方式认领：
+   - 仅当 `last_planned_fire_at` 为空或小于当前 `plannedFireAt` 时允许推进
+   - 更新 `lease_owner`、`lease_until`、`last_planned_fire_at`
+4. 依据受影响行数判断是否成功认领
 
-- insert-if-absent initial schedule state
-- conditional update for claim
-- update trigger result fields after task creation
+认领成功后，当前实例才允许进入创建 `schedule_event` 的步骤。
 
-The application service should rely on affected-row counts instead of assuming success after a read.
+### 5. 调度主流程
 
-### Schedule event mapper contract
+新的调度流程如下：
 
-The mapper layer must expose:
+```text
+@Scheduled 扫描
+-> 找出 next_run_at <= now 的 scene
+-> tryAcquire(sceneId, plannedFireAt)
+-> 成功后插入 schedule_event
+-> 推进 scene.next_run_at 到下一次
+-> createScheduledTask(sceneId, triggerReason)
+-> 更新 schedule_event.status/task_id
+```
 
-- insert claimed event
-- update event to task-created
-- update event to failed
-- query helpers needed by tests
+其中：
 
-## Error Handling
+- 如果认领失败：直接跳过当前场景
+- 如果插入 `schedule_event` 发生唯一键冲突：说明该调度点已被处理，直接跳过
+- 如果 `createScheduledTask(...)` 失败：将 `schedule_event` 标记为 `FAILED`
 
-### Claim failure
+### 6. 与现有任务创建的关系
 
-This is not an application error. It means another instance already owns or completed that scheduling point. Log at debug or info level and continue.
+保留现有 [TaskCreationService](file:///Users/bytedance/test_platform/playwright-platform-server/src/main/java/com/example/platform/task/service/TaskCreationService.java) 对“同一场景不能同时有多个活动任务”的约束。
 
-### Unique-key conflict on `schedule_event`
+因此本轮会形成两层保护：
 
-This is also not an application error. It is an idempotency signal and should be handled as a no-op for that scene and fire point.
+1. **调度点幂等保护**：同一个 `scene + plannedFireAt` 只能被成功处理一次
+2. **场景活动任务保护**：同一个 `scene` 同时不能存在多个 `QUEUED/RUNNING` 任务
 
-### Task creation failure
+这两层保护分别覆盖：
 
-This is a real scheduling failure for that event. The event row must remain with `FAILED` state and an error message. Existing task creation exceptions should still surface through logs and diagnostics.
+- 分布式扫描下的重复触发
+- 单场景执行中的重复创建
+
+### 7. 错误处理
+
+本轮不引入自动补偿，只保证错误落库和日志清晰。
+
+处理方式：
+
+- 认领失败：视为正常竞争失败，不记为错误
+- 幂等唯一键冲突：视为已处理，记录 debug/info 日志
+- 任务创建失败：`schedule_event.status = FAILED`，记录错误信息
+
+不做：
+
+- 自动重试失败调度事件
+- 自动扫描 `FAILED` 事件补偿
+- 自动续租或租约恢复
+
+## Files to Modify or Add
+
+### Database / Schema
+
+- Add: `playwright-platform-server/src/main/resources/db/migration/V2__add_schedule_event.sql`
+- Modify: `playwright-platform-server/src/main/resources/db/schema/SCHEMA_OVERVIEW.sql`
+
+### Scene Scheduling
+
+- Modify: `playwright-platform-server/src/main/java/com/example/platform/scene/service/SceneScheduleLeaseServiceImpl.java`
+- Modify: `playwright-platform-server/src/main/java/com/example/platform/scene/mapper/SceneScheduleStateMapper.java`
+- Modify: `playwright-platform-server/src/main/java/com/example/platform/scene/service/SceneSchedulerServiceImpl.java`
+
+### Schedule Event
+
+- Add: `playwright-platform-server/src/main/java/com/example/platform/scene/model/ScheduleEventEntity.java`
+- Add: `playwright-platform-server/src/main/java/com/example/platform/scene/mapper/ScheduleEventMapper.java`
+- Add: `playwright-platform-server/src/main/java/com/example/platform/scene/service/ScheduleEventService.java`
+- Add: `playwright-platform-server/src/main/java/com/example/platform/scene/service/ScheduleEventServiceImpl.java`
+
+### Instance Identity
+
+- Add: `playwright-platform-server/src/main/java/com/example/platform/scene/service/SchedulerInstanceIdProvider.java`
+
+### Tests
+
+- Add or modify schedule-related tests under `playwright-platform-server/src/test/java/com/example/platform/scene/`
 
 ## Testing Strategy
 
-This change must be implemented test-first.
+本轮测试重点放在调度一致性，而不是任务执行主体。
 
-### Unit/service tests
+建议覆盖：
 
-Add tests covering:
+1. **认领成功测试**
+   - 首次认领某个 `scene + plannedFireAt` 成功
 
-- same scene and same `plannedFireAt` cannot be claimed twice
-- different scenes with same `plannedFireAt` can both succeed
-- duplicate `schedule_event` insertion is treated as idempotent
-- successful scheduled task creation transitions event to `TASK_CREATED`
-- failed scheduled task creation transitions event to `FAILED`
+2. **重复认领失败测试**
+   - 同一个 `scene + plannedFireAt` 第二次认领失败
 
-### Mapper/integration tests
+3. **调度事件幂等测试**
+   - 同一个 `scene + plannedFireAt` 重复插入事件时，唯一键生效
 
-Add mapper tests for:
+4. **不同场景同一时刻测试**
+   - 不同 `scene` 同一 `plannedFireAt` 可分别创建自己的事件与任务
 
-- conditional claim update semantics
-- unique key enforcement on `(scene_id, planned_fire_at)`
+5. **任务创建失败测试**
+   - `createScheduledTask(...)` 抛错时，事件状态标记为 `FAILED`
 
-### Regression tests
+6. **现有任务保护测试**
+   - 当同一场景已有 `QUEUED/RUNNING` 任务时，仍不允许重复创建活动任务
 
-Retain and adjust existing scheduler tests so current behavior is preserved:
+## Out of Scope
 
-- due scenes are still discovered correctly
-- `next_run_at` still advances
-- active-task guard still blocks duplicate active tasks per scene
+本轮明确不做以下内容：
 
-## Observability
+1. MQ 引入与消费者架构调整
+2. RabbitMQ 排他消费者 / Kafka 单分区消费组 / Redis List 队列
+3. 调度器与执行器彻底拆分
+4. 分布式续租心跳
+5. 调度失败自动补偿
+6. 调度后台管理页面或可视化运维页面
 
-Add structured logs that include:
+## Rollout and Migration Notes
 
-- `sceneId`
-- `plannedFireAt`
-- `leaseOwner`
-- `scheduleEventId` when available
+1. 数据库迁移新增 `schedule_event` 表，不修改现有 `scene`、`task` 主表结构。
+2. 新版本上线后，旧场景会继续使用已有 `next_run_at` 机制。
+3. `scene_schedule_state` 历史数据若为空，可在首次扫描或首次认领时惰性初始化。
+4. 若本地或测试环境存在旧数据库，需确保 Flyway 能顺利执行新迁移。
 
-This will make it possible to diagnose:
+## Future Evolution
 
-- which instance claimed a scheduling point
-- whether the event was deduplicated
-- whether task creation succeeded or failed
+当本轮方案稳定后，下一阶段推荐演进方向为：
 
-## Rollout and Migration
+1. Scheduler 只负责写 `schedule_event`
+2. 将 `schedule_event` 投递到 Kafka / RocketMQ
+3. 由单分区消费组独占消费调度事件
+4. Worker 创建 task，并回填事件状态
+5. 最终实现“调度层”和“执行层”彻底解耦
 
-### Database migration
-
-Add a Flyway migration for the `schedule_event` table and constraints.
-
-### Backward compatibility
-
-No existing table or API contract needs to be removed. The change is additive plus behavior tightening in scheduling logic.
-
-### Operational note
-
-This phase improves correctness under multi-instance deployment, but it does not yet support:
-
-- lease renewal
-- stale-claim recovery workflows
-- scheduler-to-worker queueing
-
-Those belong to the next phase if the platform evolves further toward a dedicated distributed scheduling system.
-
-## Implementation Summary
-
-Modify the current design along these lines:
-
-- keep `@Scheduled`
-- keep `findDueScheduledScenes`
-- keep `createScheduledTask`
-- harden `SceneScheduleLeaseServiceImpl` with atomic claim logic
-- add `schedule_event` as the scheduling idempotency ledger
-
-This gives the current project the strongest improvement-to-change ratio: it meaningfully upgrades multi-instance scheduling safety without forcing a queueing architecture into a codebase that is not yet shaped for it.
+该演进方向比直接接入 RabbitMQ 排他消费者或 Redis List 更适合本项目后续的事件化调度架构。
