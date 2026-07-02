@@ -6,8 +6,10 @@ import com.example.platform.repository.mapper.TestRepositoryMapper;
 import com.example.platform.repository.model.TestRepositoryEntity;
 import com.example.platform.scene.mapper.SceneMapper;
 import com.example.platform.scene.model.SceneEntity;
+import com.example.platform.scene.model.ScheduleEventEntity;
 import com.example.platform.scene.service.SceneCascadeDeleteService;
 import com.example.platform.scene.service.SceneScheduleLeaseService;
+import com.example.platform.scene.service.ScheduleEventService;
 import com.example.platform.scene.service.SceneSchedulerServiceImpl;
 import com.example.platform.scene.service.SceneServiceImpl;
 import com.example.platform.task.dto.CaseResultResponse;
@@ -91,8 +93,13 @@ class SceneServiceImplTest {
     void shouldCreateScheduledTaskWhenCronIsDueAndLeaseAcquired() {
         SceneMapper repository = Mockito.mock(SceneMapper.class);
         FakeSceneScheduleLeaseService leaseService = new FakeSceneScheduleLeaseService(true);
+        FakeScheduleEventService scheduleEventService = new FakeScheduleEventService();
         FakeTaskService taskService = new FakeTaskService();
-        SceneSchedulerServiceImpl service = new SceneSchedulerServiceImpl(repository, leaseService, taskService);
+        SceneSchedulerServiceImpl service = new SceneSchedulerServiceImpl(
+                repository,
+                leaseService,
+                scheduleEventService,
+                taskService);
 
         SceneEntity scheduled = new SceneEntity();
         scheduled.setId(11L);
@@ -114,14 +121,24 @@ class SceneServiceImplTest {
         assertThat(taskService.scheduledTaskCount).isEqualTo(1);
         assertThat(taskService.scheduledSceneId).isEqualTo(11L);
         assertThat(taskService.scheduledTriggerReason).isEqualTo("cron:0 */5 * * * *");
+        assertThat(scheduleEventService.createdCount).isEqualTo(1);
+        assertThat(scheduleEventService.markTaskCreatedCount).isEqualTo(1);
+        assertThat(scheduleEventService.markFailedCount).isZero();
+        assertThat(leaseService.markTriggeredCount).isEqualTo(1);
+        assertThat(leaseService.markTriggeredTaskId).isEqualTo(101L);
     }
 
     @Test
     void shouldSkipScheduledTaskWhenLeaseIsRejected() {
         SceneMapper repository = Mockito.mock(SceneMapper.class);
         FakeSceneScheduleLeaseService leaseService = new FakeSceneScheduleLeaseService(false);
+        FakeScheduleEventService scheduleEventService = new FakeScheduleEventService();
         FakeTaskService taskService = new FakeTaskService();
-        SceneSchedulerServiceImpl service = new SceneSchedulerServiceImpl(repository, leaseService, taskService);
+        SceneSchedulerServiceImpl service = new SceneSchedulerServiceImpl(
+                repository,
+                leaseService,
+                scheduleEventService,
+                taskService);
 
         SceneEntity scheduled = new SceneEntity();
         scheduled.setId(11L);
@@ -138,7 +155,98 @@ class SceneServiceImplTest {
         assertThat(leaseService.sceneId).isEqualTo(11L);
         assertThat(leaseService.plannedFireAt).isEqualTo(LocalDateTime.of(2026, 6, 13, 10, 0));
         assertThat(taskService.scheduledTaskCount).isZero();
+        assertThat(scheduleEventService.createdCount).isZero();
         Mockito.verify(repository, Mockito.never()).update(Mockito.any(SceneEntity.class));
+    }
+
+    @Test
+    void shouldSkipScheduledTaskWhenScheduleEventAlreadyExists() {
+        SceneMapper repository = Mockito.mock(SceneMapper.class);
+        FakeSceneScheduleLeaseService leaseService = new FakeSceneScheduleLeaseService(true);
+        FakeScheduleEventService scheduleEventService = new FakeScheduleEventService();
+        scheduleEventService.returnEmptyOnCreate = true;
+        FakeTaskService taskService = new FakeTaskService();
+        SceneSchedulerServiceImpl service = new SceneSchedulerServiceImpl(
+                repository,
+                leaseService,
+                scheduleEventService,
+                taskService);
+
+        SceneEntity scheduled = new SceneEntity();
+        scheduled.setId(11L);
+        scheduled.setScheduleEnabled(true);
+        scheduled.setCronExpression("0 */5 * * * *");
+        scheduled.setNextRunAt(LocalDateTime.of(2026, 6, 13, 10, 0));
+        Mockito.when(repository.findAllByScheduleEnabledTrueAndNextRunAtIsNullOrderByIdAsc()).thenReturn(List.of());
+        Mockito.when(repository.findDueScheduledScenes(LocalDateTime.of(2026, 6, 13, 10, 0, 30)))
+                .thenReturn(List.of(scheduled));
+
+        service.triggerDueScenes(LocalDateTime.of(2026, 6, 13, 10, 0, 30));
+
+        assertThat(scheduleEventService.createdCount).isEqualTo(1);
+        assertThat(taskService.scheduledTaskCount).isZero();
+        Mockito.verify(repository, Mockito.never()).update(Mockito.any(SceneEntity.class));
+    }
+
+    @Test
+    void shouldMarkScheduleEventFailedWhenTaskCreationThrows() {
+        SceneMapper repository = Mockito.mock(SceneMapper.class);
+        FakeSceneScheduleLeaseService leaseService = new FakeSceneScheduleLeaseService(true);
+        FakeScheduleEventService scheduleEventService = new FakeScheduleEventService();
+        FakeTaskService taskService = new FakeTaskService();
+        taskService.throwOnCreate = true;
+        SceneSchedulerServiceImpl service = new SceneSchedulerServiceImpl(
+                repository,
+                leaseService,
+                scheduleEventService,
+                taskService);
+
+        SceneEntity scheduled = new SceneEntity();
+        scheduled.setId(11L);
+        scheduled.setScheduleEnabled(true);
+        scheduled.setCronExpression("0 */5 * * * *");
+        scheduled.setNextRunAt(LocalDateTime.of(2026, 6, 13, 10, 0));
+        Mockito.when(repository.findAllByScheduleEnabledTrueAndNextRunAtIsNullOrderByIdAsc()).thenReturn(List.of());
+        Mockito.when(repository.findDueScheduledScenes(LocalDateTime.of(2026, 6, 13, 10, 0, 30)))
+                .thenReturn(List.of(scheduled));
+        Mockito.when(repository.update(scheduled)).thenReturn(1);
+
+        service.triggerDueScenes(LocalDateTime.of(2026, 6, 13, 10, 0, 30));
+
+        assertThat(scheduleEventService.markFailedCount).isEqualTo(1);
+        assertThat(scheduleEventService.lastFailedMessage).contains("system busy");
+    }
+
+    @Test
+    void shouldRetryFailedScheduleEventsBeforeScanningDueScenes() {
+        SceneMapper repository = Mockito.mock(SceneMapper.class);
+        FakeSceneScheduleLeaseService leaseService = new FakeSceneScheduleLeaseService(true);
+        FakeScheduleEventService scheduleEventService = new FakeScheduleEventService();
+        ScheduleEventEntity failedEvent = new ScheduleEventEntity();
+        failedEvent.setId(77L);
+        failedEvent.setSceneId(12L);
+        failedEvent.setPlannedFireAt(LocalDateTime.of(2026, 6, 13, 9, 55));
+        failedEvent.setTriggerReason("cron:0 */5 * * * *");
+        scheduleEventService.retryableFailedEvents = List.of(failedEvent);
+        FakeTaskService taskService = new FakeTaskService();
+        SceneSchedulerServiceImpl service = new SceneSchedulerServiceImpl(
+                repository,
+                leaseService,
+                scheduleEventService,
+                taskService);
+        Mockito.when(repository.findAllByScheduleEnabledTrueAndNextRunAtIsNullOrderByIdAsc()).thenReturn(List.of());
+        Mockito.when(repository.findDueScheduledScenes(LocalDateTime.of(2026, 6, 13, 10, 0, 30)))
+                .thenReturn(List.of());
+
+        service.triggerDueScenes(LocalDateTime.of(2026, 6, 13, 10, 0, 30));
+
+        assertThat(taskService.scheduledTaskCount).isEqualTo(1);
+        assertThat(taskService.scheduledSceneId).isEqualTo(12L);
+        assertThat(taskService.scheduledTriggerReason).isEqualTo("cron:0 */5 * * * *");
+        assertThat(scheduleEventService.markTaskCreatedCount).isEqualTo(1);
+        assertThat(scheduleEventService.markTaskCreatedEventId).isEqualTo(77L);
+        assertThat(leaseService.markTriggeredCount).isEqualTo(1);
+        assertThat(leaseService.markTriggeredSceneId).isEqualTo(12L);
     }
 
     @Test
@@ -281,8 +389,13 @@ class SceneServiceImplTest {
     void shouldInitializeNextRunAtForLegacyScheduledScene() {
         SceneMapper repository = Mockito.mock(SceneMapper.class);
         FakeSceneScheduleLeaseService leaseService = new FakeSceneScheduleLeaseService(true);
+        FakeScheduleEventService scheduleEventService = new FakeScheduleEventService();
         FakeTaskService taskService = new FakeTaskService();
-        SceneSchedulerServiceImpl service = new SceneSchedulerServiceImpl(repository, leaseService, taskService);
+        SceneSchedulerServiceImpl service = new SceneSchedulerServiceImpl(
+                repository,
+                leaseService,
+                scheduleEventService,
+                taskService);
 
         SceneEntity legacyScene = new SceneEntity();
         legacyScene.setId(21L);
@@ -451,6 +564,11 @@ class SceneServiceImplTest {
         private final boolean acquireResult;
         private Long sceneId;
         private LocalDateTime plannedFireAt;
+        private int markTriggeredCount;
+        private Long markTriggeredSceneId;
+        private LocalDateTime markTriggeredPlannedFireAt;
+        private Long markTriggeredTaskId;
+        private LocalDateTime markTriggeredAt;
 
         private FakeSceneScheduleLeaseService(boolean acquireResult) {
             this.acquireResult = acquireResult;
@@ -462,12 +580,22 @@ class SceneServiceImplTest {
             this.plannedFireAt = plannedFireAt;
             return acquireResult;
         }
+
+        @Override
+        public void markTriggered(Long sceneId, LocalDateTime plannedFireAt, Long taskId, LocalDateTime triggeredAt) {
+            markTriggeredCount++;
+            markTriggeredSceneId = sceneId;
+            markTriggeredPlannedFireAt = plannedFireAt;
+            markTriggeredTaskId = taskId;
+            markTriggeredAt = triggeredAt;
+        }
     }
 
     private static final class FakeTaskService implements TaskService {
         private int scheduledTaskCount;
         private Long scheduledSceneId;
         private String scheduledTriggerReason;
+        private boolean throwOnCreate;
 
         @Override
         public TaskEntity createAndStart(Long sceneId) {
@@ -481,10 +609,15 @@ class SceneServiceImplTest {
 
         @Override
         public TaskEntity createScheduledTask(Long sceneId, String triggerReason) {
+            if (throwOnCreate) {
+                throw new IllegalStateException("system busy");
+            }
             scheduledTaskCount++;
             scheduledSceneId = sceneId;
             scheduledTriggerReason = triggerReason;
-            return new TaskEntity();
+            TaskEntity task = new TaskEntity();
+            task.setId(101L);
+            return task;
         }
 
         @Override
@@ -550,6 +683,84 @@ class SceneServiceImplTest {
         @Override
         public ResponseEntity<Resource> downloadStageLog(Long taskId, Long stageLogId) {
             throw new UnsupportedOperationException();
+        }
+    }
+
+    private static final class FakeScheduleEventService implements ScheduleEventService {
+        private int createdCount;
+        private int markTaskCreatedCount;
+        private int markFailedCount;
+        private Long markTaskCreatedEventId;
+        private boolean returnEmptyOnCreate;
+        private String lastFailedMessage;
+        private String lastFailureCategory;
+        private final ScheduleEventEntity createdEntity = new ScheduleEventEntity();
+        private List<ScheduleEventEntity> retryableFailedEvents = List.of();
+        private Optional<ScheduleEventEntity> startRetryResult = null;
+
+        @Override
+        public Optional<ScheduleEventEntity> createAcquiredEvent(Long sceneId, LocalDateTime plannedFireAt, String triggerReason) {
+            createdCount++;
+            if (returnEmptyOnCreate) {
+                return Optional.empty();
+            }
+            createdEntity.setId(88L);
+            createdEntity.setSceneId(sceneId);
+            createdEntity.setPlannedFireAt(plannedFireAt);
+            createdEntity.setTriggerReason(triggerReason);
+            createdEntity.setStatus("ACQUIRED");
+            return Optional.of(createdEntity);
+        }
+
+        @Override
+        public Optional<ScheduleEventEntity> get(Long eventId) {
+            return Optional.of(createdEntity).filter(event -> eventId.equals(event.getId()));
+        }
+
+        @Override
+        public void markTaskCreated(Long eventId, Long taskId) {
+            markTaskCreatedCount++;
+            markTaskCreatedEventId = eventId;
+            createdEntity.setTaskId(taskId);
+            createdEntity.setStatus("TASK_CREATED");
+        }
+
+        @Override
+        public void markFailed(Long eventId, String errorMessage, String failureCategory) {
+            markFailedCount++;
+            lastFailedMessage = errorMessage;
+            lastFailureCategory = failureCategory;
+            createdEntity.setErrorMessage(errorMessage);
+            createdEntity.setStatus("FAILED");
+        }
+
+        @Override
+        public List<ScheduleEventEntity> listRetryableFailedEvents(int limit, LocalDateTime now) {
+            return retryableFailedEvents;
+        }
+
+        @Override
+        public Optional<ScheduleEventEntity> startRetry(Long eventId) {
+            if (startRetryResult != null) {
+                return startRetryResult;
+            }
+            Optional<ScheduleEventEntity> retryableEvent = retryableFailedEvents.stream()
+                    .filter(event -> eventId.equals(event.getId()))
+                    .findFirst();
+            if (retryableEvent.isPresent()) {
+                retryableEvent.orElseThrow().setStatus("RETRYING");
+                return retryableEvent;
+            }
+            return Optional.of(createdEntity).filter(event -> eventId.equals(event.getId()))
+                    .map(event -> {
+                        event.setStatus("RETRYING");
+                        return event;
+                    });
+        }
+
+        @Override
+        public PageResponse<ScheduleEventEntity> listIssueEvents(List<String> statuses, Long spaceId, Long sceneId, int page, int size) {
+            return PageResponse.of(retryableFailedEvents, retryableFailedEvents.size(), page, size);
         }
     }
 }
