@@ -92,7 +92,7 @@ class RepositoryControllerTest {
         entity.setEnabled(true);
 
         Mockito.when(repositoryService.create(Mockito.any(TestRepositoryEntity.class))).thenReturn(entity);
-        Mockito.when(repositoryService.list(1, 10)).thenReturn(new PageResponse<>(List.of(entity), 1, 1, 10, 1, false, false));
+        Mockito.when(repositoryService.list(7L, 1, 10)).thenReturn(new PageResponse<>(List.of(entity), 1, 1, 10, 1, false, false));
 
         mockMvc.perform(post("/api/spaces/7/repos")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -157,8 +157,8 @@ class RepositoryControllerTest {
         updated.setArtifactRootRelativePath(".playwright-output");
         updated.setEnabled(false);
 
-        Mockito.when(repositoryService.get(1L)).thenReturn(entity);
-        Mockito.when(repositoryService.update(Mockito.eq(1L), Mockito.any(TestRepositoryEntity.class))).thenReturn(updated);
+        Mockito.when(repositoryService.get(7L, 1L)).thenReturn(entity);
+        Mockito.when(repositoryService.update(Mockito.eq(7L), Mockito.eq(1L), Mockito.any(TestRepositoryEntity.class))).thenReturn(updated);
 
         mockMvc.perform(get("/api/spaces/7/repos/1"))
                 .andExpect(status().isOk())
@@ -239,14 +239,14 @@ class RepositoryControllerTest {
         mockMvc.perform(delete("/api/spaces/7/repos/1"))
                 .andExpect(status().isNoContent());
 
-        Mockito.verify(repositoryService).delete(1L);
+        Mockito.verify(repositoryService).delete(7L, 1L);
     }
 
     @Test
     void shouldReturnConflictWhenCascadeDeletionFails() throws Exception {
         Mockito.doThrow(new IllegalStateException("Failed to delete object from storage"))
                 .when(repositoryService)
-                .delete(1L);
+                .delete(7L, 1L);
 
         mockMvc.perform(delete("/api/spaces/7/repos/1"))
                 .andExpect(status().isConflict())
@@ -257,7 +257,7 @@ class RepositoryControllerTest {
 
     @Test
     void shouldReturnStructuredErrorWhenRepositoryIsMissing() throws Exception {
-        Mockito.when(repositoryService.get(99L))
+        Mockito.when(repositoryService.get(7L, 99L))
                 .thenThrow(new IllegalArgumentException("Repository not found: 99"));
 
         mockMvc.perform(get("/api/spaces/7/repos/99"))

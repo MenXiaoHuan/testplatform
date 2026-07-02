@@ -102,7 +102,7 @@ class SceneControllerTest {
                 2);
 
         Mockito.when(sceneService.create(Mockito.any(SceneEntity.class))).thenReturn(entity);
-        Mockito.when(sceneService.listCards(1, 10)).thenReturn(new PageResponse<>(List.of(card), 1, 1, 10, 1, false, false));
+        Mockito.when(sceneService.listCards(7L, 1, 10)).thenReturn(new PageResponse<>(List.of(card), 1, 1, 10, 1, false, false));
 
         mockMvc.perform(post("/api/spaces/7/scenes")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -158,7 +158,7 @@ class SceneControllerTest {
         updated.setCronExpression("0 15 2 * * ?");
 
         Mockito.when(sceneService.create(Mockito.any(SceneEntity.class))).thenReturn(created);
-        Mockito.when(sceneService.update(Mockito.eq(2L), Mockito.any(SceneEntity.class))).thenReturn(updated);
+        Mockito.when(sceneService.update(Mockito.eq(7L), Mockito.eq(2L), Mockito.any(SceneEntity.class))).thenReturn(updated);
 
         mockMvc.perform(post("/api/spaces/7/scenes")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -259,8 +259,8 @@ class SceneControllerTest {
         updated.setTestSelectorValue("@smoke");
         updated.setRunCommand("node ./scripts/run-e2e.cjs --grep @smoke");
 
-        Mockito.when(sceneService.get(1L)).thenReturn(entity);
-        Mockito.when(sceneService.update(Mockito.eq(1L), Mockito.any(SceneEntity.class))).thenReturn(updated);
+        Mockito.when(sceneService.get(7L, 1L)).thenReturn(entity);
+        Mockito.when(sceneService.update(Mockito.eq(7L), Mockito.eq(1L), Mockito.any(SceneEntity.class))).thenReturn(updated);
 
         mockMvc.perform(get("/api/spaces/7/scenes/1"))
                 .andExpect(status().isOk())
@@ -294,7 +294,7 @@ class SceneControllerTest {
         mockMvc.perform(delete("/api/spaces/7/scenes/1"))
                 .andExpect(status().isNoContent());
 
-        Mockito.verify(sceneService).delete(1L);
+        Mockito.verify(sceneService).delete(7L, 1L);
     }
 
     @Test
@@ -318,7 +318,7 @@ class SceneControllerTest {
 
     @Test
     void shouldReturnUnifiedErrorResponseForUnexpectedSceneFailure() throws Exception {
-        Mockito.when(sceneService.get(3L)).thenThrow(new RuntimeException("boom"));
+        Mockito.when(sceneService.get(7L, 3L)).thenThrow(new RuntimeException("boom"));
 
         mockMvc.perform(get("/api/spaces/7/scenes/3"))
                 .andExpect(status().isInternalServerError())

@@ -42,23 +42,23 @@ public class RepositoryController {
             @PathVariable Long spaceId,
             @org.springframework.web.bind.annotation.RequestParam(defaultValue = "1") int page,
             @org.springframework.web.bind.annotation.RequestParam(defaultValue = "10") int size) {
-        return ApiResponse.ok(repositoryService.list(page, size));
+        return ApiResponse.ok(repositoryService.list(spaceId, page, size));
     }
 
     @GetMapping("/{id}")
     public ApiResponse<TestRepositoryEntity> get(@PathVariable Long spaceId, @PathVariable Long id) {
-        return ApiResponse.ok(repositoryService.get(id));
+        return ApiResponse.ok(repositoryService.get(spaceId, id));
     }
 
     @PutMapping("/{id}")
     public ApiResponse<TestRepositoryEntity> update(@PathVariable Long spaceId, @PathVariable Long id, @RequestBody TestRepositoryEntity entity) {
         entity.setSpaceId(spaceId);
-        return ApiResponse.ok(repositoryService.update(id, entity));
+        return ApiResponse.ok(repositoryService.update(spaceId, id, entity));
     }
 
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(@PathVariable Long spaceId, @PathVariable Long id) {
-        repositoryService.delete(id);
+        repositoryService.delete(spaceId, id);
     }
 }

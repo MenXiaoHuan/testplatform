@@ -24,18 +24,18 @@ import org.apache.ibatis.annotations.Update;
 @Mapper
 public interface SceneMapper {
     String SCENE_COLUMNS = """
-            id, repo_id, name, description, branch, test_selector_type, test_selector_value,
+            id, space_id, repo_id, name, description, branch, test_selector_type, test_selector_value,
             project_name, browser, env_json, run_command, schedule_enabled, cron_expression,
             next_run_at, last_run_at, last_task_status, created_at, updated_at
             """;
 
     @Insert("""
             insert into scene (
-                repo_id, name, description, branch, test_selector_type, test_selector_value,
+                space_id, repo_id, name, description, branch, test_selector_type, test_selector_value,
                 project_name, browser, env_json, run_command, schedule_enabled, cron_expression,
                 next_run_at, last_run_at, last_task_status
             ) values (
-                #{repoId}, #{name}, #{description}, #{branch}, #{testSelectorType}, #{testSelectorValue},
+                #{spaceId}, #{repoId}, #{name}, #{description}, #{branch}, #{testSelectorType}, #{testSelectorValue},
                 #{projectName}, #{browser}, #{envJson}, #{runCommand}, #{scheduleEnabled}, #{cronExpression},
                 #{nextRunAt}, #{lastRunAt}, #{lastTaskStatus}
             )
@@ -45,7 +45,8 @@ public interface SceneMapper {
 
     @Update("""
             update scene
-            set repo_id = #{repoId},
+            set space_id = #{spaceId},
+                repo_id = #{repoId},
                 name = #{name},
                 description = #{description},
                 branch = #{branch},
@@ -72,6 +73,7 @@ public interface SceneMapper {
             """)
     @Results(id = "SceneResultMap", value = {
             @Result(property = "id", column = "id", id = true),
+            @Result(property = "spaceId", column = "space_id"),
             @Result(property = "repoId", column = "repo_id"),
             @Result(property = "name", column = "name"),
             @Result(property = "description", column = "description"),
@@ -97,6 +99,16 @@ public interface SceneMapper {
             """ + SCENE_COLUMNS + """
             from scene
             where id = #{id}
+              and space_id = #{spaceId}
+            """)
+    @ResultMap("SceneResultMap")
+    Optional<SceneEntity> findByIdAndSpaceId(@Param("id") Long id, @Param("spaceId") Long spaceId);
+
+    @Select("""
+            select
+            """ + SCENE_COLUMNS + """
+            from scene
+            where id = #{id}
             for update
             """)
     @ResultMap("SceneResultMap")
@@ -113,10 +125,28 @@ public interface SceneMapper {
     List<SceneEntity> findPage(@Param("limit") int limit, @Param("offset") int offset);
 
     @Select("""
+            select
+            """ + SCENE_COLUMNS + """
+            from scene
+            where space_id = #{spaceId}
+            order by updated_at desc, id desc
+            limit #{limit} offset #{offset}
+            """)
+    @ResultMap("SceneResultMap")
+    List<SceneEntity> findPageBySpaceId(@Param("spaceId") Long spaceId, @Param("limit") int limit, @Param("offset") int offset);
+
+    @Select("""
             select count(1)
             from scene
             """)
     long countAll();
+
+    @Select("""
+            select count(1)
+            from scene
+            where space_id = #{spaceId}
+            """)
+    long countBySpaceId(@Param("spaceId") Long spaceId);
 
     @Select("""
             select count(1) > 0

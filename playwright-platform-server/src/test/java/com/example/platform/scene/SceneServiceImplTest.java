@@ -45,6 +45,7 @@ class SceneServiceImplTest {
 
         SceneEntity existing = new SceneEntity();
         existing.setId(1L);
+        existing.setSpaceId(7L);
         existing.setRepoId(1L);
         existing.setName("checkout smoke");
         existing.setDescription("old description");
@@ -56,6 +57,7 @@ class SceneServiceImplTest {
         existing.setCronExpression(null);
 
         SceneEntity update = new SceneEntity();
+        update.setSpaceId(7L);
         update.setRepoId(2L);
         update.setName("checkout nightly");
         update.setDescription("nightly checkout coverage");
@@ -68,13 +70,14 @@ class SceneServiceImplTest {
 
         TestRepositoryEntity targetRepository = new TestRepositoryEntity();
         targetRepository.setId(2L);
+        targetRepository.setSpaceId(7L);
         targetRepository.setEnabled(true);
 
-        Mockito.when(sceneMapper.findById(1L)).thenReturn(Optional.of(existing));
-        Mockito.when(repositoryMapper.findById(2L)).thenReturn(Optional.of(targetRepository));
+        Mockito.when(sceneMapper.findByIdAndSpaceId(1L, 7L)).thenReturn(Optional.of(existing));
+        Mockito.when(repositoryMapper.findByIdAndSpaceId(2L, 7L)).thenReturn(Optional.of(targetRepository));
         Mockito.when(sceneMapper.update(existing)).thenReturn(1);
 
-        SceneEntity result = service.update(1L, update);
+        SceneEntity result = service.update(7L, 1L, update);
 
         assertThat(result.getRepoId()).isEqualTo(2L);
         assertThat(result.getName()).isEqualTo("checkout nightly");
@@ -264,11 +267,14 @@ class SceneServiceImplTest {
         disabledRepository.setId(7L);
         disabledRepository.setEnabled(false);
 
-        Mockito.when(repositoryMapper.findById(7L)).thenReturn(Optional.of(disabledRepository));
+        Mockito.when(repositoryMapper.findByIdAndSpaceId(7L, 7L)).thenReturn(Optional.of(disabledRepository));
 
         org.junit.jupiter.api.Assertions.assertThrows(
                 IllegalArgumentException.class,
-                () -> service.create(scene));
+                () -> {
+                    scene.setSpaceId(7L);
+                    service.create(scene);
+                });
         Mockito.verify(sceneMapper, Mockito.never()).insert(Mockito.any(SceneEntity.class));
     }
 
@@ -283,9 +289,12 @@ class SceneServiceImplTest {
         scene.setRepoId(9L);
         scene.setName("login");
 
-        Mockito.when(repositoryMapper.findById(9L)).thenReturn(Optional.empty());
+        Mockito.when(repositoryMapper.findByIdAndSpaceId(9L, 7L)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.create(scene))
+        assertThatThrownBy(() -> {
+            scene.setSpaceId(7L);
+            service.create(scene);
+        })
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("所属仓库不存在，请重新选择");
         Mockito.verify(sceneMapper, Mockito.never()).insert(Mockito.any(SceneEntity.class));
@@ -312,13 +321,15 @@ class SceneServiceImplTest {
         enabledRepository.setId(9L);
         enabledRepository.setEnabled(true);
 
-        Mockito.when(repositoryMapper.findById(9L)).thenReturn(Optional.of(enabledRepository));
+        enabledRepository.setSpaceId(7L);
+        Mockito.when(repositoryMapper.findByIdAndSpaceId(9L, 7L)).thenReturn(Optional.of(enabledRepository));
         Mockito.when(sceneMapper.insert(Mockito.any(SceneEntity.class))).thenAnswer(invocation -> {
             SceneEntity entity = invocation.getArgument(0);
             entity.setId(33L);
             return 1;
         });
 
+        scene.setSpaceId(7L);
         SceneEntity result = service.create(scene);
 
         assertThat(result.getId()).isEqualTo(33L);
@@ -346,10 +357,14 @@ class SceneServiceImplTest {
         enabledRepository.setId(9L);
         enabledRepository.setEnabled(true);
 
-        Mockito.when(repositoryMapper.findById(9L)).thenReturn(Optional.of(enabledRepository));
+        enabledRepository.setSpaceId(7L);
+        Mockito.when(repositoryMapper.findByIdAndSpaceId(9L, 7L)).thenReturn(Optional.of(enabledRepository));
         Mockito.when(sceneMapper.existsByNameIgnoreCase("login")).thenReturn(true);
 
-        assertThatThrownBy(() -> service.create(scene))
+        assertThatThrownBy(() -> {
+            scene.setSpaceId(7L);
+            service.create(scene);
+        })
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("场景名称已存在，请更换后重试");
         Mockito.verify(sceneMapper, Mockito.never()).insert(Mockito.any(SceneEntity.class));
@@ -364,10 +379,12 @@ class SceneServiceImplTest {
 
         SceneEntity existing = new SceneEntity();
         existing.setId(1L);
+        existing.setSpaceId(7L);
         existing.setRepoId(9L);
         existing.setName("checkout");
 
         SceneEntity update = new SceneEntity();
+        update.setSpaceId(7L);
         update.setRepoId(9L);
         update.setName("checkout");
 
@@ -375,11 +392,12 @@ class SceneServiceImplTest {
         enabledRepository.setId(9L);
         enabledRepository.setEnabled(true);
 
-        Mockito.when(sceneMapper.findById(1L)).thenReturn(Optional.of(existing));
-        Mockito.when(repositoryMapper.findById(9L)).thenReturn(Optional.of(enabledRepository));
+        enabledRepository.setSpaceId(7L);
+        Mockito.when(sceneMapper.findByIdAndSpaceId(1L, 7L)).thenReturn(Optional.of(existing));
+        Mockito.when(repositoryMapper.findByIdAndSpaceId(9L, 7L)).thenReturn(Optional.of(enabledRepository));
         Mockito.when(sceneMapper.existsByNameIgnoreCaseAndIdNot("checkout", 1L)).thenReturn(true);
 
-        assertThatThrownBy(() -> service.update(1L, update))
+        assertThatThrownBy(() -> service.update(7L, 1L, update))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("场景名称已存在，请更换后重试");
         Mockito.verify(sceneMapper, Mockito.never()).update(Mockito.any(SceneEntity.class));
@@ -422,6 +440,7 @@ class SceneServiceImplTest {
 
         SceneEntity scene = new SceneEntity();
         scene.setId(11L);
+        scene.setSpaceId(7L);
         scene.setRepoId(7L);
         scene.setName("login");
         scene.setDescription("smoke");
@@ -430,10 +449,10 @@ class SceneServiceImplTest {
         scene.setCronExpression(null);
         scene.setEnvJson("{\"foo\":\"bar\"}");
 
-        Mockito.when(sceneMapper.findPage(10, 0)).thenReturn(List.of(scene));
-        Mockito.when(sceneMapper.countAll()).thenReturn(1L);
+        Mockito.when(sceneMapper.findPageBySpaceId(7L, 10, 0)).thenReturn(List.of(scene));
+        Mockito.when(sceneMapper.countBySpaceId(7L)).thenReturn(1L);
 
-        var page = service.listCards(1, 10);
+        var page = service.listCards(7L, 1, 10);
 
         assertThat(page.items()).hasSize(1);
         assertThat(page.total()).isEqualTo(1);
@@ -474,18 +493,19 @@ class SceneServiceImplTest {
                 detailCacheService);
         SceneEntity cached = new SceneEntity();
         cached.setId(1L);
+        cached.setSpaceId(7L);
         cached.setName("cached");
         Mockito.when(detailCacheService.getOrLoad(
-                        Mockito.eq("scene"),
+                        Mockito.eq("scene:7"),
                         Mockito.eq(1L),
                         Mockito.eq(SceneEntity.class),
                         Mockito.any()))
                 .thenReturn(Optional.of(cached));
 
-        SceneEntity result = service.get(1L);
+        SceneEntity result = service.get(7L, 1L);
 
         assertThat(result).isSameAs(cached);
-        Mockito.verify(sceneMapper, Mockito.never()).findById(Mockito.anyLong());
+        Mockito.verify(sceneMapper, Mockito.never()).findByIdAndSpaceId(Mockito.anyLong(), Mockito.anyLong());
     }
 
     @Test
@@ -500,16 +520,16 @@ class SceneServiceImplTest {
                 null,
                 detailCacheService);
         Mockito.when(detailCacheService.getOrLoad(
-                        Mockito.eq("scene"),
+                        Mockito.eq("scene:7"),
                         Mockito.eq(404L),
                         Mockito.eq(SceneEntity.class),
                         Mockito.any()))
                 .thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.get(404L))
+        assertThatThrownBy(() -> service.get(7L, 404L))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Scene not found: 404");
-        Mockito.verify(sceneMapper, Mockito.never()).findById(Mockito.anyLong());
+        Mockito.verify(sceneMapper, Mockito.never()).findByIdAndSpaceId(Mockito.anyLong(), Mockito.anyLong());
     }
 
     @Test
@@ -527,8 +547,9 @@ class SceneServiceImplTest {
                 detailCacheService);
         TestRepositoryEntity repository = new TestRepositoryEntity();
         repository.setId(9L);
+        repository.setSpaceId(7L);
         repository.setEnabled(true);
-        Mockito.when(repositoryMapper.findById(9L)).thenReturn(Optional.of(repository));
+        Mockito.when(repositoryMapper.findByIdAndSpaceId(9L, 7L)).thenReturn(Optional.of(repository));
         Mockito.when(sceneMapper.insert(Mockito.any(SceneEntity.class))).thenAnswer(invocation -> {
             SceneEntity entity = invocation.getArgument(0);
             entity.setId(33L);
@@ -536,27 +557,30 @@ class SceneServiceImplTest {
         });
         SceneEntity existing = new SceneEntity();
         existing.setId(33L);
+        existing.setSpaceId(7L);
         existing.setRepoId(9L);
         existing.setName("login");
-        Mockito.when(sceneMapper.findById(33L)).thenReturn(Optional.of(existing));
+        Mockito.when(sceneMapper.findByIdAndSpaceId(33L, 7L)).thenReturn(Optional.of(existing));
         Mockito.when(detailCacheService.getOrLoad(
-                        Mockito.eq("scene"),
+                        Mockito.eq("scene:7"),
                         Mockito.eq(33L),
                         Mockito.eq(SceneEntity.class),
                         Mockito.any()))
                 .thenAnswer(invocation -> invocation.<Supplier<Optional<SceneEntity>>>getArgument(3).get());
 
         SceneEntity created = new SceneEntity();
+        created.setSpaceId(7L);
         created.setRepoId(9L);
         created.setName("login");
         service.create(created);
         SceneEntity update = new SceneEntity();
+        update.setSpaceId(7L);
         update.setRepoId(9L);
         update.setName("login-new");
-        service.update(33L, update);
-        service.delete(33L);
+        service.update(7L, 33L, update);
+        service.delete(7L, 33L);
 
-        Mockito.verify(detailCacheService, Mockito.times(3)).invalidate("scene", 33L);
+        Mockito.verify(detailCacheService, Mockito.times(3)).invalidate("scene:7", 33L);
         Mockito.verify(sceneCascadeDeleteService).deleteSceneGraph(33L);
     }
 

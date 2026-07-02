@@ -25,6 +25,7 @@ class RepositoryServiceImplTest {
 
         TestRepositoryEntity payload = new TestRepositoryEntity();
         payload.setName("playwright-framework");
+        payload.setSpaceId(7L);
         payload.setGitUrl("https://github.com/demo/testframe.git");
         payload.setDefaultBranch("main");
         payload.setWorkingDirectory("playwright_framework");
@@ -53,7 +54,7 @@ class RepositoryServiceImplTest {
         assertThat(result.getId()).isEqualTo(1L);
         assertThat(result.getWorkingDirectory()).isEqualTo("playwright_framework");
         assertThat(captor.getValue().getWorkingDirectory()).isEqualTo("playwright_framework");
-        Mockito.verify(detailCacheService).invalidate("repository", 1L);
+        Mockito.verify(detailCacheService).invalidate("repository:7", 1L);
     }
 
     @Test
@@ -86,10 +87,10 @@ class RepositoryServiceImplTest {
         payload.setArtifactRootRelativePath(".playwright-artifacts");
         payload.setEnabled(false);
 
-        Mockito.when(repositoryMapper.findById(1L)).thenReturn(Optional.of(existing));
+        Mockito.when(repositoryMapper.findByIdAndSpaceId(1L, 7L)).thenReturn(Optional.of(existing));
         Mockito.when(repositoryMapper.update(Mockito.any(TestRepositoryEntity.class))).thenReturn(1);
         Mockito.when(detailCacheService.getOrLoad(
-                        Mockito.eq("repository"),
+                        Mockito.eq("repository:7"),
                         Mockito.eq(1L),
                         Mockito.eq(TestRepositoryEntity.class),
                         Mockito.any()))
@@ -100,12 +101,12 @@ class RepositoryServiceImplTest {
                 repositoryCascadeDeleteService,
                 detailCacheService);
 
-        TestRepositoryEntity result = service.update(1L, payload);
+        TestRepositoryEntity result = service.update(7L, 1L, payload);
 
         Mockito.verify(repositoryMapper).update(existing);
         assertThat(result.getWorkingDirectory()).isEqualTo("playwright_framework");
         assertThat(result.getDefaultBranch()).isEqualTo("release");
-        Mockito.verify(detailCacheService).invalidate("repository", 1L);
+        Mockito.verify(detailCacheService).invalidate("repository:7", 1L);
     }
 
     @Test
@@ -115,6 +116,7 @@ class RepositoryServiceImplTest {
         RepositoryServiceImpl service = new RepositoryServiceImpl(repositoryMapper, repositoryCascadeDeleteService);
 
         TestRepositoryEntity payload = new TestRepositoryEntity();
+        payload.setSpaceId(7L);
         payload.setName("demo-repo");
 
         Mockito.when(repositoryMapper.existsByNameIgnoreCase("demo-repo")).thenReturn(true);
@@ -138,10 +140,10 @@ class RepositoryServiceImplTest {
         TestRepositoryEntity payload = new TestRepositoryEntity();
         payload.setName("demo-repo");
 
-        Mockito.when(repositoryMapper.findById(1L)).thenReturn(Optional.of(existing));
+        Mockito.when(repositoryMapper.findByIdAndSpaceId(1L, 7L)).thenReturn(Optional.of(existing));
         Mockito.when(repositoryMapper.existsByNameIgnoreCaseAndIdNot("demo-repo", 1L)).thenReturn(true);
 
-        assertThatThrownBy(() -> service.update(1L, payload))
+        assertThatThrownBy(() -> service.update(7L, 1L, payload))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("仓库名称已存在，请更换后重试");
         Mockito.verify(repositoryMapper, Mockito.never()).update(Mockito.any(TestRepositoryEntity.class));
@@ -155,29 +157,46 @@ class RepositoryServiceImplTest {
                 Mockito.mock(RepositoryCascadeDeleteService.class));
         TestRepositoryEntity entity = new TestRepositoryEntity();
         entity.setId(1L);
-        Mockito.when(repositoryMapper.countAll()).thenReturn(1L);
-        Mockito.when(repositoryMapper.findPage(100, 0)).thenReturn(List.of(entity));
+        entity.setSpaceId(7L);
+        Mockito.when(repositoryMapper.countBySpaceId(7L)).thenReturn(1L);
+        Mockito.when(repositoryMapper.findPageBySpaceId(7L, 100, 0)).thenReturn(List.of(entity));
 
-        PageResponse<TestRepositoryEntity> response = service.list(0, 200);
+        PageResponse<TestRepositoryEntity> response = service.list(7L, 0, 200);
 
         assertThat(response.page()).isEqualTo(1);
         assertThat(response.size()).isEqualTo(100);
         assertThat(response.total()).isEqualTo(1L);
         assertThat(response.items()).containsExactly(entity);
-        Mockito.verify(repositoryMapper).findPage(100, 0);
+        Mockito.verify(repositoryMapper).findPageBySpaceId(7L, 100, 0);
     }
 
     @Test
-    void shouldThrowWhenRepositoryNotFound() {
+    void shouldThrowWhenRepositoryNotFoundInCurrentSpace() {
         TestRepositoryMapper repositoryMapper = Mockito.mock(TestRepositoryMapper.class);
         RepositoryServiceImpl service = new RepositoryServiceImpl(
                 repositoryMapper,
                 Mockito.mock(RepositoryCascadeDeleteService.class));
-        Mockito.when(repositoryMapper.findById(404L)).thenReturn(Optional.empty());
+        Mockito.when(repositoryMapper.findByIdAndSpaceId(404L, 7L)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.get(404L))
+        assertThatThrownBy(() -> service.get(7L, 404L))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Repository not found: 404");
+    }
+
+    @Test
+    void shouldRejectCrossSpaceUpdate() {
+        TestRepositoryMapper repositoryMapper = Mockito.mock(TestRepositoryMapper.class);
+        RepositoryServiceImpl service = new RepositoryServiceImpl(
+                repositoryMapper,
+                Mockito.mock(RepositoryCascadeDeleteService.class));
+        TestRepositoryEntity payload = new TestRepositoryEntity();
+        payload.setSpaceId(9L);
+        payload.setName("demo");
+
+        assertThatThrownBy(() -> service.update(7L, 1L, payload))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Repository space mismatch");
+        Mockito.verifyNoInteractions(repositoryMapper);
     }
 
     @Test
@@ -192,16 +211,16 @@ class RepositoryServiceImplTest {
         cached.setId(1L);
         cached.setName("cached");
         Mockito.when(detailCacheService.getOrLoad(
-                        Mockito.eq("repository"),
+                        Mockito.eq("repository:7"),
                         Mockito.eq(1L),
                         Mockito.eq(TestRepositoryEntity.class),
                         Mockito.any()))
                 .thenReturn(Optional.of(cached));
 
-        TestRepositoryEntity result = service.get(1L);
+        TestRepositoryEntity result = service.get(7L, 1L);
 
         assertThat(result).isSameAs(cached);
-        Mockito.verify(repositoryMapper, Mockito.never()).findById(Mockito.anyLong());
+        Mockito.verify(repositoryMapper, Mockito.never()).findByIdAndSpaceId(Mockito.anyLong(), Mockito.anyLong());
     }
 
     @Test
@@ -213,16 +232,16 @@ class RepositoryServiceImplTest {
                 Mockito.mock(RepositoryCascadeDeleteService.class),
                 detailCacheService);
         Mockito.when(detailCacheService.getOrLoad(
-                        Mockito.eq("repository"),
+                        Mockito.eq("repository:7"),
                         Mockito.eq(404L),
                         Mockito.eq(TestRepositoryEntity.class),
                         Mockito.any()))
                 .thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.get(404L))
+        assertThatThrownBy(() -> service.get(7L, 404L))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Repository not found: 404");
-        Mockito.verify(repositoryMapper, Mockito.never()).findById(Mockito.anyLong());
+        Mockito.verify(repositoryMapper, Mockito.never()).findByIdAndSpaceId(Mockito.anyLong(), Mockito.anyLong());
     }
 
     @Test
@@ -234,10 +253,20 @@ class RepositoryServiceImplTest {
                 repositoryMapper,
                 repositoryCascadeDeleteService,
                 detailCacheService);
+        TestRepositoryEntity existing = new TestRepositoryEntity();
+        existing.setId(7L);
+        existing.setSpaceId(7L);
+        Mockito.when(repositoryMapper.findByIdAndSpaceId(7L, 7L)).thenReturn(Optional.of(existing));
+        Mockito.when(detailCacheService.getOrLoad(
+                        Mockito.eq("repository:7"),
+                        Mockito.eq(7L),
+                        Mockito.eq(TestRepositoryEntity.class),
+                        Mockito.any()))
+                .thenReturn(Optional.of(existing));
 
-        service.delete(7L);
+        service.delete(7L, 7L);
 
         Mockito.verify(repositoryCascadeDeleteService).deleteRepositoryGraph(7L);
-        Mockito.verify(detailCacheService).invalidate("repository", 7L);
+        Mockito.verify(detailCacheService).invalidate("repository:7", 7L);
     }
 }

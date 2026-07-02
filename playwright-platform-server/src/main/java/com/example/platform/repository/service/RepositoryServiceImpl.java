@@ -37,38 +37,48 @@ public class RepositoryServiceImpl implements RepositoryService {
     @Override
     @Transactional
     public TestRepositoryEntity create(TestRepositoryEntity entity) {
+        if (entity.getSpaceId() == null || entity.getSpaceId() <= 0) {
+            throw new IllegalArgumentException("Repository space is required");
+        }
         String normalizedName = normalizeName(entity.getName());
         validateUniqueName(normalizedName, null);
         entity.setName(normalizedName);
         repository.insert(entity);
-        invalidateDetail(entity.getId());
+        invalidateDetail(entity.getSpaceId(), entity.getId());
         return entity;
     }
 
     @Override
-    public PageResponse<TestRepositoryEntity> list(int page, int size) {
+    public PageResponse<TestRepositoryEntity> list(Long spaceId, int page, int size) {
+        validateSpaceId(spaceId);
         int normalizedPage = normalizePage(page);
         int normalizedSize = normalizeSize(size);
         int offset = (normalizedPage - 1) * normalizedSize;
         return PageResponse.of(
-                repository.findPage(normalizedSize, offset),
-                repository.countAll(),
+                repository.findPageBySpaceId(spaceId, normalizedSize, offset),
+                repository.countBySpaceId(spaceId),
                 normalizedPage,
                 normalizedSize);
     }
 
     @Override
-    public TestRepositoryEntity get(Long id) {
-        return getOptional(id)
+    public TestRepositoryEntity get(Long spaceId, Long id) {
+        validateSpaceId(spaceId);
+        return getOptional(spaceId, id)
                 .orElseThrow(() -> new IllegalArgumentException("Repository not found: " + id));
     }
 
     @Override
     @Transactional
-    public TestRepositoryEntity update(Long id, TestRepositoryEntity entity) {
-        TestRepositoryEntity existing = get(id);
+    public TestRepositoryEntity update(Long spaceId, Long id, TestRepositoryEntity entity) {
+        validateSpaceId(spaceId);
+        if (entity.getSpaceId() != null && !spaceId.equals(entity.getSpaceId())) {
+            throw new IllegalArgumentException("Repository space mismatch");
+        }
+        TestRepositoryEntity existing = get(spaceId, id);
         String normalizedName = normalizeName(entity.getName());
         validateUniqueName(normalizedName, id);
+        existing.setSpaceId(spaceId);
         existing.setName(normalizedName);
         existing.setGitUrl(entity.getGitUrl());
         existing.setDefaultBranch(entity.getDefaultBranch());
@@ -80,27 +90,30 @@ public class RepositoryServiceImpl implements RepositoryService {
         existing.setArtifactRootRelativePath(entity.getArtifactRootRelativePath());
         existing.setEnabled(entity.getEnabled());
         repository.update(existing);
-        invalidateDetail(id);
+        invalidateDetail(spaceId, id);
         return existing;
     }
 
     @Override
     @Transactional
-    public void delete(Long id) {
+    public void delete(Long spaceId, Long id) {
+        validateSpaceId(spaceId);
+        get(spaceId, id);
         repositoryCascadeDeleteService.deleteRepositoryGraph(id);
-        invalidateDetail(id);
+        invalidateDetail(spaceId, id);
     }
 
-    private Optional<TestRepositoryEntity> getOptional(Long id) {
+    private Optional<TestRepositoryEntity> getOptional(Long spaceId, Long id) {
         if (detailCacheService == null) {
-            return repository.findById(id);
+            return repository.findByIdAndSpaceId(id, spaceId);
         }
-        return detailCacheService.getOrLoad("repository", id, TestRepositoryEntity.class, () -> repository.findById(id));
+        return detailCacheService.getOrLoad(detailCacheKey(spaceId), id, TestRepositoryEntity.class,
+                () -> repository.findByIdAndSpaceId(id, spaceId));
     }
 
-    private void invalidateDetail(Long id) {
+    private void invalidateDetail(Long spaceId, Long id) {
         if (detailCacheService != null && id != null) {
-            detailCacheService.invalidate("repository", id);
+            detailCacheService.invalidate(detailCacheKey(spaceId), id);
         }
     }
 
@@ -110,6 +123,16 @@ public class RepositoryServiceImpl implements RepositoryService {
 
     private int normalizeSize(int size) {
         return Math.min(Math.max(size, 1), 100);
+    }
+
+    private void validateSpaceId(Long spaceId) {
+        if (spaceId == null || spaceId <= 0) {
+            throw new IllegalArgumentException("Space not found");
+        }
+    }
+
+    private String detailCacheKey(Long spaceId) {
+        return "repository:%d".formatted(spaceId);
     }
 
     private String normalizeName(String name) {

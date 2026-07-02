@@ -24,11 +24,11 @@ import org.apache.ibatis.annotations.Update;
 public interface TestRepositoryMapper {
     @Insert("""
             insert into test_repository (
-                name, git_url, default_branch, working_directory, install_command,
+                space_id, name, git_url, default_branch, working_directory, install_command,
                 run_command_template, test_root, results_index_relative_path,
                 artifact_root_relative_path, enabled
             ) values (
-                #{name}, #{gitUrl}, #{defaultBranch}, #{workingDirectory}, #{installCommand},
+                #{spaceId}, #{name}, #{gitUrl}, #{defaultBranch}, #{workingDirectory}, #{installCommand},
                 #{runCommandTemplate}, #{testRoot}, #{resultsIndexRelativePath},
                 #{artifactRootRelativePath}, #{enabled}
             )
@@ -38,7 +38,8 @@ public interface TestRepositoryMapper {
 
     @Update("""
             update test_repository
-            set name = #{name},
+            set space_id = #{spaceId},
+                name = #{name},
                 git_url = #{gitUrl},
                 default_branch = #{defaultBranch},
                 working_directory = #{workingDirectory},
@@ -53,14 +54,16 @@ public interface TestRepositoryMapper {
     int update(TestRepositoryEntity entity);
 
     @Select("""
-            select id, name, git_url, default_branch, working_directory, install_command,
+            select id, space_id, name, git_url, default_branch, working_directory, install_command,
                    run_command_template, test_root, results_index_relative_path,
                    artifact_root_relative_path, enabled, created_at, updated_at
             from test_repository
             where id = #{id}
+              and space_id = #{spaceId}
             """)
     @Results(id = "TestRepositoryResultMap", value = {
             @Result(property = "id", column = "id", id = true),
+            @Result(property = "spaceId", column = "space_id"),
             @Result(property = "name", column = "name"),
             @Result(property = "gitUrl", column = "git_url"),
             @Result(property = "defaultBranch", column = "default_branch"),
@@ -74,24 +77,26 @@ public interface TestRepositoryMapper {
             @Result(property = "createdAt", column = "created_at"),
             @Result(property = "updatedAt", column = "updated_at")
     })
-    Optional<TestRepositoryEntity> findById(@Param("id") Long id);
+    Optional<TestRepositoryEntity> findByIdAndSpaceId(@Param("id") Long id, @Param("spaceId") Long spaceId);
 
     @Select("""
-            select id, name, git_url, default_branch, working_directory, install_command,
+            select id, space_id, name, git_url, default_branch, working_directory, install_command,
                    run_command_template, test_root, results_index_relative_path,
                    artifact_root_relative_path, enabled, created_at, updated_at
             from test_repository
+            where space_id = #{spaceId}
             order by updated_at desc, id desc
             limit #{limit} offset #{offset}
             """)
     @ResultMap("TestRepositoryResultMap")
-    List<TestRepositoryEntity> findPage(@Param("limit") int limit, @Param("offset") int offset);
+    List<TestRepositoryEntity> findPageBySpaceId(@Param("spaceId") Long spaceId, @Param("limit") int limit, @Param("offset") int offset);
 
     @Select("""
             select count(1)
             from test_repository
+            where space_id = #{spaceId}
             """)
-    long countAll();
+    long countBySpaceId(@Param("spaceId") Long spaceId);
 
     @Select("""
             select count(1) > 0

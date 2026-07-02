@@ -68,43 +68,51 @@ public class SceneServiceImpl implements SceneService {
     @Override
     @Transactional
     public SceneEntity create(SceneEntity entity) {
-        validateRepository(entity.getRepoId());
+        validateSpaceId(entity.getSpaceId());
+        validateRepository(entity.getSpaceId(), entity.getRepoId());
         SceneEntity normalized = normalizeSelector(entity);
         normalized.setName(normalizeName(normalized.getName()));
         validateUniqueName(normalized.getName(), null);
         normalized.setNextRunAt(resolveNextRunAt(normalized));
         sceneMapper.insert(normalized);
-        invalidateDetail(normalized.getId());
+        invalidateDetail(normalized.getSpaceId(), normalized.getId());
         return normalized;
     }
 
     @Override
-    public PageResponse<SceneCardResponse> listCards(int page, int size) {
+    public PageResponse<SceneCardResponse> listCards(Long spaceId, int page, int size) {
+        validateSpaceId(spaceId);
         int normalizedPage = normalizePage(page);
         int normalizedSize = normalizeSize(size);
         int offset = (normalizedPage - 1) * normalizedSize;
         return PageResponse.of(
-                        sceneMapper.findPage(normalizedSize, offset),
-                        sceneMapper.countAll(),
+                        sceneMapper.findPageBySpaceId(spaceId, normalizedSize, offset),
+                        sceneMapper.countBySpaceId(spaceId),
                         normalizedPage,
                         normalizedSize)
                 .map(this::toCard);
     }
 
     @Override
-    public SceneEntity get(Long id) {
-        return getOptional(id)
+    public SceneEntity get(Long spaceId, Long id) {
+        validateSpaceId(spaceId);
+        return getOptional(spaceId, id)
                 .orElseThrow(() -> new IllegalArgumentException("Scene not found: " + id));
     }
 
     @Override
     @Transactional
-    public SceneEntity update(Long id, SceneEntity entity) {
-        SceneEntity existing = get(id);
-        validateRepository(entity.getRepoId());
+    public SceneEntity update(Long spaceId, Long id, SceneEntity entity) {
+        validateSpaceId(spaceId);
+        if (entity.getSpaceId() != null && !spaceId.equals(entity.getSpaceId())) {
+            throw new IllegalArgumentException("Scene space mismatch");
+        }
+        SceneEntity existing = get(spaceId, id);
+        validateRepository(spaceId, entity.getRepoId());
         SceneEntity normalized = normalizeSelector(entity);
         String normalizedName = normalizeName(normalized.getName());
         validateUniqueName(normalizedName, id);
+        existing.setSpaceId(spaceId);
         existing.setRepoId(entity.getRepoId());
         existing.setName(normalizedName);
         existing.setDescription(entity.getDescription());
@@ -120,15 +128,17 @@ public class SceneServiceImpl implements SceneService {
         existing.setCronExpression(entity.getCronExpression());
         existing.setNextRunAt(resolveNextRunAt(existing));
         sceneMapper.update(existing);
-        invalidateDetail(id);
+        invalidateDetail(spaceId, id);
         return existing;
     }
 
     @Override
     @Transactional
-    public void delete(Long id) {
+    public void delete(Long spaceId, Long id) {
+        validateSpaceId(spaceId);
+        get(spaceId, id);
         sceneCascadeDeleteService.deleteSceneGraph(id);
-        invalidateDetail(id);
+        invalidateDetail(spaceId, id);
     }
 
     @Override
@@ -136,16 +146,17 @@ public class SceneServiceImpl implements SceneService {
         sceneMapper.deleteAllByRepoId(repoId);
     }
 
-    private Optional<SceneEntity> getOptional(Long id) {
+    private Optional<SceneEntity> getOptional(Long spaceId, Long id) {
         if (detailCacheService == null) {
-            return sceneMapper.findById(id);
+            return sceneMapper.findByIdAndSpaceId(id, spaceId);
         }
-        return detailCacheService.getOrLoad("scene", id, SceneEntity.class, () -> sceneMapper.findById(id));
+        return detailCacheService.getOrLoad(detailCacheKey(spaceId), id, SceneEntity.class,
+                () -> sceneMapper.findByIdAndSpaceId(id, spaceId));
     }
 
-    private void invalidateDetail(Long id) {
+    private void invalidateDetail(Long spaceId, Long id) {
         if (detailCacheService != null && id != null) {
-            detailCacheService.invalidate("scene", id);
+            detailCacheService.invalidate(detailCacheKey(spaceId), id);
         }
     }
 
@@ -195,15 +206,25 @@ public class SceneServiceImpl implements SceneService {
                 LocalDateTime.now());
     }
 
-    private void validateRepository(Long repoId) {
+    private void validateRepository(Long spaceId, Long repoId) {
         if (repoId == null || repoId <= 0) {
             throw new IllegalArgumentException("请选择有效的所属仓库");
         }
-        TestRepositoryEntity repositoryEntity = repositoryMapper.findById(repoId)
+        TestRepositoryEntity repositoryEntity = repositoryMapper.findByIdAndSpaceId(repoId, spaceId)
                 .orElseThrow(() -> new IllegalArgumentException("所属仓库不存在，请重新选择"));
         if (!Boolean.TRUE.equals(repositoryEntity.getEnabled())) {
             throw new IllegalArgumentException("所属仓库已停用，请先启用仓库");
         }
+    }
+
+    private void validateSpaceId(Long spaceId) {
+        if (spaceId == null || spaceId <= 0) {
+            throw new IllegalArgumentException("Space not found");
+        }
+    }
+
+    private String detailCacheKey(Long spaceId) {
+        return "scene:%d".formatted(spaceId);
     }
 
     private SceneCardResponse toCard(SceneEntity scene) {

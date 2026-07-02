@@ -43,23 +43,23 @@ public class SceneController {
             @PathVariable Long spaceId,
             @org.springframework.web.bind.annotation.RequestParam(defaultValue = "1") int page,
             @org.springframework.web.bind.annotation.RequestParam(defaultValue = "10") int size) {
-        return ApiResponse.ok(sceneService.listCards(page, size));
+        return ApiResponse.ok(sceneService.listCards(spaceId, page, size));
     }
 
     @GetMapping("/{id}")
     public ApiResponse<SceneEntity> get(@PathVariable Long spaceId, @PathVariable Long id) {
-        return ApiResponse.ok(sceneService.get(id));
+        return ApiResponse.ok(sceneService.get(spaceId, id));
     }
 
     @PutMapping("/{id}")
     public ApiResponse<SceneEntity> update(@PathVariable Long spaceId, @PathVariable Long id, @RequestBody SceneEntity entity) {
         entity.setSpaceId(spaceId);
-        return ApiResponse.ok(sceneService.update(id, entity));
+        return ApiResponse.ok(sceneService.update(spaceId, id, entity));
     }
 
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(@PathVariable Long spaceId, @PathVariable Long id) {
-        sceneService.delete(id);
+        sceneService.delete(spaceId, id);
     }
 }
