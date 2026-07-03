@@ -4,6 +4,7 @@ import com.example.platform.scene.model.ScheduleEventEntity;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Options;
@@ -253,4 +254,10 @@ public interface ScheduleEventMapper {
                                                                      @Param("sceneId") Long sceneId,
                                                                      @Param("limit") int limit,
                                                                      @Param("offset") int offset);
+
+    @Delete("""
+            delete from schedule_event
+            where scene_id = #{sceneId}
+            """)
+    int deleteAllBySceneId(@Param("sceneId") Long sceneId);
 }

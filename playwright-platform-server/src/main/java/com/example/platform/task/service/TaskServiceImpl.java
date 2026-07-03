@@ -460,6 +460,13 @@ public class TaskServiceImpl implements TaskService {
     }
 
     @Override
+    public TaskEntity createAndStart(Long spaceId, Long sceneId) {
+        sceneRepository.findByIdAndSpaceId(sceneId, spaceId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Scene not found: " + sceneId));
+        return createAndStart(sceneId);
+    }
+
+    @Override
     public TaskEntity createAndRun(Long sceneId) {
         TaskEntity createdTask = taskCreationService.createTask(sceneId, "MANUAL", "manual-run", null);
         TestRepositoryEntity repository = repositoryRepository.findById(createdTask.getRepoId())
@@ -543,6 +550,17 @@ public class TaskServiceImpl implements TaskService {
     }
 
     @Override
+    public PageResponse<SceneTaskListResponse> list(Long spaceId, int page, int size) {
+        int normalizedPage = normalizePage(page);
+        int normalizedSize = normalizeSize(size);
+        int offset = (normalizedPage - 1) * normalizedSize;
+        List<TaskEntity> tasks = taskRepository.findPageBySpaceId(spaceId, normalizedSize, offset);
+        long total = taskRepository.countBySpaceId(spaceId);
+        return PageResponse.of(tasks, total, normalizedPage, normalizedSize)
+                .map(taskQueryViewService::toSceneTaskListResponse);
+    }
+
+    @Override
     public PageResponse<SceneTaskListResponse> listByScene(Long sceneId, int page, int size) {
         if (!sceneRepository.findById(sceneId).isPresent()) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Scene not found: " + sceneId);
@@ -557,9 +575,28 @@ public class TaskServiceImpl implements TaskService {
     }
 
     @Override
+    public PageResponse<SceneTaskListResponse> listByScene(Long spaceId, Long sceneId, int page, int size) {
+        SceneEntity scene = sceneRepository.findByIdAndSpaceId(sceneId, spaceId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Scene not found: " + sceneId));
+        int normalizedPage = normalizePage(page);
+        int normalizedSize = normalizeSize(size);
+        int offset = (normalizedPage - 1) * normalizedSize;
+        List<TaskEntity> tasks = taskRepository.findBySceneIdAndSpaceIdPage(scene.getId(), spaceId, normalizedSize, offset);
+        long total = taskRepository.countBySceneIdAndSpaceId(scene.getId(), spaceId);
+        return PageResponse.of(tasks, total, normalizedPage, normalizedSize)
+                .map(taskQueryViewService::toSceneTaskListResponse);
+    }
+
+    @Override
     public TaskEntity get(Long taskId) {
         return taskRepository.findById(taskId)
-                .orElseThrow(() -> new IllegalArgumentException("Task not found: " + taskId));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Task not found: " + taskId));
+    }
+
+    @Override
+    public TaskEntity get(Long spaceId, Long taskId) {
+        return taskRepository.findByIdAndSpaceId(taskId, spaceId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Task not found: " + taskId));
     }
 
     @Override
@@ -582,8 +619,35 @@ public class TaskServiceImpl implements TaskService {
     }
 
     @Override
+    public TaskDetailResponse getDetail(Long spaceId, Long taskId) {
+        if (detailCacheService == null) {
+            return loadTaskDetail(spaceId, taskId);
+        }
+        try {
+            return detailCacheService.getOrLoad("task:%d".formatted(spaceId), taskId, TaskDetailResponse.class,
+                            () -> java.util.Optional.of(loadTaskDetail(spaceId, taskId)))
+                    .orElseThrow(() -> new IllegalArgumentException("Task not found: " + taskId));
+        } catch (IllegalStateException exception) {
+            if (!exception.getMessage().startsWith("Failed to read detail cache:")) {
+                throw exception;
+            }
+            TaskEntity task = get(spaceId, taskId);
+            recordApplicationError(task, "DETAIL_CACHE", exception.getMessage(), exception);
+            invalidateTaskDetail(spaceId, taskId);
+            return loadTaskDetail(spaceId, taskId);
+        }
+    }
+
+    @Override
     public TaskDiagnosticsResponse getDiagnostics(Long taskId) {
         TaskEntity task = get(taskId);
+        List<TaskStageLogEntity> stageLogs = taskStageLogService.listByTaskId(taskId);
+        return taskQueryViewService.toTaskDiagnosticsResponse(task, stageLogs);
+    }
+
+    @Override
+    public TaskDiagnosticsResponse getDiagnostics(Long spaceId, Long taskId) {
+        TaskEntity task = get(spaceId, taskId);
         List<TaskStageLogEntity> stageLogs = taskStageLogService.listByTaskId(taskId);
         return taskQueryViewService.toTaskDiagnosticsResponse(task, stageLogs);
     }
@@ -591,6 +655,12 @@ public class TaskServiceImpl implements TaskService {
     private TaskDetailResponse loadTaskDetail(Long taskId) {
         TaskEntity task = get(taskId);
         List<ArtifactEntity> artifacts = listArtifacts(taskId);
+        return taskQueryViewService.toTaskDetailResponse(task, artifacts.size());
+    }
+
+    private TaskDetailResponse loadTaskDetail(Long spaceId, Long taskId) {
+        TaskEntity task = get(spaceId, taskId);
+        List<ArtifactEntity> artifacts = listArtifacts(spaceId, taskId);
         return taskQueryViewService.toTaskDetailResponse(task, artifacts.size());
     }
 
@@ -602,11 +672,29 @@ public class TaskServiceImpl implements TaskService {
     }
 
     @Override
+    public List<ArtifactEntity> listArtifacts(Long spaceId, Long taskId) {
+        get(spaceId, taskId);
+        return artifactRepository.findAllByTaskIdOrderByIdAsc(taskId).stream()
+                .map(artifact -> taskQueryViewService.withAccessibleArtifactUrl(artifact, spaceId))
+                .collect(Collectors.toList());
+    }
+
+    @Override
     public List<CaseResultResponse> listCaseResultResponses(Long taskId) {
         return listCaseResults(taskId).stream()
                 .map(caseResult -> taskQueryViewService.toCaseResultResponse(
                         caseResult,
                         listArtifactsByCaseResult(caseResult.getId())))
+                .toList();
+    }
+
+    @Override
+    public List<CaseResultResponse> listCaseResultResponses(Long spaceId, Long taskId) {
+        get(spaceId, taskId);
+        return listCaseResults(taskId).stream()
+                .map(caseResult -> taskQueryViewService.toCaseResultResponse(
+                        caseResult,
+                        listArtifactsByCaseResult(spaceId, taskId, caseResult.getId())))
                 .toList();
     }
 
@@ -623,6 +711,15 @@ public class TaskServiceImpl implements TaskService {
     }
 
     @Override
+    public List<ArtifactEntity> listArtifactsByCaseResult(Long spaceId, Long taskId, Long caseResultId) {
+        get(spaceId, taskId);
+        return artifactRepository.findAllByCaseResultIdOrderByIdAsc(caseResultId).stream()
+                .filter(artifact -> taskId.equals(artifact.getTaskId()))
+                .map(artifact -> taskQueryViewService.withAccessibleArtifactUrl(artifact, spaceId))
+                .collect(Collectors.toList());
+    }
+
+    @Override
     @Transactional
     public void cancelTask(Long taskId, String operatorName) {
         TaskEntity task = taskRepository.findById(taskId)
@@ -635,9 +732,28 @@ public class TaskServiceImpl implements TaskService {
     }
 
     @Override
+    @Transactional
+    public void cancelTask(Long spaceId, Long taskId, String operatorName) {
+        TaskEntity task = get(spaceId, taskId);
+        task.setCancelRequested(true);
+        task.setCancelRequestedAt(LocalDateTime.now());
+        task.setCancelRequestedBy(operatorName);
+        taskRepository.update(task);
+        invalidateTaskDetail(spaceId, taskId);
+    }
+
+    @Override
     public List<TaskStageLogResponse> listStageLogs(Long taskId) {
         return taskStageLogService.listByTaskId(taskId).stream()
                 .map(taskQueryViewService::toTaskStageLogResponse)
+                .toList();
+    }
+
+    @Override
+    public List<TaskStageLogResponse> listStageLogs(Long spaceId, Long taskId) {
+        get(spaceId, taskId);
+        return taskStageLogService.listByTaskId(taskId).stream()
+                .map(stageLog -> taskQueryViewService.toTaskStageLogResponse(stageLog, spaceId))
                 .toList();
     }
 
@@ -656,8 +772,36 @@ public class TaskServiceImpl implements TaskService {
     }
 
     @Override
+    public ResponseEntity<Resource> downloadArtifact(Long spaceId, Long taskId, Long artifactId) {
+        get(spaceId, taskId);
+        ArtifactEntity artifact = artifactRepository.findAllByTaskIdOrderByIdAsc(taskId).stream()
+                .filter(item -> artifactId.equals(item.getId()))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Artifact not found: " + artifactId));
+        return buildStorageDownloadResponse(
+                artifact.getBucket(),
+                artifact.getObjectKey(),
+                artifact.getContentType(),
+                artifact.getSize());
+    }
+
+    @Override
     public ResponseEntity<Resource> downloadStageLog(Long taskId, Long stageLogId) {
         get(taskId);
+        TaskStageLogEntity stageLog = taskStageLogService.listByTaskId(taskId).stream()
+                .filter(item -> stageLogId.equals(item.getId()))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Task stage log not found: " + stageLogId));
+        return buildStorageDownloadResponse(
+                storageBucket,
+                stageLog.getObjectKey(),
+                stageLog.getContentType(),
+                stageLog.getSize());
+    }
+
+    @Override
+    public ResponseEntity<Resource> downloadStageLog(Long spaceId, Long taskId, Long stageLogId) {
+        get(spaceId, taskId);
         TaskStageLogEntity stageLog = taskStageLogService.listByTaskId(taskId).stream()
                 .filter(item -> stageLogId.equals(item.getId()))
                 .findFirst()
@@ -718,6 +862,12 @@ public class TaskServiceImpl implements TaskService {
         }
     }
 
+    private void invalidateTaskDetail(Long spaceId, Long taskId) {
+        if (detailCacheService != null && taskId != null) {
+            detailCacheService.invalidate("task:%d".formatted(spaceId), taskId);
+        }
+    }
+
     private void invalidateSceneDetail(Long sceneId) {
         if (detailCacheService != null && sceneId != null) {
             detailCacheService.invalidate("scene", sceneId);
@@ -737,6 +887,7 @@ public class TaskServiceImpl implements TaskService {
     private TaskEntity copyTask(TaskEntity source) {
         TaskEntity copy = new TaskEntity();
         copy.setId(source.getId());
+        copy.setSpaceId(source.getSpaceId());
         copy.setSceneId(source.getSceneId());
         copy.setRepoId(source.getRepoId());
         copy.setStatus(source.getStatus());

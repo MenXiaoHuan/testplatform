@@ -16,6 +16,11 @@ USE playwright_platform;
 
 DROP TABLE IF EXISTS platform_audit_log;
 DROP TABLE IF EXISTS scene_schedule_state;
+DROP TABLE IF EXISTS user_session;
+DROP TABLE IF EXISTS platform_user;
+DROP TABLE IF EXISTS space_access_request;
+DROP TABLE IF EXISTS space_member;
+DROP TABLE IF EXISTS space;
 DROP TABLE IF EXISTS task_stage_log;
 DROP TABLE IF EXISTS artifact;
 DROP TABLE IF EXISTS case_result;
@@ -23,8 +28,71 @@ DROP TABLE IF EXISTS task;
 DROP TABLE IF EXISTS scene;
 DROP TABLE IF EXISTS test_repository;
 
+CREATE TABLE platform_user (
+    id bigint PRIMARY KEY AUTO_INCREMENT,
+    username varchar(128) NOT NULL,
+    nickname varchar(128) NULL,
+    password_hash varchar(255) NOT NULL,
+    avatar_object_key varchar(512) NULL,
+    enabled tinyint(1) NOT NULL DEFAULT 1,
+    last_space_id bigint NULL,
+    created_at datetime NOT NULL DEFAULT current_timestamp,
+    updated_at datetime NOT NULL DEFAULT current_timestamp ON UPDATE current_timestamp,
+    CONSTRAINT uk_platform_user_username UNIQUE (username),
+    CONSTRAINT uk_platform_user_nickname UNIQUE (nickname)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE user_session (
+    session_id varchar(64) PRIMARY KEY,
+    user_id bigint NOT NULL,
+    expires_at datetime NOT NULL,
+    created_at datetime NOT NULL DEFAULT current_timestamp,
+    updated_at datetime NOT NULL DEFAULT current_timestamp ON UPDATE current_timestamp,
+    CONSTRAINT fk_user_session_user FOREIGN KEY (user_id) REFERENCES platform_user(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE space (
+    id bigint PRIMARY KEY AUTO_INCREMENT,
+    name varchar(128) NOT NULL,
+    description varchar(512) NULL,
+    owner_user_id bigint NULL,
+    created_by bigint NULL,
+    created_at datetime NOT NULL DEFAULT current_timestamp,
+    updated_at datetime NOT NULL DEFAULT current_timestamp ON UPDATE current_timestamp,
+    CONSTRAINT uk_space_name UNIQUE (name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE space_member (
+    id bigint PRIMARY KEY AUTO_INCREMENT,
+    space_id bigint NOT NULL,
+    user_id bigint NOT NULL,
+    role varchar(32) NOT NULL,
+    status varchar(32) NOT NULL DEFAULT 'ACTIVE',
+    joined_at datetime NOT NULL DEFAULT current_timestamp,
+    created_at datetime NOT NULL DEFAULT current_timestamp,
+    updated_at datetime NOT NULL DEFAULT current_timestamp ON UPDATE current_timestamp,
+    CONSTRAINT fk_space_member_space FOREIGN KEY (space_id) REFERENCES space(id),
+    CONSTRAINT uk_space_member UNIQUE (space_id, user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE space_access_request (
+    id bigint PRIMARY KEY AUTO_INCREMENT,
+    space_id bigint NOT NULL,
+    applicant_user_id bigint NOT NULL,
+    requested_role varchar(32) NOT NULL,
+    reason varchar(512) NOT NULL,
+    status varchar(32) NOT NULL DEFAULT 'PENDING',
+    review_comment varchar(512) NULL,
+    reviewed_by bigint NULL,
+    reviewed_at datetime NULL,
+    created_at datetime NOT NULL DEFAULT current_timestamp,
+    updated_at datetime NOT NULL DEFAULT current_timestamp ON UPDATE current_timestamp,
+    CONSTRAINT fk_space_access_request_space FOREIGN KEY (space_id) REFERENCES space(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE test_repository (
     id bigint PRIMARY KEY AUTO_INCREMENT,
+    space_id bigint NOT NULL,
     name varchar(128) NOT NULL,
     git_url varchar(512) NOT NULL,
     default_branch varchar(128) NOT NULL,
@@ -37,11 +105,13 @@ CREATE TABLE test_repository (
     enabled tinyint NOT NULL DEFAULT 1,
     created_at datetime NOT NULL DEFAULT current_timestamp,
     updated_at datetime NOT NULL DEFAULT current_timestamp ON UPDATE current_timestamp,
+    CONSTRAINT fk_test_repository_space FOREIGN KEY (space_id) REFERENCES space(id),
     CONSTRAINT uk_test_repository_name UNIQUE (name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE scene (
     id bigint PRIMARY KEY AUTO_INCREMENT,
+    space_id bigint NOT NULL,
     repo_id bigint NOT NULL,
     name varchar(128) NOT NULL,
     description varchar(512) NULL,
@@ -59,6 +129,7 @@ CREATE TABLE scene (
     last_task_status varchar(32) NULL,
     created_at datetime NOT NULL DEFAULT current_timestamp,
     updated_at datetime NOT NULL DEFAULT current_timestamp ON UPDATE current_timestamp,
+    CONSTRAINT fk_scene_space FOREIGN KEY (space_id) REFERENCES space(id),
     CONSTRAINT fk_scene_repo FOREIGN KEY (repo_id) REFERENCES test_repository(id),
     CONSTRAINT uk_scene_name UNIQUE (name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -68,6 +139,7 @@ CREATE INDEX idx_scene_schedule_next_run_at
 
 CREATE TABLE task (
     id bigint PRIMARY KEY AUTO_INCREMENT,
+    space_id bigint NOT NULL,
     scene_id bigint NOT NULL,
     repo_id bigint NOT NULL,
     status varchar(32) NOT NULL,
@@ -96,6 +168,7 @@ CREATE TABLE task (
     resolved_run_command varchar(1024) NULL,
     created_at datetime NOT NULL DEFAULT current_timestamp,
     updated_at datetime NOT NULL DEFAULT current_timestamp ON UPDATE current_timestamp,
+    CONSTRAINT fk_task_space FOREIGN KEY (space_id) REFERENCES space(id),
     CONSTRAINT fk_task_scene FOREIGN KEY (scene_id) REFERENCES scene(id),
     CONSTRAINT fk_task_repo FOREIGN KEY (repo_id) REFERENCES test_repository(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -154,6 +227,35 @@ CREATE TABLE scene_schedule_state (
     CONSTRAINT fk_scene_schedule_state_scene FOREIGN KEY (scene_id) REFERENCES scene(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE schedule_event (
+    id bigint PRIMARY KEY AUTO_INCREMENT,
+    space_id bigint NOT NULL,
+    scene_id bigint NOT NULL,
+    planned_fire_at datetime NOT NULL,
+    status varchar(32) NOT NULL,
+    task_id bigint NULL,
+    trigger_reason varchar(128) NULL,
+    error_message varchar(1024) NULL,
+    failure_category varchar(32) NULL,
+    retry_count int NOT NULL DEFAULT 0,
+    next_retry_at datetime NULL,
+    last_error_at datetime NULL,
+    created_at datetime NOT NULL DEFAULT current_timestamp,
+    updated_at datetime NOT NULL DEFAULT current_timestamp ON UPDATE current_timestamp,
+    CONSTRAINT fk_schedule_event_space FOREIGN KEY (space_id) REFERENCES space(id),
+    CONSTRAINT fk_schedule_event_scene FOREIGN KEY (scene_id) REFERENCES scene(id),
+    CONSTRAINT uk_schedule_event_scene_fire UNIQUE (scene_id, planned_fire_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE INDEX idx_schedule_event_retry
+    ON schedule_event (status, task_id, next_retry_at, retry_count, created_at, id);
+
+CREATE INDEX idx_schedule_event_issue_status_updated
+    ON schedule_event (status, updated_at, id);
+
+CREATE INDEX idx_schedule_event_issue_scene_status_updated
+    ON schedule_event (scene_id, status, updated_at, id);
+
 CREATE TABLE platform_audit_log (
     id bigint PRIMARY KEY AUTO_INCREMENT,
     entity_type varchar(32) NOT NULL,
@@ -163,5 +265,11 @@ CREATE TABLE platform_audit_log (
     detail_json json NULL,
     created_at datetime NOT NULL DEFAULT current_timestamp
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE INDEX idx_user_session_user_id ON user_session (user_id);
+CREATE INDEX idx_user_session_expires_at ON user_session (expires_at);
+
+INSERT INTO platform_user (id, username, nickname, password_hash, avatar_object_key, enabled)
+VALUES (1, 'admin', '未命名用户', '$2a$10$klLc4mpiRtJ2TXtjxrXlN.cgQ2RYYRKPD0cBirSx86XnWTUHPv4aO', 'avatars/admin.png', 1);
 
 SET FOREIGN_KEY_CHECKS = 1;

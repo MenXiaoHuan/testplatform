@@ -237,20 +237,33 @@ class ScheduleEventAdminServiceTest {
         }
 
         @Override public TaskEntity createAndStart(Long sceneId) { throw new UnsupportedOperationException(); }
+        @Override public TaskEntity createAndStart(Long spaceId, Long sceneId) { throw new UnsupportedOperationException(); }
         @Override public TaskEntity createAndRun(Long sceneId) { throw new UnsupportedOperationException(); }
         @Override public com.example.platform.common.PageResponse<com.example.platform.task.dto.SceneTaskListResponse> list(int page, int size) { throw new UnsupportedOperationException(); }
+        @Override public com.example.platform.common.PageResponse<com.example.platform.task.dto.SceneTaskListResponse> list(Long spaceId, int page, int size) { throw new UnsupportedOperationException(); }
         @Override public com.example.platform.common.PageResponse<com.example.platform.task.dto.SceneTaskListResponse> listByScene(Long sceneId, int page, int size) { throw new UnsupportedOperationException(); }
+        @Override public com.example.platform.common.PageResponse<com.example.platform.task.dto.SceneTaskListResponse> listByScene(Long spaceId, Long sceneId, int page, int size) { throw new UnsupportedOperationException(); }
         @Override public com.example.platform.task.dto.TaskDetailResponse getDetail(Long taskId) { throw new UnsupportedOperationException(); }
+        @Override public com.example.platform.task.dto.TaskDetailResponse getDetail(Long spaceId, Long taskId) { throw new UnsupportedOperationException(); }
         @Override public com.example.platform.task.dto.TaskDiagnosticsResponse getDiagnostics(Long taskId) { throw new UnsupportedOperationException(); }
+        @Override public com.example.platform.task.dto.TaskDiagnosticsResponse getDiagnostics(Long spaceId, Long taskId) { throw new UnsupportedOperationException(); }
         @Override public TaskEntity get(Long taskId) { throw new UnsupportedOperationException(); }
+        @Override public TaskEntity get(Long spaceId, Long taskId) { throw new UnsupportedOperationException(); }
         @Override public java.util.List<com.example.platform.task.model.ArtifactEntity> listArtifacts(Long taskId) { throw new UnsupportedOperationException(); }
+        @Override public java.util.List<com.example.platform.task.model.ArtifactEntity> listArtifacts(Long spaceId, Long taskId) { throw new UnsupportedOperationException(); }
         @Override public java.util.List<com.example.platform.task.dto.CaseResultResponse> listCaseResultResponses(Long taskId) { throw new UnsupportedOperationException(); }
+        @Override public java.util.List<com.example.platform.task.dto.CaseResultResponse> listCaseResultResponses(Long spaceId, Long taskId) { throw new UnsupportedOperationException(); }
         @Override public java.util.List<com.example.platform.task.model.CaseResultEntity> listCaseResults(Long taskId) { throw new UnsupportedOperationException(); }
         @Override public java.util.List<com.example.platform.task.model.ArtifactEntity> listArtifactsByCaseResult(Long caseResultId) { throw new UnsupportedOperationException(); }
+        @Override public java.util.List<com.example.platform.task.model.ArtifactEntity> listArtifactsByCaseResult(Long spaceId, Long taskId, Long caseResultId) { throw new UnsupportedOperationException(); }
         @Override public void cancelTask(Long taskId, String operatorName) { throw new UnsupportedOperationException(); }
+        @Override public void cancelTask(Long spaceId, Long taskId, String operatorName) { throw new UnsupportedOperationException(); }
         @Override public java.util.List<com.example.platform.task.dto.TaskStageLogResponse> listStageLogs(Long taskId) { throw new UnsupportedOperationException(); }
+        @Override public java.util.List<com.example.platform.task.dto.TaskStageLogResponse> listStageLogs(Long spaceId, Long taskId) { throw new UnsupportedOperationException(); }
         @Override public org.springframework.http.ResponseEntity<org.springframework.core.io.Resource> downloadArtifact(Long taskId, Long artifactId) { throw new UnsupportedOperationException(); }
+        @Override public org.springframework.http.ResponseEntity<org.springframework.core.io.Resource> downloadArtifact(Long spaceId, Long taskId, Long artifactId) { throw new UnsupportedOperationException(); }
         @Override public org.springframework.http.ResponseEntity<org.springframework.core.io.Resource> downloadStageLog(Long taskId, Long stageLogId) { throw new UnsupportedOperationException(); }
+        @Override public org.springframework.http.ResponseEntity<org.springframework.core.io.Resource> downloadStageLog(Long spaceId, Long taskId, Long stageLogId) { throw new UnsupportedOperationException(); }
     }
 
     private static final class FakeSceneScheduleLeaseService implements SceneScheduleLeaseService {

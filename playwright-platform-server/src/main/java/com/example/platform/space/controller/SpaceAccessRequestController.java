@@ -2,10 +2,11 @@ package com.example.platform.space.controller;
 
 import com.example.platform.auth.context.AuthContextHolder;
 import com.example.platform.common.ApiResponse;
+import com.example.platform.space.dto.SpaceAccessRequestResponse;
 import com.example.platform.space.dto.ReviewSpaceAccessRequestRequest;
 import com.example.platform.space.dto.SubmitSpaceAccessRequestRequest;
-import com.example.platform.space.model.SpaceAccessRequestEntity;
 import com.example.platform.space.service.SpaceAccessRequestService;
+import com.example.platform.space.service.SpaceAuthorizationService;
 import java.util.List;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -18,9 +19,13 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/spaces/{spaceId}/access-requests")
 public class SpaceAccessRequestController {
     private final SpaceAccessRequestService spaceAccessRequestService;
+    private final SpaceAuthorizationService spaceAuthorizationService;
 
-    public SpaceAccessRequestController(SpaceAccessRequestService spaceAccessRequestService) {
+    public SpaceAccessRequestController(
+            SpaceAccessRequestService spaceAccessRequestService,
+            SpaceAuthorizationService spaceAuthorizationService) {
         this.spaceAccessRequestService = spaceAccessRequestService;
+        this.spaceAuthorizationService = spaceAuthorizationService;
     }
 
     @PostMapping
@@ -32,7 +37,8 @@ public class SpaceAccessRequestController {
     }
 
     @GetMapping
-    public ApiResponse<List<SpaceAccessRequestEntity>> list(@PathVariable Long spaceId) {
+    public ApiResponse<List<SpaceAccessRequestResponse>> list(@PathVariable Long spaceId) {
+        spaceAuthorizationService.requireAdminSpace(spaceId, AuthContextHolder.require());
         return ApiResponse.ok(spaceAccessRequestService.listBySpace(spaceId, AuthContextHolder.require()));
     }
 
@@ -41,6 +47,7 @@ public class SpaceAccessRequestController {
             @PathVariable Long spaceId,
             @PathVariable Long requestId,
             @RequestBody ReviewSpaceAccessRequestRequest request) {
+        spaceAuthorizationService.requireAdminSpace(spaceId, AuthContextHolder.require());
         spaceAccessRequestService.approveRequest(AuthContextHolder.require(), spaceId, requestId, request);
         return ApiResponse.ok(null);
     }
@@ -50,6 +57,7 @@ public class SpaceAccessRequestController {
             @PathVariable Long spaceId,
             @PathVariable Long requestId,
             @RequestBody ReviewSpaceAccessRequestRequest request) {
+        spaceAuthorizationService.requireAdminSpace(spaceId, AuthContextHolder.require());
         spaceAccessRequestService.rejectRequest(AuthContextHolder.require(), spaceId, requestId, request);
         return ApiResponse.ok(null);
     }

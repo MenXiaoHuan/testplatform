@@ -34,7 +34,19 @@ export function unwrapResponseData<T>(response: AxiosResponse<ApiResponseEnvelop
 const http = axios.create({
   baseURL: '/api',
   timeout: 10000,
+  withCredentials: true,
 })
+
+http.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const status = error?.response?.status
+    if (typeof window !== 'undefined' && status === 401) {
+      window.dispatchEvent(new CustomEvent('platform:unauthorized'))
+    }
+    return Promise.reject(error)
+  },
+)
 
 /** Sends a GET request and unwraps the platform response envelope. */
 export function get<T>(url: string, config?: AxiosRequestConfig) {

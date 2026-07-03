@@ -29,26 +29,30 @@ import org.springframework.stereotype.Service;
 @Service
 public class MinioObjectStorageService implements ObjectStorageService {
     private static final String DEFAULT_CONTENT_TYPE = "application/octet-stream";
+    private static final String DEFAULT_REGION = "us-east-1";
 
     private final MinioClient internalMinioClient;
     private final MinioClient publicMinioClient;
     private final String endpoint;
     private final String publicEndpoint;
+    private final String region;
 
     @Autowired
     public MinioObjectStorageService(
-                                         @Qualifier("internalMinioClient") MinioClient internalMinioClient,
-                                         @Qualifier("publicMinioClient") MinioClient publicMinioClient,
-                                       @Value("${platform.storage.minio.endpoint}") String endpoint,
-                                       @Value("${platform.storage.minio.public-endpoint:${platform.storage.minio.endpoint}}") String publicEndpoint) {
+            @Qualifier("internalMinioClient") MinioClient internalMinioClient,
+            @Qualifier("publicMinioClient") MinioClient publicMinioClient,
+            @Value("${platform.storage.minio.endpoint}") String endpoint,
+            @Value("${platform.storage.minio.public-endpoint:${platform.storage.minio.endpoint}}") String publicEndpoint,
+            @Value("${platform.storage.minio.region:" + DEFAULT_REGION + "}") String region) {
         this.internalMinioClient = internalMinioClient;
         this.publicMinioClient = publicMinioClient;
         this.endpoint = endpoint;
         this.publicEndpoint = publicEndpoint;
+        this.region = normalizeRegion(region);
     }
 
     public MinioObjectStorageService(MinioClient minioClient, String endpoint) {
-        this(minioClient, minioClient, endpoint, endpoint);
+        this(minioClient, minioClient, endpoint, endpoint, DEFAULT_REGION);
     }
 
     @Override
@@ -93,6 +97,7 @@ public class MinioObjectStorageService implements ObjectStorageService {
                     GetPresignedObjectUrlArgs.builder()
                             .method(Method.GET)
                             .bucket(bucket)
+                            .region(region)
                             .object(normalizedObjectKey)
                             .expiry(1, TimeUnit.HOURS)
                             .build());
@@ -203,5 +208,12 @@ public class MinioObjectStorageService implements ObjectStorageService {
         }
 
         return normalized.isBlank() ? candidate : normalized;
+    }
+
+    private String normalizeRegion(String candidateRegion) {
+        if (candidateRegion == null || candidateRegion.isBlank()) {
+            return DEFAULT_REGION;
+        }
+        return candidateRegion.trim();
     }
 }

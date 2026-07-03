@@ -202,21 +202,6 @@ class ScheduleEventServiceImplTest {
         }
 
         @Override
-        public List<ScheduleEventEntity> findIssueEventsPage(List<String> statuses, Long sceneId, int limit, int offset) {
-            return retryableFailedEvents;
-        }
-
-        @Override
-        public long countIssueEventsBySceneId(List<String> statuses, Long sceneId) {
-            return retryableFailedEvents.size();
-        }
-
-        @Override
-        public List<ScheduleEventEntity> findIssueEventsPageBySceneId(List<String> statuses, Long sceneId, int limit, int offset) {
-            return retryableFailedEvents;
-        }
-
-        @Override
         public long countIssueEventsBySpaceId(List<String> statuses, Long spaceId) {
             return retryableFailedEvents.size();
         }
@@ -227,13 +212,32 @@ class ScheduleEventServiceImplTest {
         }
 
         @Override
+        public List<ScheduleEventEntity> findIssueEventsPage(List<String> statuses, Long sceneId, int limit, int offset) {
+            return retryableFailedEvents;
+        }
+
+        @Override
         public List<ScheduleEventEntity> findIssueEventsPageBySpaceId(List<String> statuses, Long spaceId, int limit, int offset) {
             return retryableFailedEvents;
         }
 
         @Override
-        public List<ScheduleEventEntity> findIssueEventsPageBySpaceIdAndSceneId(List<String> statuses, Long spaceId, Long sceneId, int limit, int offset) {
+        public List<ScheduleEventEntity> findIssueEventsPageBySpaceIdAndSceneId(
+                List<String> statuses,
+                Long spaceId,
+                Long sceneId,
+                int limit,
+                int offset) {
             return retryableFailedEvents;
+        }
+
+        @Override
+        public int deleteAllBySceneId(Long sceneId) {
+            if (existing != null && sceneId.equals(existing.getSceneId())) {
+                existing = null;
+                return 1;
+            }
+            return 0;
         }
     }
 }

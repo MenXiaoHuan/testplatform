@@ -1,6 +1,8 @@
 package com.example.platform.scene.service;
 
 import com.example.platform.scene.mapper.SceneMapper;
+import com.example.platform.scene.mapper.SceneScheduleStateMapper;
+import com.example.platform.scene.mapper.ScheduleEventMapper;
 import com.example.platform.storage.service.ObjectStorageService;
 import com.example.platform.task.model.ArtifactEntity;
 import com.example.platform.task.mapper.ArtifactMapper;
@@ -17,6 +19,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class SceneCascadeDeleteServiceImpl implements SceneCascadeDeleteService {
     private final SceneMapper sceneMapper;
+    private final ScheduleEventMapper scheduleEventMapper;
+    private final SceneScheduleStateMapper sceneScheduleStateMapper;
     private final TaskMapper taskRepository;
     private final CaseResultMapper caseResultRepository;
     private final ArtifactMapper artifactRepository;
@@ -26,6 +30,8 @@ public class SceneCascadeDeleteServiceImpl implements SceneCascadeDeleteService 
 
     public SceneCascadeDeleteServiceImpl(
             SceneMapper sceneMapper,
+            ScheduleEventMapper scheduleEventMapper,
+            SceneScheduleStateMapper sceneScheduleStateMapper,
             TaskMapper taskRepository,
             CaseResultMapper caseResultRepository,
             ArtifactMapper artifactRepository,
@@ -33,6 +39,8 @@ public class SceneCascadeDeleteServiceImpl implements SceneCascadeDeleteService 
             ObjectStorageService objectStorageService,
             @Value("${platform.storage.bucket}") String storageBucket) {
         this.sceneMapper = sceneMapper;
+        this.scheduleEventMapper = scheduleEventMapper;
+        this.sceneScheduleStateMapper = sceneScheduleStateMapper;
         this.taskRepository = taskRepository;
         this.caseResultRepository = caseResultRepository;
         this.artifactRepository = artifactRepository;
@@ -59,6 +67,8 @@ public class SceneCascadeDeleteServiceImpl implements SceneCascadeDeleteService 
             taskStageLogRepository.deleteAllByTaskIdIn(taskIds);
         }
 
+        scheduleEventMapper.deleteAllBySceneId(sceneId);
+        sceneScheduleStateMapper.deleteBySceneId(sceneId);
         taskRepository.deleteAllBySceneId(sceneId);
         sceneMapper.deleteById(sceneId);
     }

@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { createScene, deleteScene, getScene, listScenes, updateScene } from '../api/scene'
+import { requireCurrentSpaceId } from './space'
 import { createSceneForm, type SceneDetail, type SceneForm, type SceneRecord } from '../types/scene'
 
 function normalizeSceneRecord(record: SceneRecord) {
@@ -42,11 +43,12 @@ export const useSceneStore = defineStore('scene', {
   }),
   actions: {
     async fetchAll(page?: number, size?: number) {
+      const spaceId = requireCurrentSpaceId()
       const currentPage = page ?? this.page
       const currentSize = size ?? this.size
       this.loading = true
       try {
-        const response = await listScenes(currentPage, currentSize)
+        const response = await listScenes(spaceId, currentPage, currentSize)
         this.items = response.items.map(normalizeSceneRecord)
         this.page = response.page
         this.size = response.size
@@ -57,20 +59,21 @@ export const useSceneStore = defineStore('scene', {
       }
     },
     async fetchOne(id: number) {
-      const detail = await getScene(id)
+      const detail = await getScene(requireCurrentSpaceId(), id)
       return toSceneForm(detail)
     },
     async save(id: number | null, payload: SceneForm) {
+      const spaceId = requireCurrentSpaceId()
       if (id === null) {
-        await createScene(payload)
+        await createScene(spaceId, payload)
         await this.fetchAll(1, this.size)
       } else {
-        await updateScene(id, payload)
+        await updateScene(spaceId, id, payload)
         await this.fetchAll(this.page, this.size)
       }
     },
     async remove(id: number) {
-      await deleteScene(id)
+      await deleteScene(requireCurrentSpaceId(), id)
       const nextPage = this.items.length === 1 && this.page > 1 ? this.page - 1 : this.page
       await this.fetchAll(nextPage, this.size)
     },

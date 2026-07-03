@@ -60,6 +60,29 @@ class SceneScheduleStateMapperTest {
     }
 
     @Test
+    void shouldMarkTriggeredTaskMetadataForMatchedPlannedFireAt() {
+        Long sceneId = insertScene("triggered-state-scene");
+        SceneScheduleStateEntity state = new SceneScheduleStateEntity();
+        state.setSceneId(sceneId);
+        state.setLastPlannedFireAt(LocalDateTime.of(2026, 6, 18, 10, 0));
+        state.setLeaseOwner("scheduler-A");
+        state.setLeaseUntil(LocalDateTime.of(2026, 6, 18, 10, 2));
+        state.setVersion(0L);
+        mapper.insert(state);
+
+        int updatedRows = mapper.markTriggered(
+                sceneId,
+                LocalDateTime.of(2026, 6, 18, 10, 0),
+                101L,
+                LocalDateTime.of(2026, 6, 18, 10, 0, 30));
+
+        assertThat(updatedRows).isEqualTo(1);
+        SceneScheduleStateEntity updated = mapper.findBySceneId(sceneId).orElseThrow();
+        assertThat(updated.getLastTaskId()).isEqualTo(101L);
+        assertThat(updated.getLastTriggeredAt()).isEqualTo(LocalDateTime.of(2026, 6, 18, 10, 0, 30));
+    }
+
+    @Test
     void shouldReturnEmptyWhenScheduleStateMissing() {
         Long sceneId = insertScene("missing-state-scene");
 

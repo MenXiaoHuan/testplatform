@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { createRepository, deleteRepository, listRepositories, updateRepository } from '../api/repository'
+import { requireCurrentSpaceId } from './space'
 import { createRepositoryForm, type RepositoryForm, type RepositoryRecord } from '../types/repository'
 
 export const useRepositoryStore = defineStore('repository', {
@@ -15,11 +16,12 @@ export const useRepositoryStore = defineStore('repository', {
   }),
   actions: {
     async fetchAll(page?: number, size?: number) {
+      const spaceId = requireCurrentSpaceId()
       const currentPage = page ?? this.page
       const currentSize = size ?? this.size
       this.loading = true
       try {
-        const response = await listRepositories(currentPage, currentSize)
+        const response = await listRepositories(spaceId, currentPage, currentSize)
         this.items = response.items
         this.page = response.page
         this.size = response.size
@@ -30,16 +32,17 @@ export const useRepositoryStore = defineStore('repository', {
       }
     },
     async fetchOptions() {
-      const response = await listRepositories(1, 200)
+      const response = await listRepositories(requireCurrentSpaceId(), 1, 200)
       this.options = response.items
       this.optionsLoaded = true
     },
     async save(id: number | null, payload: RepositoryForm) {
+      const spaceId = requireCurrentSpaceId()
       if (id === null) {
-        await createRepository(payload)
+        await createRepository(spaceId, payload)
         await this.fetchAll(1, this.size)
       } else {
-        await updateRepository(id, payload)
+        await updateRepository(spaceId, id, payload)
         await this.fetchAll(this.page, this.size)
       }
       if (this.optionsLoaded) {
@@ -47,7 +50,7 @@ export const useRepositoryStore = defineStore('repository', {
       }
     },
     async remove(id: number) {
-      await deleteRepository(id)
+      await deleteRepository(requireCurrentSpaceId(), id)
       const nextPage = this.items.length === 1 && this.page > 1 ? this.page - 1 : this.page
       await this.fetchAll(nextPage, this.size)
       if (this.optionsLoaded) {

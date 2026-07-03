@@ -60,5 +60,6 @@ platform:
     minio:
       endpoint: ${PLATFORM_MINIO_ENDPOINT}
       public-endpoint: ${PLATFORM_MINIO_PUBLIC_ENDPOINT:${PLATFORM_MINIO_ENDPOINT}}
+      region: ${PLATFORM_MINIO_REGION:us-east-1}
       access-key: ${PLATFORM_MINIO_ACCESS_KEY}
       secret-key: ${PLATFORM_MINIO_SECRET_KEY}

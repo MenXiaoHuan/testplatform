@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { toErrorMessage } from '../../src/utils/error'
+import { isPendingSpaceAccessRequestError, toErrorMessage } from '../../src/utils/error'
 
 describe('toErrorMessage', () => {
   it('should extract msg field from backend error envelope', () => {
@@ -22,5 +22,16 @@ describe('toErrorMessage', () => {
         },
       },
     }, '执行失败')).toBe('参数错误')
+  })
+
+  it('should identify pending access request conflict from backend error envelope', () => {
+    expect(isPendingSpaceAccessRequestError({
+      response: {
+        data: {
+          code: 'CONFLICT',
+          msg: 'request already pending',
+        },
+      },
+    })).toBe(true)
   })
 })

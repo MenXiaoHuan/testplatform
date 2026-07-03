@@ -177,6 +177,16 @@ public interface SceneMapper {
             select
             """ + SCENE_COLUMNS + """
             from scene
+            where space_id = #{spaceId}
+            order by id asc
+            """)
+    @ResultMap("SceneResultMap")
+    List<SceneEntity> findAllBySpaceId(@Param("spaceId") Long spaceId);
+
+    @Select("""
+            select
+            """ + SCENE_COLUMNS + """
+            from scene
             where schedule_enabled = true
             order by id asc
             """)

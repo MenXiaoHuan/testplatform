@@ -23,6 +23,7 @@ class EntitySchemaMappingTest {
     private static final Path INIT_SCHEMA = Path.of("src/main/resources/db/migration/V1__init_schema.sql");
     private static final Path SCHEDULE_EVENT_SCHEMA = Path.of("src/main/resources/db/migration/V2__add_schedule_event.sql");
     private static final Path SPACE_SCHEMA = Path.of("src/main/resources/db/migration/V4__add_space_model.sql");
+    private static final Path AUTH_SCHEMA = Path.of("src/main/resources/db/migration/V5__add_platform_user_and_user_session.sql");
     private static final List<Class<?>> ENTITY_TYPES = List.of(
             TestRepositoryEntity.class,
             SceneEntity.class,
@@ -190,10 +191,24 @@ class EntitySchemaMappingTest {
         assertThat(fieldOf(ScheduleEventEntity.class, "spaceId").getType()).isEqualTo(Long.class);
     }
 
+    @Test
+    void shouldDefineAuthUserAndSessionSchemaInFlyway() throws Exception {
+        String schema = normalizedSchema();
+
+        assertThat(schema).contains("create table platform_user");
+        assertThat(schema).contains("username varchar(128) not null");
+        assertThat(schema).contains("password_hash varchar(255) not null");
+        assertThat(schema).contains("create table user_session");
+        assertThat(schema).contains("session_id varchar(64) primary key");
+        assertThat(schema).contains("user_id bigint not null");
+        assertThat(schema).contains("expires_at datetime not null");
+    }
+
     private String normalizedSchema() throws IOException {
         return (Files.readString(INIT_SCHEMA)
                 + "\n" + Files.readString(SCHEDULE_EVENT_SCHEMA)
-                + "\n" + Files.readString(SPACE_SCHEMA)).toLowerCase();
+                + "\n" + Files.readString(SPACE_SCHEMA)
+                + "\n" + Files.readString(AUTH_SCHEMA)).toLowerCase();
     }
 
     private Field fieldOf(Class<?> type, String fieldName) throws NoSuchFieldException {

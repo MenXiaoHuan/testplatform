@@ -41,15 +41,15 @@ public class TaskExecutionMutationService {
     @Transactional
     public void saveTask(TaskEntity task) {
         taskRepository.update(task);
-        invalidateTaskDetail(task.getId());
+        invalidateTaskDetail(task.getSpaceId(), task.getId());
     }
 
     @Transactional
     public void saveTaskAndScene(TaskEntity task, SceneEntity scene) {
         taskRepository.update(task);
-        invalidateTaskDetail(task.getId());
+        invalidateTaskDetail(task.getSpaceId(), task.getId());
         sceneMapper.update(scene);
-        invalidateSceneDetail(scene.getId());
+        invalidateSceneDetail(scene.getSpaceId(), scene.getId());
     }
 
     @Transactional
@@ -59,18 +59,20 @@ public class TaskExecutionMutationService {
         scene.setLastRunAt(summarySource.getFinishedAt());
         scene.setLastTaskStatus(summarySource.getStatus());
         sceneMapper.update(scene);
-        invalidateSceneDetail(scene.getId());
+        invalidateSceneDetail(scene.getSpaceId(), scene.getId());
     }
 
-    private void invalidateTaskDetail(Long taskId) {
+    private void invalidateTaskDetail(Long spaceId, Long taskId) {
         if (detailCacheService != null && taskId != null) {
-            detailCacheService.invalidate("task", taskId);
+            String key = spaceId == null ? "task" : "task:%d".formatted(spaceId);
+            detailCacheService.invalidate(key, taskId);
         }
     }
 
-    private void invalidateSceneDetail(Long sceneId) {
+    private void invalidateSceneDetail(Long spaceId, Long sceneId) {
         if (detailCacheService != null && sceneId != null) {
-            detailCacheService.invalidate("scene", sceneId);
+            String key = spaceId == null ? "scene" : "scene:%d".formatted(spaceId);
+            detailCacheService.invalidate(key, sceneId);
         }
     }
 }

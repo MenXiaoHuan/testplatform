@@ -59,7 +59,6 @@ public interface TestRepositoryMapper {
                    artifact_root_relative_path, enabled, created_at, updated_at
             from test_repository
             where id = #{id}
-              and space_id = #{spaceId}
             """)
     @Results(id = "TestRepositoryResultMap", value = {
             @Result(property = "id", column = "id", id = true),
@@ -77,7 +76,29 @@ public interface TestRepositoryMapper {
             @Result(property = "createdAt", column = "created_at"),
             @Result(property = "updatedAt", column = "updated_at")
     })
+    Optional<TestRepositoryEntity> findById(@Param("id") Long id);
+
+    @Select("""
+            select id, space_id, name, git_url, default_branch, working_directory, install_command,
+                   run_command_template, test_root, results_index_relative_path,
+                   artifact_root_relative_path, enabled, created_at, updated_at
+            from test_repository
+            where id = #{id}
+              and space_id = #{spaceId}
+            """)
+    @ResultMap("TestRepositoryResultMap")
     Optional<TestRepositoryEntity> findByIdAndSpaceId(@Param("id") Long id, @Param("spaceId") Long spaceId);
+
+    @Select("""
+            select id, space_id, name, git_url, default_branch, working_directory, install_command,
+                   run_command_template, test_root, results_index_relative_path,
+                   artifact_root_relative_path, enabled, created_at, updated_at
+            from test_repository
+            where space_id = #{spaceId}
+            order by id asc
+            """)
+    @ResultMap("TestRepositoryResultMap")
+    List<TestRepositoryEntity> findAllBySpaceId(@Param("spaceId") Long spaceId);
 
     @Select("""
             select id, space_id, name, git_url, default_branch, working_directory, install_command,
@@ -118,4 +139,10 @@ public interface TestRepositoryMapper {
             where id = #{id}
             """)
     int deleteById(@Param("id") Long id);
+
+    @Delete("""
+            delete from test_repository
+            where space_id = #{spaceId}
+            """)
+    int deleteAllBySpaceId(@Param("spaceId") Long spaceId);
 }

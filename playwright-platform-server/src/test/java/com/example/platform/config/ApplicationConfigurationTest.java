@@ -32,7 +32,8 @@ class ApplicationConfigurationTest {
 
         assertThat(devApplicationYaml).contains("url: ${PLATFORM_DB_URL}");
         assertThat(devApplicationYaml).contains("endpoint: ${PLATFORM_MINIO_ENDPOINT}");
-          assertThat(devApplicationYaml).contains("public-endpoint: ${PLATFORM_MINIO_PUBLIC_ENDPOINT:${PLATFORM_MINIO_ENDPOINT}}");
+        assertThat(devApplicationYaml).contains("public-endpoint: ${PLATFORM_MINIO_PUBLIC_ENDPOINT:${PLATFORM_MINIO_ENDPOINT}}");
+        assertThat(devApplicationYaml).contains("region: ${PLATFORM_MINIO_REGION:us-east-1}");
         assertThat(devApplicationYaml).doesNotContain("jdbc:mysql://localhost");
         assertThat(devApplicationYaml).doesNotContain("http://127.0.0.1");
         assertThat(devApplicationYaml).contains("${PLATFORM_DB_USERNAME}");
@@ -70,7 +71,7 @@ class ApplicationConfigurationTest {
         assertThat(compose).contains("${PLATFORM_WEB_HOST_PORT");
         assertThat(compose).contains("${PLATFORM_WEB_API_PROXY_TARGET");
         assertThat(compose).contains("${PLATFORM_MINIO_INTERNAL_ENDPOINT");
-          assertThat(compose).contains("${PLATFORM_MINIO_PUBLIC_ENDPOINT");
+        assertThat(compose).contains("${PLATFORM_MINIO_PUBLIC_ENDPOINT");
         assertThat(compose).contains("${PLATFORM_RUNNER_HOST_WORKSPACE_ROOT");
         assertThat(compose).doesNotContain("\"3307:3306\"");
         assertThat(compose).doesNotContain("\"9000:9000\"");

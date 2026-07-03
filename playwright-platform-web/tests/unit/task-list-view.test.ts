@@ -3,6 +3,7 @@ import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { defineComponent, ref } from 'vue'
 import TaskListView from '../../src/views/task/TaskListView.vue'
+import { useSpaceStore } from '../../src/stores/space'
 import { useTaskStore } from '../../src/stores/task'
 
 const { pushMock, messageCallMock, messageSuccessMock, messageErrorMock } = vi.hoisted(() => ({
@@ -73,6 +74,9 @@ describe('TaskListView', () => {
     messageErrorMock.mockReset()
     pinia = createPinia()
     setActivePinia(pinia)
+    const spaceStore = useSpaceStore()
+    spaceStore.items = [{ id: 7, name: 'Alpha', description: 'alpha space' }]
+    spaceStore.currentSpaceId = 7
     const store = useTaskStore()
     store.fetchAll = vi.fn().mockResolvedValue(undefined)
     store.fetchByScene = vi.fn().mockResolvedValue(undefined)
@@ -112,7 +116,7 @@ describe('TaskListView', () => {
   })
 
   it('should show toast message when executing current scene fails because an active task exists', async () => {
-    routeParams.value = { id: '11' }
+    routeParams.value = { spaceId: '7', sceneId: '11' }
     setActivePinia(pinia)
     const store = useTaskStore()
     store.executeScene = vi.fn().mockRejectedValue({

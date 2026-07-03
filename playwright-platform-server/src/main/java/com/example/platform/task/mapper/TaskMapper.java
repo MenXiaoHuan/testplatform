@@ -25,7 +25,7 @@ import org.apache.ibatis.annotations.Update;
 @Mapper
 public interface TaskMapper {
     String TASK_COLUMNS = """
-            id, scene_id, repo_id, status, current_stage, result_code, result_message,
+            id, space_id, scene_id, repo_id, status, current_stage, result_code, result_message,
             cancel_requested, cancel_requested_at, cancel_requested_by, trigger_type,
             trigger_reason, trigger_user, queued_at, branch, commit_sha, started_at,
             finished_at, duration_ms, runner_name, log_url, resolved_branch,
@@ -35,14 +35,14 @@ public interface TaskMapper {
 
     @Insert("""
             insert into task (
-                scene_id, repo_id, status, current_stage, result_code, result_message,
+                space_id, scene_id, repo_id, status, current_stage, result_code, result_message,
                 cancel_requested, cancel_requested_at, cancel_requested_by, trigger_type,
                 trigger_reason, trigger_user, queued_at, branch, commit_sha, started_at,
                 finished_at, duration_ms, runner_name, log_url, resolved_branch,
                 resolved_browser, resolved_env_json, resolved_match_value, resolved_test_root,
                 resolved_run_command
             ) values (
-                #{sceneId}, #{repoId}, #{status}, #{currentStage}, #{resultCode}, #{resultMessage},
+                #{spaceId}, #{sceneId}, #{repoId}, #{status}, #{currentStage}, #{resultCode}, #{resultMessage},
                 #{cancelRequested}, #{cancelRequestedAt}, #{cancelRequestedBy}, #{triggerType},
                 #{triggerReason}, #{triggerUser}, #{queuedAt}, #{branch}, #{commitSha}, #{startedAt},
                 #{finishedAt}, #{durationMs}, #{runnerName}, #{logUrl}, #{resolvedBranch},
@@ -55,7 +55,8 @@ public interface TaskMapper {
 
     @Update("""
             update task
-            set scene_id = #{sceneId},
+            set space_id = #{spaceId},
+                scene_id = #{sceneId},
                 repo_id = #{repoId},
                 status = #{status},
                 current_stage = #{currentStage},
@@ -93,6 +94,7 @@ public interface TaskMapper {
             """)
     @Results(id = "TaskResultMap", value = {
             @Result(property = "id", column = "id", id = true),
+            @Result(property = "spaceId", column = "space_id"),
             @Result(property = "sceneId", column = "scene_id"),
             @Result(property = "repoId", column = "repo_id"),
             @Result(property = "status", column = "status"),
@@ -128,6 +130,16 @@ public interface TaskMapper {
             select
             """ + TASK_COLUMNS + """
             from task
+            where id = #{id}
+              and space_id = #{spaceId}
+            """)
+    @ResultMap("TaskResultMap")
+    Optional<TaskEntity> findByIdAndSpaceId(@Param("id") Long id, @Param("spaceId") Long spaceId);
+
+    @Select("""
+            select
+            """ + TASK_COLUMNS + """
+            from task
             order by created_at desc, id desc
             limit #{limit} offset #{offset}
             """)
@@ -136,6 +148,24 @@ public interface TaskMapper {
 
     @Select("select count(1) from task")
     long countAll();
+
+    @Select("""
+            select
+            """ + TASK_COLUMNS + """
+            from task
+            where space_id = #{spaceId}
+            order by created_at desc, id desc
+            limit #{limit} offset #{offset}
+            """)
+    @ResultMap("TaskResultMap")
+    List<TaskEntity> findPageBySpaceId(@Param("spaceId") Long spaceId, @Param("limit") int limit, @Param("offset") int offset);
+
+    @Select("""
+            select count(1)
+            from task
+            where space_id = #{spaceId}
+            """)
+    long countBySpaceId(@Param("spaceId") Long spaceId);
 
     @Select("""
             select
@@ -155,6 +185,29 @@ public interface TaskMapper {
             where scene_id = #{sceneId}
             """)
     long countBySceneId(@Param("sceneId") Long sceneId);
+
+    @Select("""
+            select
+            """ + TASK_COLUMNS + """
+            from task
+            where scene_id = #{sceneId}
+              and space_id = #{spaceId}
+            order by created_at desc, id desc
+            limit #{limit} offset #{offset}
+            """)
+    @ResultMap("TaskResultMap")
+    List<TaskEntity> findBySceneIdAndSpaceIdPage(@Param("sceneId") Long sceneId,
+                                                 @Param("spaceId") Long spaceId,
+                                                 @Param("limit") int limit,
+                                                 @Param("offset") int offset);
+
+    @Select("""
+            select count(1)
+            from task
+            where scene_id = #{sceneId}
+              and space_id = #{spaceId}
+            """)
+    long countBySceneIdAndSpaceId(@Param("sceneId") Long sceneId, @Param("spaceId") Long spaceId);
 
     @Select("""
             select

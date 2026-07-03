@@ -4,6 +4,9 @@ import com.example.platform.common.PageResponse;
 import com.example.platform.audit.mapper.PlatformAuditLogMapper;
 import com.example.platform.auth.config.AuthProperties;
 import com.example.platform.auth.crypto.AuthKeyProvider;
+import com.example.platform.auth.mapper.PlatformUserMapper;
+import com.example.platform.auth.mapper.UserSessionMapper;
+import com.example.platform.auth.model.AuthSession;
 import com.example.platform.auth.service.AuthService;
 import com.example.platform.repository.mapper.TestRepositoryMapper;
 import com.example.platform.repository.model.TestRepositoryEntity;
@@ -14,10 +17,12 @@ import com.example.platform.scene.mapper.SceneScheduleStateMapper;
 import com.example.platform.space.mapper.SpaceAccessRequestMapper;
 import com.example.platform.space.mapper.SpaceMapper;
 import com.example.platform.space.mapper.SpaceMemberMapper;
+import com.example.platform.space.service.SpaceAuthorizationService;
 import com.example.platform.task.mapper.ArtifactMapper;
 import com.example.platform.task.mapper.CaseResultMapper;
 import com.example.platform.task.mapper.TaskMapper;
 import com.example.platform.task.mapper.TaskStageLogMapper;
+import java.time.LocalDateTime;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -26,6 +31,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import static org.hamcrest.Matchers.nullValue;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -45,9 +51,10 @@ class RepositoryControllerTest {
     @MockitoBean private AuthService authService;
     @MockitoBean private AuthKeyProvider authKeyProvider;
     @MockitoBean private AuthProperties authProperties;
+    @MockitoBean private PlatformUserMapper platformUserMapper;
+    @MockitoBean private UserSessionMapper userSessionMapper;
+    @MockitoBean private PlatformAuditLogMapper platformAuditLogMapper;
 
-    @MockitoBean
-    private PlatformAuditLogMapper platformAuditLogMapper;
 
     @MockitoBean
     private TestRepositoryMapper testRepositoryMapper;
@@ -63,6 +70,7 @@ class RepositoryControllerTest {
     @MockitoBean private SpaceMapper spaceMapper;
     @MockitoBean private SpaceMemberMapper spaceMemberMapper;
     @MockitoBean private SpaceAccessRequestMapper spaceAccessRequestMapper;
+    @MockitoBean private SpaceAuthorizationService spaceAuthorizationService;
 
     @MockitoBean
     private TaskMapper taskMapper;
@@ -94,7 +102,7 @@ class RepositoryControllerTest {
         Mockito.when(repositoryService.create(Mockito.any(TestRepositoryEntity.class))).thenReturn(entity);
         Mockito.when(repositoryService.list(7L, 1, 10)).thenReturn(new PageResponse<>(List.of(entity), 1, 1, 10, 1, false, false));
 
-        mockMvc.perform(post("/api/spaces/7/repos")
+        mockMvc.perform(authenticated(post("/api/spaces/7/repos")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {
@@ -109,7 +117,7 @@ class RepositoryControllerTest {
                       "artifactRootRelativePath": ".playwright-artifacts",
                       "enabled": true
                     }
-                    """))
+                    """)))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.code").value("OK"))
             .andExpect(jsonPath("$.data.name").value("demo-repo"))
@@ -118,7 +126,7 @@ class RepositoryControllerTest {
             .andExpect(jsonPath("$.data.artifactRootRelativePath").value(".playwright-artifacts"))
             .andExpect(jsonPath("$.msg").value("success"));
 
-        mockMvc.perform(get("/api/spaces/7/repos"))
+        mockMvc.perform(authenticated(get("/api/spaces/7/repos")))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.code").value("OK"))
             .andExpect(jsonPath("$.data.items[0].name").value("demo-repo"))
@@ -160,7 +168,7 @@ class RepositoryControllerTest {
         Mockito.when(repositoryService.get(7L, 1L)).thenReturn(entity);
         Mockito.when(repositoryService.update(Mockito.eq(7L), Mockito.eq(1L), Mockito.any(TestRepositoryEntity.class))).thenReturn(updated);
 
-        mockMvc.perform(get("/api/spaces/7/repos/1"))
+        mockMvc.perform(authenticated(get("/api/spaces/7/repos/1")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value("OK"))
                 .andExpect(jsonPath("$.data.name").value("demo-repo"))
@@ -168,7 +176,7 @@ class RepositoryControllerTest {
                 .andExpect(jsonPath("$.data.enabled").value(true))
                 .andExpect(jsonPath("$.msg").value("success"));
 
-        mockMvc.perform(put("/api/spaces/7/repos/1")
+        mockMvc.perform(authenticated(put("/api/spaces/7/repos/1")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {
@@ -183,7 +191,7 @@ class RepositoryControllerTest {
                       "artifactRootRelativePath": ".playwright-output",
                       "enabled": false
                     }
-                    """))
+                    """)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value("OK"))
                 .andExpect(jsonPath("$.data.name").value("demo-repo-updated"))
@@ -212,7 +220,7 @@ class RepositoryControllerTest {
 
         Mockito.when(repositoryService.create(Mockito.any(TestRepositoryEntity.class))).thenReturn(entity);
 
-        mockMvc.perform(post("/api/spaces/7/repos")
+        mockMvc.perform(authenticated(post("/api/spaces/7/repos")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {
@@ -227,7 +235,7 @@ class RepositoryControllerTest {
                       "artifactRootRelativePath": ".playwright-artifacts",
                       "enabled": true
                     }
-                    """))
+                    """)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value("OK"))
                 .andExpect(jsonPath("$.data.workingDirectory").value("playwright_framework"))
@@ -236,7 +244,7 @@ class RepositoryControllerTest {
 
     @Test
     void shouldDeleteRepository() throws Exception {
-        mockMvc.perform(delete("/api/spaces/7/repos/1"))
+        mockMvc.perform(authenticated(delete("/api/spaces/7/repos/1")))
                 .andExpect(status().isNoContent());
 
         Mockito.verify(repositoryService).delete(7L, 1L);
@@ -248,7 +256,7 @@ class RepositoryControllerTest {
                 .when(repositoryService)
                 .delete(7L, 1L);
 
-        mockMvc.perform(delete("/api/spaces/7/repos/1"))
+        mockMvc.perform(authenticated(delete("/api/spaces/7/repos/1")))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("CONFLICT"))
                 .andExpect(jsonPath("$.data").value(nullValue()))
@@ -260,7 +268,7 @@ class RepositoryControllerTest {
         Mockito.when(repositoryService.get(7L, 99L))
                 .thenThrow(new IllegalArgumentException("Repository not found: 99"));
 
-        mockMvc.perform(get("/api/spaces/7/repos/99"))
+        mockMvc.perform(authenticated(get("/api/spaces/7/repos/99")))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("BAD_REQUEST"))
                 .andExpect(jsonPath("$.data").value(nullValue()))
@@ -272,7 +280,7 @@ class RepositoryControllerTest {
         Mockito.when(repositoryService.create(Mockito.any(TestRepositoryEntity.class)))
                 .thenThrow(new IllegalStateException("仓库名称已存在，请更换后重试"));
 
-        mockMvc.perform(post("/api/spaces/7/repos")
+        mockMvc.perform(authenticated(post("/api/spaces/7/repos")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {
@@ -286,10 +294,24 @@ class RepositoryControllerTest {
                       "artifactRootRelativePath": ".playwright-artifacts",
                       "enabled": true
                     }
-                    """))
+                    """)))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("CONFLICT"))
                 .andExpect(jsonPath("$.data").value(nullValue()))
                 .andExpect(jsonPath("$.msg").value("仓库名称已存在，请更换后重试"));
+    }
+
+    private MockHttpServletRequestBuilder authenticated(MockHttpServletRequestBuilder builder) {
+        Mockito.when(authProperties.getCookieName()).thenReturn("platform_session");
+        Mockito.when(authService.findSession("session-1"))
+                .thenReturn(java.util.Optional.of(new AuthSession(
+                        "session-1",
+                        1L,
+                        "admin",
+                        "平台管理员",
+                        "avatars/admin.png",
+                        7L,
+                        LocalDateTime.now().plusDays(14))));
+        return builder.cookie(new jakarta.servlet.http.Cookie("platform_session", "session-1"));
     }
 }

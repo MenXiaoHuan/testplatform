@@ -27,7 +27,12 @@ const pagination = computed(() => ({
   total: store.total,
 }))
 const sceneId = computed(() => {
-  const raw = route.params.id
+  const raw = route.params.sceneId
+  const value = typeof raw === 'string' ? Number(raw) : Number.NaN
+  return Number.isFinite(value) ? value : null
+})
+const spaceId = computed(() => {
+  const raw = route.params.spaceId
   const value = typeof raw === 'string' ? Number(raw) : Number.NaN
   return Number.isFinite(value) ? value : null
 })
@@ -70,13 +75,16 @@ function openDetail(row: TaskRecord) {
     : { from: 'scene', sceneId: String(sceneId.value) }
 
   void router.push({
-    path: `/tasks/${row.id}`,
+    path: `/spaces/${spaceId.value}/tasks/${row.id}`,
     query,
   })
 }
 
 function backToScenes() {
-  void router.push('/scenes')
+  if (spaceId.value === null) {
+    return
+  }
+  void router.push(`/spaces/${spaceId.value}/scenes`)
 }
 
 function isTaskRunningConflict(error: unknown) {

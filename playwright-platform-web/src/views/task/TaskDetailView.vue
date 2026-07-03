@@ -30,6 +30,11 @@ const stageLogLoadingMap = ref<Record<number, boolean>>({})
 const task = computed(() => store.current)
 const caseResults = computed(() => store.caseResults)
 const stageLogs = computed(() => store.stageLogs)
+const spaceId = computed(() => {
+  const raw = route.params.spaceId
+  const value = typeof raw === 'string' ? Number(raw) : Number.NaN
+  return Number.isFinite(value) ? value : null
+})
 const cancelLoading = ref(false)
 const caseStatusFilters: Array<'ALL' | 'FAILED' | 'PASSED' | 'SKIPPED'> = ['ALL', 'FAILED', 'PASSED', 'SKIPPED']
 const caseSummary = computed(() => {
@@ -171,7 +176,9 @@ async function rerunTask() {
   try {
     await store.executeScene(sceneId, sceneId)
     showAppToast('任务已触发', 'success')
-    void router.push(`/scenes/${sceneId}/tasks`)
+    if (spaceId.value !== null) {
+      void router.push(`/spaces/${spaceId.value}/scenes/${sceneId}/tasks`)
+    }
   } catch (error) {
     showAppToast(toErrorMessage(error, '任务执行失败'), 'error')
   }
@@ -199,12 +206,14 @@ function backToPrevious() {
     ? Number(route.query.sceneId)
     : task.value?.sceneId
 
-  if (from === 'scene' && Number.isFinite(sceneId)) {
-    void router.push(`/scenes/${sceneId}/tasks`)
+  if (spaceId.value !== null && from === 'scene' && Number.isFinite(sceneId)) {
+    void router.push(`/spaces/${spaceId.value}/scenes/${sceneId}/tasks`)
     return
   }
 
-  void router.push('/tasks')
+  if (spaceId.value !== null) {
+    void router.push(`/spaces/${spaceId.value}/tasks`)
+  }
 }
 
 function caseVideoUrl(item: CaseResultRecord) {

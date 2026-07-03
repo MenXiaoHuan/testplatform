@@ -5,6 +5,7 @@ import { useRouter } from 'vue-router'
 import ListPageShell from '../../components/list/ListPageShell.vue'
 import { useRepositoryStore } from '../../stores/repository'
 import { useSceneStore } from '../../stores/scene'
+import { useSpaceStore } from '../../stores/space'
 import type { SceneForm, SceneRecord } from '../../types/scene'
 import { toErrorMessage } from '../../utils/error'
 import { confirmDangerAction, showAppToast } from '../../utils/ui-feedback'
@@ -12,6 +13,7 @@ import { isPositiveId, isRequired } from '../../utils/validators'
 
 const repositoryStore = useRepositoryStore()
 const sceneStore = useSceneStore()
+const spaceStore = useSpaceStore()
 const router = useRouter()
 const dialogVisible = ref(false)
 const saving = ref(false)
@@ -180,7 +182,10 @@ function isNameConflict(error: unknown) {
 }
 
 function openTasks(row: SceneRecord) {
-  void router.push(`/scenes/${row.id}/tasks`)
+  if (typeof spaceStore.currentSpaceId !== 'number') {
+    return
+  }
+  void router.push(`/spaces/${spaceStore.currentSpaceId}/scenes/${row.id}/tasks`)
 }
 
 function repositoryName(row: SceneRecord) {
@@ -328,7 +333,6 @@ async function handleSizeChange(size: number) {
         </template>
       </el-table-column>
     </el-table>
-  </ListPageShell>
 
     <el-dialog v-model="dialogVisible" :title="editingId === null ? '新增场景' : '编辑场景'" width="720px">
       <el-form ref="formRef" :model="form" :rules="formRules" label-position="top" class="form-grid">
@@ -376,6 +380,7 @@ async function handleSizeChange(size: number) {
         <el-button type="primary" :loading="saving" @click="submit">保存</el-button>
       </template>
     </el-dialog>
+  </ListPageShell>
 </template>
 
 <style scoped>

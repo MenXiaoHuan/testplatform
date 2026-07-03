@@ -52,7 +52,8 @@ class MinioObjectStorageServiceTest {
                 internalMinioClient,
                 publicMinioClient,
                 "http://minio:9000",
-                "http://localhost:10000");
+                "http://localhost:10000",
+                "us-east-1");
 
         String result = service.createPresignedGetUrl("qa-report", "runs/101/logs/testing.log");
 
@@ -72,12 +73,36 @@ class MinioObjectStorageServiceTest {
                 internalMinioClient,
                 publicMinioClient,
                 "http://minio:9000",
-                "http://localhost:10000");
+                "http://localhost:10000",
+                "us-east-1");
 
         String result = service.createPresignedGetUrl("qa-report", "runs/101/artifacts/trace.zip");
 
         assertThat(result).isEqualTo("http://localhost:10000/qa-report/runs/101/artifacts/trace.zip?X-Amz-Signature=test");
         Mockito.verify(publicMinioClient).getPresignedObjectUrl(Mockito.any(GetPresignedObjectUrlArgs.class));
+        Mockito.verifyNoInteractions(internalMinioClient);
+    }
+
+    @Test
+    void shouldIncludeConfiguredRegionWhenCreatingPresignedUrl() throws Exception {
+        MinioClient internalMinioClient = Mockito.mock(MinioClient.class);
+        MinioClient publicMinioClient = Mockito.mock(MinioClient.class);
+        Mockito.when(publicMinioClient.getPresignedObjectUrl(Mockito.any(GetPresignedObjectUrlArgs.class)))
+                .thenReturn("http://localhost:10000/qa-report/avatars/users/1/avatar.png?X-Amz-Signature=test");
+
+        MinioObjectStorageService service = new MinioObjectStorageService(
+                internalMinioClient,
+                publicMinioClient,
+                "http://minio:9000",
+                "http://localhost:10000",
+                "us-east-1");
+
+        String result = service.createPresignedGetUrl("qa-report", "avatars/users/1/avatar.png");
+
+        assertThat(result).isEqualTo("http://localhost:10000/qa-report/avatars/users/1/avatar.png?X-Amz-Signature=test");
+        ArgumentCaptor<GetPresignedObjectUrlArgs> argsCaptor = ArgumentCaptor.forClass(GetPresignedObjectUrlArgs.class);
+        Mockito.verify(publicMinioClient).getPresignedObjectUrl(argsCaptor.capture());
+        assertThat(argsCaptor.getValue().region()).isEqualTo("us-east-1");
         Mockito.verifyNoInteractions(internalMinioClient);
     }
 }

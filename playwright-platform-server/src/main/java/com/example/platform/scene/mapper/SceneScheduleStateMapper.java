@@ -2,6 +2,7 @@ package com.example.platform.scene.mapper;
 
 import com.example.platform.scene.model.SceneScheduleStateEntity;
 import java.util.Optional;
+import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -52,4 +53,36 @@ public interface SceneScheduleStateMapper {
             where scene_id = #{sceneId}
             """)
     int update(SceneScheduleStateEntity entity);
+
+    @Update("""
+            update scene_schedule_state
+            set last_planned_fire_at = #{plannedFireAt},
+                lease_owner = #{leaseOwner},
+                lease_until = #{leaseUntil},
+                version = version + 1
+            where scene_id = #{sceneId}
+              and (last_planned_fire_at is null or last_planned_fire_at &lt; #{plannedFireAt})
+            """)
+    int tryAcquire(@Param("sceneId") Long sceneId,
+                   @Param("plannedFireAt") java.time.LocalDateTime plannedFireAt,
+                   @Param("leaseOwner") String leaseOwner,
+                   @Param("leaseUntil") java.time.LocalDateTime leaseUntil);
+
+    @Update("""
+            update scene_schedule_state
+            set last_triggered_at = #{triggeredAt},
+                last_task_id = #{taskId}
+            where scene_id = #{sceneId}
+              and last_planned_fire_at = #{plannedFireAt}
+            """)
+    int markTriggered(@Param("sceneId") Long sceneId,
+                      @Param("plannedFireAt") java.time.LocalDateTime plannedFireAt,
+                      @Param("taskId") Long taskId,
+                      @Param("triggeredAt") java.time.LocalDateTime triggeredAt);
+
+    @Delete("""
+            delete from scene_schedule_state
+            where scene_id = #{sceneId}
+            """)
+    int deleteBySceneId(@Param("sceneId") Long sceneId);
 }

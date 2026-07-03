@@ -18,6 +18,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @ActiveProfiles("test")
 class SceneMapperTest {
+    private static final long DEFAULT_SPACE_ID = 1L;
+
     @Autowired
     private SceneMapper sceneMapper;
 
@@ -88,6 +90,7 @@ class SceneMapperTest {
 
     private Long insertRepository(String name) {
         TestRepositoryEntity entity = new TestRepositoryEntity();
+        entity.setSpaceId(DEFAULT_SPACE_ID);
         entity.setName(name);
         entity.setGitUrl("https://github.com/demo/testframe.git");
         entity.setDefaultBranch("main");
@@ -104,6 +107,7 @@ class SceneMapperTest {
 
     private SceneEntity scene(Long repoId, String name, boolean scheduleEnabled, String cronExpression, LocalDateTime nextRunAt) {
         SceneEntity entity = new SceneEntity();
+        entity.setSpaceId(DEFAULT_SPACE_ID);
         entity.setRepoId(repoId);
         entity.setName(name);
         entity.setDescription("demo scene");

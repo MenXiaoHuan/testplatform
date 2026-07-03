@@ -60,10 +60,14 @@ final class TaskQueryViewService {
     }
 
     TaskDetailResponse toTaskDetailResponse(TaskEntity task, int artifactCount) {
-        String sceneName = sceneMapper.findById(task.getSceneId())
+        String sceneName = (task.getSpaceId() == null
+                ? sceneMapper.findById(task.getSceneId())
+                : sceneMapper.findByIdAndSpaceId(task.getSceneId(), task.getSpaceId()))
                 .map(SceneEntity::getName)
                 .orElse(null);
-        String repositoryName = repositoryMapper.findById(task.getRepoId())
+        String repositoryName = (task.getSpaceId() == null
+                ? repositoryMapper.findById(task.getRepoId())
+                : repositoryMapper.findByIdAndSpaceId(task.getRepoId(), task.getSpaceId()))
                 .map(TestRepositoryEntity::getName)
                 .orElse(null);
         return TaskDetailResponse.from(
@@ -109,10 +113,24 @@ final class TaskQueryViewService {
         return copy;
     }
 
+    ArtifactEntity withAccessibleArtifactUrl(ArtifactEntity artifact, Long spaceId) {
+        ArtifactEntity copy = copyArtifact(artifact);
+        if (artifact.getTaskId() != null && artifact.getId() != null) {
+            copy.setUrl(buildArtifactDownloadUrl(spaceId, artifact.getTaskId(), artifact.getId()));
+        }
+        return copy;
+    }
+
     TaskStageLogResponse toTaskStageLogResponse(TaskStageLogEntity logEntity) {
         return TaskStageLogResponse.from(
                 logEntity,
                 buildStageLogDownloadUrl(logEntity.getTaskId(), logEntity.getId()));
+    }
+
+    TaskStageLogResponse toTaskStageLogResponse(TaskStageLogEntity logEntity, Long spaceId) {
+        return TaskStageLogResponse.from(
+                logEntity,
+                buildStageLogDownloadUrl(spaceId, logEntity.getTaskId(), logEntity.getId()));
     }
 
     private String buildArtifactDownloadUrl(Long taskId, Long artifactId) {
@@ -122,11 +140,25 @@ final class TaskQueryViewService {
         return "/api/tasks/" + taskId + "/artifacts/" + artifactId + "/download";
     }
 
+    private String buildArtifactDownloadUrl(Long spaceId, Long taskId, Long artifactId) {
+        if (spaceId == null || taskId == null || artifactId == null) {
+            return null;
+        }
+        return "/api/spaces/" + spaceId + "/tasks/" + taskId + "/artifacts/" + artifactId + "/download";
+    }
+
     private String buildStageLogDownloadUrl(Long taskId, Long logId) {
         if (taskId == null || logId == null) {
             return null;
         }
         return "/api/tasks/" + taskId + "/logs/" + logId + "/download";
+    }
+
+    private String buildStageLogDownloadUrl(Long spaceId, Long taskId, Long logId) {
+        if (spaceId == null || taskId == null || logId == null) {
+            return null;
+        }
+        return "/api/spaces/" + spaceId + "/tasks/" + taskId + "/logs/" + logId + "/download";
     }
 
     private TaskEntity withTaskSummary(TaskEntity task) {
@@ -210,6 +242,7 @@ final class TaskQueryViewService {
     private TaskEntity copyTask(TaskEntity source) {
         TaskEntity copy = new TaskEntity();
         copy.setId(source.getId());
+        copy.setSpaceId(source.getSpaceId());
         copy.setSceneId(source.getSceneId());
         copy.setRepoId(source.getRepoId());
         copy.setStatus(source.getStatus());

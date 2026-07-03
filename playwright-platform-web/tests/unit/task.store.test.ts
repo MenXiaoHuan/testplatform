@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
+import { useSpaceStore } from '../../src/stores/space'
 import { useTaskStore } from '../../src/stores/task'
 
 vi.mock('../../src/api/task', () => ({
@@ -25,6 +26,9 @@ describe('task store', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    const spaceStore = useSpaceStore()
+    spaceStore.items = [{ id: 7, name: 'Alpha', description: 'alpha space' }]
+    spaceStore.currentSpaceId = 7
   })
 
   it('should fetch task detail page with stage logs', async () => {
@@ -56,6 +60,10 @@ describe('task store', () => {
     const store = useTaskStore()
     await store.fetchTaskDetailPage(101)
 
+    expect(getTask).toHaveBeenCalledWith(7, 101)
+    expect(listArtifacts).toHaveBeenCalledWith(7, 101)
+    expect(listTaskCases).toHaveBeenCalledWith(7, 101)
+    expect(listTaskLogs).toHaveBeenCalledWith(7, 101)
     expect(store.current?.currentStage).toBe('FINISHED')
     expect(store.current?.resultCode).toBe('TEST_FAILED')
     expect(store.stageLogs).toHaveLength(1)
@@ -81,8 +89,8 @@ describe('task store', () => {
     const store = useTaskStore()
     await store.cancelCurrentTask(101)
 
-    expect(cancelTask).toHaveBeenCalledWith(101)
-    expect(getTask).toHaveBeenCalledWith(101)
+    expect(cancelTask).toHaveBeenCalledWith(7, 101)
+    expect(getTask).toHaveBeenCalledWith(7, 101)
     expect(store.current?.status).toBe('CANCELED')
     expect(store.current?.cancelRequested).toBe(true)
     expect(store.current?.cancelRequestedBy).toBe('system-user')

@@ -2,9 +2,11 @@ package com.example.platform.scene.controller;
 
 import com.example.platform.common.ApiResponse;
 import com.example.platform.common.PageResponse;
+import com.example.platform.auth.context.AuthContextHolder;
 import com.example.platform.scene.dto.ScheduleEventIssueResponse;
 import com.example.platform.scene.dto.ScheduleEventRetryRequest;
 import com.example.platform.scene.service.ScheduleEventAdminService;
+import com.example.platform.space.service.SpaceAuthorizationService;
 import com.example.platform.task.dto.TaskRunResponse;
 import java.util.Arrays;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -19,9 +21,13 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/spaces/{spaceId}/schedule-events")
 public class ScheduleEventController {
     private final ScheduleEventAdminService adminService;
+    private final SpaceAuthorizationService spaceAuthorizationService;
 
-    public ScheduleEventController(ScheduleEventAdminService adminService) {
+    public ScheduleEventController(
+            ScheduleEventAdminService adminService,
+            SpaceAuthorizationService spaceAuthorizationService) {
         this.adminService = adminService;
+        this.spaceAuthorizationService = spaceAuthorizationService;
     }
 
     @GetMapping
@@ -31,6 +37,7 @@ public class ScheduleEventController {
             @RequestParam(name = "sceneId", required = false) Long sceneId,
             @RequestParam(name = "page", defaultValue = "1") int page,
             @RequestParam(name = "limit", defaultValue = "20") int limit) {
+        spaceAuthorizationService.requireOperableSpace(spaceId, AuthContextHolder.require());
         return ApiResponse.ok(adminService.listIssueEvents(
                 Arrays.stream(statusCsv.split(","))
                         .map(String::trim)
@@ -47,6 +54,7 @@ public class ScheduleEventController {
             @PathVariable Long spaceId,
             @PathVariable Long eventId,
             @RequestBody(required = false) ScheduleEventRetryRequest request) {
+        spaceAuthorizationService.requireOperableSpace(spaceId, AuthContextHolder.require());
         return ApiResponse.ok(adminService.retryEvent(spaceId, eventId, request));
     }
 }

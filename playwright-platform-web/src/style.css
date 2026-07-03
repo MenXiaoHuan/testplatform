@@ -231,6 +231,7 @@ select {
 .page-grid {
   display: grid;
   gap: 0;
+  min-width: 0;
   min-height: calc(100vh - 52px);
   padding: 20px 20px 24px;
   background: #f5f7fb;
@@ -438,6 +439,12 @@ select {
 .el-table .cell {
   min-height: 24px;
   line-height: 24px;
+}
+
+.list-table {
+  width: max-content;
+  min-width: 100%;
+  max-width: none;
 }
 
 .list-table .el-table__row {

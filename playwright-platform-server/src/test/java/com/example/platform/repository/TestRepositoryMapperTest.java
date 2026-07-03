@@ -37,14 +37,15 @@ class TestRepositoryMapperTest {
         mapper.insert(first);
         mapper.insert(second);
 
-        List<TestRepositoryEntity> page = mapper.findPage(10, 0);
+        List<TestRepositoryEntity> page = mapper.findPageBySpaceId(1L, 10, 0);
 
-        assertThat(mapper.countAll()).isGreaterThanOrEqualTo(2);
+        assertThat(mapper.countBySpaceId(1L)).isGreaterThanOrEqualTo(2);
         assertThat(page).extracting(TestRepositoryEntity::getId).contains(second.getId(), first.getId());
     }
 
     private TestRepositoryEntity repository(String name) {
         TestRepositoryEntity entity = new TestRepositoryEntity();
+        entity.setSpaceId(1L);
         entity.setName(name);
         entity.setGitUrl("https://github.com/demo/testframe.git");
         entity.setDefaultBranch("main");

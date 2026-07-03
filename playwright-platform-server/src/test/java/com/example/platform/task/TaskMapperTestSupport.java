@@ -11,11 +11,14 @@ import com.example.platform.task.model.TaskStageLogEntity;
 import java.time.LocalDateTime;
 
 final class TaskMapperTestSupport {
+    private static final long DEFAULT_SPACE_ID = 1L;
+
     private TaskMapperTestSupport() {
     }
 
     static Long insertRepository(TestRepositoryMapper repositoryMapper, String name) {
         TestRepositoryEntity entity = new TestRepositoryEntity();
+        entity.setSpaceId(DEFAULT_SPACE_ID);
         entity.setName(name);
         entity.setGitUrl("https://github.com/demo/testframe.git");
         entity.setDefaultBranch("main");
@@ -33,6 +36,7 @@ final class TaskMapperTestSupport {
     static Long insertScene(TestRepositoryMapper repositoryMapper, SceneMapper sceneMapper, String repoName, String sceneName) {
         Long repoId = insertRepository(repositoryMapper, repoName);
         SceneEntity entity = new SceneEntity();
+        entity.setSpaceId(DEFAULT_SPACE_ID);
         entity.setRepoId(repoId);
         entity.setName(sceneName);
         entity.setDescription("demo scene");
@@ -50,6 +54,7 @@ final class TaskMapperTestSupport {
 
     static TaskEntity task(Long repoId, Long sceneId, String status, String branch, LocalDateTime queuedAt) {
         TaskEntity entity = new TaskEntity();
+        entity.setSpaceId(DEFAULT_SPACE_ID);
         entity.setRepoId(repoId);
         entity.setSceneId(sceneId);
         entity.setStatus(status);

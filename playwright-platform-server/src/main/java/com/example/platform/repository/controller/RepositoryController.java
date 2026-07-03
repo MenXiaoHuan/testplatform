@@ -2,8 +2,10 @@ package com.example.platform.repository.controller;
 
 import com.example.platform.common.ApiResponse;
 import com.example.platform.common.PageResponse;
+import com.example.platform.auth.context.AuthContextHolder;
 import com.example.platform.repository.model.TestRepositoryEntity;
 import com.example.platform.repository.service.RepositoryService;
+import com.example.platform.space.service.SpaceAuthorizationService;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -26,13 +28,18 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/spaces/{spaceId}/repos")
 public class RepositoryController {
     private final RepositoryService repositoryService;
+    private final SpaceAuthorizationService spaceAuthorizationService;
 
-    public RepositoryController(RepositoryService repositoryService) {
+    public RepositoryController(
+            RepositoryService repositoryService,
+            SpaceAuthorizationService spaceAuthorizationService) {
         this.repositoryService = repositoryService;
+        this.spaceAuthorizationService = spaceAuthorizationService;
     }
 
     @PostMapping
     public ApiResponse<TestRepositoryEntity> create(@PathVariable Long spaceId, @RequestBody TestRepositoryEntity entity) {
+        spaceAuthorizationService.requireOperableSpace(spaceId, AuthContextHolder.require());
         entity.setSpaceId(spaceId);
         return ApiResponse.ok(repositoryService.create(entity));
     }
@@ -42,16 +49,19 @@ public class RepositoryController {
             @PathVariable Long spaceId,
             @org.springframework.web.bind.annotation.RequestParam(defaultValue = "1") int page,
             @org.springframework.web.bind.annotation.RequestParam(defaultValue = "10") int size) {
+        spaceAuthorizationService.requireReadableSpace(spaceId, AuthContextHolder.require());
         return ApiResponse.ok(repositoryService.list(spaceId, page, size));
     }
 
     @GetMapping("/{id}")
     public ApiResponse<TestRepositoryEntity> get(@PathVariable Long spaceId, @PathVariable Long id) {
+        spaceAuthorizationService.requireReadableSpace(spaceId, AuthContextHolder.require());
         return ApiResponse.ok(repositoryService.get(spaceId, id));
     }
 
     @PutMapping("/{id}")
     public ApiResponse<TestRepositoryEntity> update(@PathVariable Long spaceId, @PathVariable Long id, @RequestBody TestRepositoryEntity entity) {
+        spaceAuthorizationService.requireOperableSpace(spaceId, AuthContextHolder.require());
         entity.setSpaceId(spaceId);
         return ApiResponse.ok(repositoryService.update(spaceId, id, entity));
     }
@@ -59,6 +69,7 @@ public class RepositoryController {
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(@PathVariable Long spaceId, @PathVariable Long id) {
+        spaceAuthorizationService.requireOperableSpace(spaceId, AuthContextHolder.require());
         repositoryService.delete(spaceId, id);
     }
 }

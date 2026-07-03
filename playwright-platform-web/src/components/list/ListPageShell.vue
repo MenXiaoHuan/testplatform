@@ -54,8 +54,16 @@ function handleSizeChange(value: number) {
 </template>
 
 <style scoped>
+.content-panel {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
 .content-panel__header {
   justify-content: space-between;
+  min-width: 0;
 }
 
 .content-panel__header-side {
@@ -73,9 +81,16 @@ function handleSizeChange(value: number) {
   justify-content: flex-end;
 }
 
+.content-panel__body {
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: visible;
+}
+
 .content-panel__footer {
   display: flex;
   justify-content: flex-end;
+  min-width: 0;
   padding-top: 16px;
   border-top: 1px solid var(--app-border);
 }

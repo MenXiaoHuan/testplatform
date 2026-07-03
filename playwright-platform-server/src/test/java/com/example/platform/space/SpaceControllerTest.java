@@ -3,17 +3,21 @@ package com.example.platform.space;
 import com.example.platform.audit.mapper.PlatformAuditLogMapper;
 import com.example.platform.auth.config.AuthProperties;
 import com.example.platform.auth.crypto.AuthKeyProvider;
+import com.example.platform.auth.mapper.PlatformUserMapper;
+import com.example.platform.auth.mapper.UserSessionMapper;
 import com.example.platform.auth.model.AuthSession;
 import com.example.platform.auth.service.AuthService;
 import com.example.platform.repository.mapper.TestRepositoryMapper;
 import com.example.platform.scene.mapper.SceneMapper;
 import com.example.platform.scene.mapper.SceneScheduleStateMapper;
 import com.example.platform.scene.mapper.ScheduleEventMapper;
+import com.example.platform.space.dto.SpacePlazaResponse;
 import com.example.platform.space.controller.SpaceController;
 import com.example.platform.space.dto.SpaceSummaryResponse;
 import com.example.platform.space.mapper.SpaceAccessRequestMapper;
 import com.example.platform.space.mapper.SpaceMapper;
 import com.example.platform.space.mapper.SpaceMemberMapper;
+import com.example.platform.space.service.SpaceAuthorizationService;
 import com.example.platform.space.service.SpaceService;
 import com.example.platform.task.mapper.ArtifactMapper;
 import com.example.platform.task.mapper.CaseResultMapper;
@@ -29,8 +33,10 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -43,6 +49,8 @@ class SpaceControllerTest {
     @MockitoBean private AuthService authService;
     @MockitoBean private AuthKeyProvider authKeyProvider;
     @MockitoBean private AuthProperties authProperties;
+    @MockitoBean private PlatformUserMapper platformUserMapper;
+    @MockitoBean private UserSessionMapper userSessionMapper;
     @MockitoBean private PlatformAuditLogMapper platformAuditLogMapper;
     @MockitoBean private TestRepositoryMapper testRepositoryMapper;
     @MockitoBean private SceneMapper sceneMapper;
@@ -51,6 +59,7 @@ class SpaceControllerTest {
     @MockitoBean private SpaceMapper spaceMapper;
     @MockitoBean private SpaceMemberMapper spaceMemberMapper;
     @MockitoBean private SpaceAccessRequestMapper spaceAccessRequestMapper;
+    @MockitoBean private SpaceAuthorizationService spaceAuthorizationService;
     @MockitoBean private TaskMapper taskMapper;
     @MockitoBean private ArtifactMapper artifactMapper;
     @MockitoBean private CaseResultMapper caseResultMapper;
@@ -67,6 +76,31 @@ class SpaceControllerTest {
                 .andExpect(jsonPath("$.code").value("OK"))
                 .andExpect(jsonPath("$.data[0].id").value(7L))
                 .andExpect(jsonPath("$.data[0].name").value("默认空间"));
+    }
+
+    @Test
+    void shouldListSpacePlaza() throws Exception {
+        mockAuthenticatedSession();
+        Mockito.when(spaceService.listSpacePlaza(Mockito.any()))
+                .thenReturn(List.of(new SpacePlazaResponse(
+                        7L,
+                        "默认空间",
+                        "desc",
+                        1L,
+                        "admin",
+                        "平台管理员",
+                        "http://localhost:10000/qa-report/avatars/admin.png?X-Amz-Signature=demo",
+                        true,
+                        true,
+                        "ADMIN",
+                        null)));
+
+        mockMvc.perform(get("/api/spaces/plaza").cookie(new jakarta.servlet.http.Cookie("platform_session", "session-1")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].name").value("默认空间"))
+                .andExpect(jsonPath("$.data[0].ownerUsername").value("admin"))
+                .andExpect(jsonPath("$.data[0].accessible").value(true))
+                .andExpect(jsonPath("$.data[0].manageable").value(true));
     }
 
     @Test
@@ -87,6 +121,31 @@ class SpaceControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.id").value(8L))
                 .andExpect(jsonPath("$.data.name").value("测试空间"));
+    }
+
+    @Test
+    void shouldUpdateAndDeleteSpace() throws Exception {
+        mockAuthenticatedSession();
+        Mockito.when(spaceService.updateSpace(Mockito.any(), Mockito.eq(7L), Mockito.any()))
+                .thenReturn(new SpaceSummaryResponse(7L, "测试空间-更新", "更新后的空间"));
+
+        mockMvc.perform(put("/api/spaces/7")
+                        .cookie(new jakarta.servlet.http.Cookie("platform_session", "session-1"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "name": "测试空间-更新",
+                                  "description": "更新后的空间"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").value(7L))
+                .andExpect(jsonPath("$.data.name").value("测试空间-更新"));
+
+        mockMvc.perform(delete("/api/spaces/7")
+                        .cookie(new jakarta.servlet.http.Cookie("platform_session", "session-1")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("OK"));
     }
 
     private void mockAuthenticatedSession() {

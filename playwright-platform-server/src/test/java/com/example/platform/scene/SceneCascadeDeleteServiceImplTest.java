@@ -2,6 +2,8 @@ package com.example.platform.scene;
 
 import com.example.platform.scene.model.SceneEntity;
 import com.example.platform.scene.mapper.SceneMapper;
+import com.example.platform.scene.mapper.SceneScheduleStateMapper;
+import com.example.platform.scene.mapper.ScheduleEventMapper;
 import com.example.platform.scene.service.SceneCascadeDeleteServiceImpl;
 import com.example.platform.storage.service.ObjectStorageService;
 import com.example.platform.task.model.ArtifactEntity;
@@ -20,6 +22,8 @@ class SceneCascadeDeleteServiceImplTest {
     @Test
     void shouldDeleteSceneGraphAndStorageObjects() {
         SceneMapper sceneRepository = Mockito.mock(SceneMapper.class);
+        ScheduleEventMapper scheduleEventMapper = Mockito.mock(ScheduleEventMapper.class);
+        SceneScheduleStateMapper sceneScheduleStateMapper = Mockito.mock(SceneScheduleStateMapper.class);
         TaskMapper taskRepository = Mockito.mock(TaskMapper.class);
         CaseResultMapper caseResultRepository = Mockito.mock(CaseResultMapper.class);
         ArtifactMapper artifactRepository = Mockito.mock(ArtifactMapper.class);
@@ -50,6 +54,8 @@ class SceneCascadeDeleteServiceImplTest {
 
         SceneCascadeDeleteServiceImpl service = new SceneCascadeDeleteServiceImpl(
                 sceneRepository,
+                scheduleEventMapper,
+                sceneScheduleStateMapper,
                 taskRepository,
                 caseResultRepository,
                 artifactRepository,
@@ -64,6 +70,8 @@ class SceneCascadeDeleteServiceImplTest {
         Mockito.verify(caseResultRepository).deleteAllByTaskIdIn(List.of(101L));
         Mockito.verify(artifactRepository).deleteAllByTaskIdIn(List.of(101L));
         Mockito.verify(taskStageLogRepository).deleteAllByTaskIdIn(List.of(101L));
+        Mockito.verify(scheduleEventMapper).deleteAllBySceneId(11L);
+        Mockito.verify(sceneScheduleStateMapper).deleteBySceneId(11L);
         Mockito.verify(taskRepository).deleteAllBySceneId(11L);
         Mockito.verify(sceneRepository).deleteById(11L);
     }
@@ -71,6 +79,8 @@ class SceneCascadeDeleteServiceImplTest {
     @Test
     void shouldDeleteSceneWithoutTasks() {
         SceneMapper sceneRepository = Mockito.mock(SceneMapper.class);
+        ScheduleEventMapper scheduleEventMapper = Mockito.mock(ScheduleEventMapper.class);
+        SceneScheduleStateMapper sceneScheduleStateMapper = Mockito.mock(SceneScheduleStateMapper.class);
         TaskMapper taskRepository = Mockito.mock(TaskMapper.class);
         CaseResultMapper caseResultRepository = Mockito.mock(CaseResultMapper.class);
         ArtifactMapper artifactRepository = Mockito.mock(ArtifactMapper.class);
@@ -85,6 +95,8 @@ class SceneCascadeDeleteServiceImplTest {
 
         SceneCascadeDeleteServiceImpl service = new SceneCascadeDeleteServiceImpl(
                 sceneRepository,
+                scheduleEventMapper,
+                sceneScheduleStateMapper,
                 taskRepository,
                 caseResultRepository,
                 artifactRepository,
@@ -98,6 +110,8 @@ class SceneCascadeDeleteServiceImplTest {
         Mockito.verify(caseResultRepository, Mockito.never()).deleteAllByTaskIdIn(Mockito.anyList());
         Mockito.verify(artifactRepository, Mockito.never()).deleteAllByTaskIdIn(Mockito.anyList());
         Mockito.verify(taskStageLogRepository, Mockito.never()).deleteAllByTaskIdIn(Mockito.anyList());
+        Mockito.verify(scheduleEventMapper).deleteAllBySceneId(12L);
+        Mockito.verify(sceneScheduleStateMapper).deleteBySceneId(12L);
         Mockito.verify(taskRepository).deleteAllBySceneId(12L);
         Mockito.verify(sceneRepository).deleteById(12L);
     }

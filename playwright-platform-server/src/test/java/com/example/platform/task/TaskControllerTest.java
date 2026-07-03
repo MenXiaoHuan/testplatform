@@ -4,6 +4,9 @@ import com.example.platform.common.PageResponse;
 import com.example.platform.audit.mapper.PlatformAuditLogMapper;
 import com.example.platform.auth.config.AuthProperties;
 import com.example.platform.auth.crypto.AuthKeyProvider;
+import com.example.platform.auth.mapper.PlatformUserMapper;
+import com.example.platform.auth.mapper.UserSessionMapper;
+import com.example.platform.auth.model.AuthSession;
 import com.example.platform.auth.service.AuthService;
 import com.example.platform.repository.mapper.TestRepositoryMapper;
 import com.example.platform.scene.mapper.SceneMapper;
@@ -12,6 +15,7 @@ import com.example.platform.scene.mapper.SceneScheduleStateMapper;
 import com.example.platform.space.mapper.SpaceAccessRequestMapper;
 import com.example.platform.space.mapper.SpaceMapper;
 import com.example.platform.space.mapper.SpaceMemberMapper;
+import com.example.platform.space.service.SpaceAuthorizationService;
 import com.example.platform.task.dto.CaseResultResponse;
 import com.example.platform.task.dto.SceneTaskListResponse;
 import com.example.platform.task.dto.TaskDiagnosticsResponse;
@@ -38,6 +42,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.web.server.ResponseStatusException;
 
 import static org.hamcrest.Matchers.nullValue;
@@ -60,6 +65,12 @@ class TaskControllerTest {
     private AuthKeyProvider authKeyProvider;
     @MockitoBean
     private AuthProperties authProperties;
+    @MockitoBean
+    private PlatformUserMapper platformUserMapper;
+    @MockitoBean
+    private UserSessionMapper userSessionMapper;
+    @MockitoBean
+    private SpaceAuthorizationService spaceAuthorizationService;
 
     @MockitoBean
     private PlatformAuditLogMapper platformAuditLogMapper;
@@ -137,10 +148,10 @@ class TaskControllerTest {
         artifact.setObjectKey("runs/1/artifacts/trace.zip");
         artifact.setUrl("http://localhost:9000/qa-report/runs/1/artifacts/trace.zip?X-Amz-Signature=demo");
 
-        Mockito.when(taskService.getDetail(1L)).thenReturn(detail);
-        Mockito.when(taskService.listArtifacts(1L)).thenReturn(List.of(artifact));
+        Mockito.when(taskService.getDetail(7L, 1L)).thenReturn(detail);
+        Mockito.when(taskService.listArtifacts(7L, 1L)).thenReturn(List.of(artifact));
 
-        mockMvc.perform(get("/api/spaces/7/tasks/1").header("X-Request-Id", "req-123"))
+        mockMvc.perform(authenticated(get("/api/spaces/7/tasks/1").header("X-Request-Id", "req-123")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.resultMessage").value("all good"))
                 .andExpect(jsonPath("$.code").value("OK"))
@@ -164,7 +175,7 @@ class TaskControllerTest {
                 .andExpect(jsonPath("$.data.resolvedRunCommand").value("node ./scripts/run-e2e.cjs --project chromium --target tests/login.spec.ts"))
                 .andExpect(jsonPath("$.msg").value("success"));
 
-        mockMvc.perform(get("/api/spaces/7/tasks/1/artifacts"))
+        mockMvc.perform(authenticated(get("/api/spaces/7/tasks/1/artifacts")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value("OK"))
                 .andExpect(jsonPath("$.data[0].artifactType").value("TRACE"))
@@ -184,17 +195,17 @@ class TaskControllerTest {
                 2,
                 "http://minio/presigned/testing-log");
 
-        Mockito.when(taskService.listStageLogs(101L)).thenReturn(List.of(stageLog));
+        Mockito.when(taskService.listStageLogs(7L, 101L)).thenReturn(List.of(stageLog));
 
-        mockMvc.perform(post("/api/spaces/7/tasks/101/cancel"))
+        mockMvc.perform(authenticated(post("/api/spaces/7/tasks/101/cancel")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value("OK"))
                 .andExpect(jsonPath("$.data").value(nullValue()))
                 .andExpect(jsonPath("$.msg").value("success"));
 
-        Mockito.verify(taskService).cancelTask(101L, "system-user");
+        Mockito.verify(taskService).cancelTask(7L, 101L, "system-user");
 
-        mockMvc.perform(get("/api/spaces/7/tasks/101/logs"))
+        mockMvc.perform(authenticated(get("/api/spaces/7/tasks/101/logs")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value("OK"))
                 .andExpect(jsonPath("$.data[0].stage").value("TESTING"))
@@ -209,16 +220,16 @@ class TaskControllerTest {
                 .contentType(MediaType.parseMediaType("application/zip"))
                 .header("Content-Disposition", "attachment; filename=\"trace.zip\"")
                 .body(resource);
-        Mockito.when(taskService.downloadArtifact(101L, 11L)).thenReturn(response);
+        Mockito.when(taskService.downloadArtifact(7L, 101L, 11L)).thenReturn(response);
 
-        mockMvc.perform(get("/api/spaces/7/tasks/101/artifacts/11/download"))
+        mockMvc.perform(authenticated(get("/api/spaces/7/tasks/101/artifacts/11/download")))
                 .andExpect(status().isOk())
                 .andExpect(content().bytes("trace-data".getBytes()))
                 .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header().string("Content-Disposition", "attachment; filename=\"trace.zip\""))
                 .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header().string("Content-Type", "application/zip"));
 
-        mockMvc.perform(get("/api/spaces/7/tasks/101/artifacts/11/download")
-                        .header("Origin", "https://trace.playwright.dev"))
+        mockMvc.perform(authenticated(get("/api/spaces/7/tasks/101/artifacts/11/download")
+                        .header("Origin", "https://trace.playwright.dev")))
                 .andExpect(status().isOk())
                 .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
                         .string("Access-Control-Allow-Origin", "https://trace.playwright.dev"));
@@ -231,16 +242,16 @@ class TaskControllerTest {
                 .contentType(MediaType.TEXT_PLAIN)
                 .header("Content-Disposition", "attachment; filename=\"testing.log\"")
                 .body(resource);
-        Mockito.when(taskService.downloadStageLog(101L, 7L)).thenReturn(response);
+        Mockito.when(taskService.downloadStageLog(7L, 101L, 7L)).thenReturn(response);
 
-        mockMvc.perform(get("/api/spaces/7/tasks/101/logs/7/download"))
+        mockMvc.perform(authenticated(get("/api/spaces/7/tasks/101/logs/7/download")))
                 .andExpect(status().isOk())
                 .andExpect(content().bytes("log-data".getBytes()))
                 .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header().string("Content-Disposition", "attachment; filename=\"testing.log\""))
                 .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header().string("Content-Type", "text/plain"));
 
-        mockMvc.perform(get("/api/spaces/7/tasks/101/logs/7/download")
-                        .header("Origin", "https://trace.playwright.dev"))
+        mockMvc.perform(authenticated(get("/api/spaces/7/tasks/101/logs/7/download")
+                        .header("Origin", "https://trace.playwright.dev")))
                 .andExpect(status().isOk())
                 .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
                         .string("Access-Control-Allow-Origin", "https://trace.playwright.dev"));
@@ -267,9 +278,9 @@ class TaskControllerTest {
                         7L,
                         "PREPARING")));
 
-        Mockito.when(taskService.getDiagnostics(101L)).thenReturn(diagnostics);
+        Mockito.when(taskService.getDiagnostics(7L, 101L)).thenReturn(diagnostics);
 
-        mockMvc.perform(get("/api/spaces/7/tasks/101/diagnostics"))
+        mockMvc.perform(authenticated(get("/api/spaces/7/tasks/101/diagnostics")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value("OK"))
                 .andExpect(jsonPath("$.data.taskId").value(101))
@@ -298,9 +309,9 @@ class TaskControllerTest {
                 1,
                 List.of());
 
-        Mockito.when(taskService.listCaseResultResponses(101L)).thenReturn(List.of(caseResult));
+        Mockito.when(taskService.listCaseResultResponses(7L, 101L)).thenReturn(List.of(caseResult));
 
-        mockMvc.perform(get("/api/spaces/7/tasks/101/cases"))
+        mockMvc.perform(authenticated(get("/api/spaces/7/tasks/101/cases")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value("OK"))
                 .andExpect(jsonPath("$.data[0].id").value(1))
@@ -324,9 +335,9 @@ class TaskControllerTest {
         artifact.setObjectKey("runs/101/artifacts/1/.playwright-artifacts/checkout/trace.zip");
         artifact.setUrl("http://minio/presigned/trace");
 
-        Mockito.when(taskService.listArtifactsByCaseResult(1L)).thenReturn(List.of(artifact));
+        Mockito.when(taskService.listArtifactsByCaseResult(7L, 101L, 1L)).thenReturn(List.of(artifact));
 
-        mockMvc.perform(get("/api/spaces/7/tasks/101/cases/1/artifacts"))
+        mockMvc.perform(authenticated(get("/api/spaces/7/tasks/101/cases/1/artifacts")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value("OK"))
                 .andExpect(jsonPath("$.data[0].artifactType").value("TRACE"))
@@ -356,10 +367,10 @@ class TaskControllerTest {
                 1,
                 0);
 
-        Mockito.when(taskService.listByScene(11L, 1, 10))
+        Mockito.when(taskService.listByScene(7L, 11L, 1, 10))
                 .thenReturn(new PageResponse<>(List.of(newestTask), 1, 1, 10, 1, false, false));
 
-        mockMvc.perform(get("/api/spaces/7/scenes/11/tasks"))
+        mockMvc.perform(authenticated(get("/api/spaces/7/scenes/11/tasks")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value("OK"))
                 .andExpect(jsonPath("$.data.items[0].sceneId").value(11))
@@ -397,10 +408,10 @@ class TaskControllerTest {
                 1,
                 0);
 
-        Mockito.when(taskService.list(1, 10))
+        Mockito.when(taskService.list(7L, 1, 10))
                 .thenReturn(new PageResponse<>(List.of(task), 1, 1, 10, 1, false, false));
 
-        mockMvc.perform(get("/api/spaces/7/tasks"))
+        mockMvc.perform(authenticated(get("/api/spaces/7/tasks")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value("OK"))
                 .andExpect(jsonPath("$.data.items[0].id").value(101))
@@ -427,9 +438,9 @@ class TaskControllerTest {
         createdTask.setRunnerName("centralized-runner");
         createdTask.setQueuedAt(LocalDateTime.of(2026, 6, 25, 6, 23, 15));
 
-        Mockito.when(taskService.createAndStart(11L)).thenReturn(createdTask);
+        Mockito.when(taskService.createAndStart(7L, 11L)).thenReturn(createdTask);
 
-        mockMvc.perform(post("/api/spaces/7/scenes/11/run"))
+        mockMvc.perform(authenticated(post("/api/spaces/7/scenes/11/run")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value("OK"))
                 .andExpect(jsonPath("$.data.id").value(301))
@@ -443,10 +454,10 @@ class TaskControllerTest {
 
     @Test
     void shouldReturnConflictMessageWhenSceneAlreadyHasActiveTask() throws Exception {
-        Mockito.when(taskService.createAndStart(11L))
+        Mockito.when(taskService.createAndStart(7L, 11L))
                 .thenThrow(new IllegalStateException("当前场景已有执行中的任务，请稍后再试"));
 
-        mockMvc.perform(post("/api/spaces/7/scenes/11/run"))
+        mockMvc.perform(authenticated(post("/api/spaces/7/scenes/11/run")))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("CONFLICT"))
                 .andExpect(jsonPath("$.data").value(nullValue()))
@@ -455,13 +466,27 @@ class TaskControllerTest {
 
     @Test
     void shouldReturnUnifiedErrorResponseForResponseStatusException() throws Exception {
-        Mockito.when(taskService.listByScene(99L, 1, 10))
+        Mockito.when(taskService.listByScene(7L, 99L, 1, 10))
                 .thenThrow(new ResponseStatusException(HttpStatus.NOT_FOUND, "Scene not found: 99"));
 
-        mockMvc.perform(get("/api/spaces/7/scenes/99/tasks"))
+        mockMvc.perform(authenticated(get("/api/spaces/7/scenes/99/tasks")))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("NOT_FOUND"))
                 .andExpect(jsonPath("$.data").value(nullValue()))
                 .andExpect(jsonPath("$.msg").value("Scene not found: 99"));
+    }
+
+    private MockHttpServletRequestBuilder authenticated(MockHttpServletRequestBuilder builder) {
+        Mockito.when(authProperties.getCookieName()).thenReturn("platform_session");
+        Mockito.when(authService.findSession("session-1"))
+                .thenReturn(java.util.Optional.of(new AuthSession(
+                        "session-1",
+                        1L,
+                        "admin",
+                        "平台管理员",
+                        "avatars/admin.png",
+                        7L,
+                        LocalDateTime.now().plusDays(14))));
+        return builder.cookie(new jakarta.servlet.http.Cookie("platform_session", "session-1"));
     }
 }

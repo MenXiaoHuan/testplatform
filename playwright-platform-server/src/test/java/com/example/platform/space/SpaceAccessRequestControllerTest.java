@@ -3,6 +3,8 @@ package com.example.platform.space;
 import com.example.platform.audit.mapper.PlatformAuditLogMapper;
 import com.example.platform.auth.config.AuthProperties;
 import com.example.platform.auth.crypto.AuthKeyProvider;
+import com.example.platform.auth.mapper.PlatformUserMapper;
+import com.example.platform.auth.mapper.UserSessionMapper;
 import com.example.platform.auth.model.AuthSession;
 import com.example.platform.auth.service.AuthService;
 import com.example.platform.repository.mapper.TestRepositoryMapper;
@@ -10,11 +12,12 @@ import com.example.platform.scene.mapper.SceneMapper;
 import com.example.platform.scene.mapper.SceneScheduleStateMapper;
 import com.example.platform.scene.mapper.ScheduleEventMapper;
 import com.example.platform.space.controller.SpaceAccessRequestController;
+import com.example.platform.space.dto.SpaceAccessRequestResponse;
 import com.example.platform.space.mapper.SpaceAccessRequestMapper;
 import com.example.platform.space.mapper.SpaceMapper;
 import com.example.platform.space.mapper.SpaceMemberMapper;
-import com.example.platform.space.model.SpaceAccessRequestEntity;
 import com.example.platform.space.service.SpaceAccessRequestService;
+import com.example.platform.space.service.SpaceAuthorizationService;
 import com.example.platform.task.mapper.ArtifactMapper;
 import com.example.platform.task.mapper.CaseResultMapper;
 import com.example.platform.task.mapper.TaskMapper;
@@ -43,6 +46,8 @@ class SpaceAccessRequestControllerTest {
     @MockitoBean private AuthService authService;
     @MockitoBean private AuthKeyProvider authKeyProvider;
     @MockitoBean private AuthProperties authProperties;
+    @MockitoBean private PlatformUserMapper platformUserMapper;
+    @MockitoBean private UserSessionMapper userSessionMapper;
     @MockitoBean private PlatformAuditLogMapper platformAuditLogMapper;
     @MockitoBean private TestRepositoryMapper testRepositoryMapper;
     @MockitoBean private SceneMapper sceneMapper;
@@ -51,6 +56,7 @@ class SpaceAccessRequestControllerTest {
     @MockitoBean private SpaceMapper spaceMapper;
     @MockitoBean private SpaceMemberMapper spaceMemberMapper;
     @MockitoBean private SpaceAccessRequestMapper spaceAccessRequestMapper;
+    @MockitoBean private SpaceAuthorizationService spaceAuthorizationService;
     @MockitoBean private TaskMapper taskMapper;
     @MockitoBean private ArtifactMapper artifactMapper;
     @MockitoBean private CaseResultMapper caseResultMapper;
@@ -59,13 +65,21 @@ class SpaceAccessRequestControllerTest {
     @Test
     void shouldSubmitAndListRequests() throws Exception {
         mockAuthenticatedSession();
-        SpaceAccessRequestEntity request = new SpaceAccessRequestEntity();
-        request.setId(21L);
-        request.setSpaceId(7L);
-        request.setApplicantUserId(2L);
-        request.setRequestedRole("OPERATOR");
-        request.setReason("需要处理调度异常");
-        request.setStatus("PENDING");
+        SpaceAccessRequestResponse request = new SpaceAccessRequestResponse(
+                21L,
+                7L,
+                2L,
+                "tester",
+                "测试用户",
+                "http://localhost:10000/qa-report/avatars/tester.png?X-Amz-Signature=demo",
+                "OPERATOR",
+                "需要处理调度异常",
+                "PENDING",
+                null,
+                null,
+                null,
+                null,
+                null);
         Mockito.when(spaceAccessRequestService.listBySpace(Mockito.eq(7L), Mockito.any()))
                 .thenReturn(List.of(request));
 
@@ -85,6 +99,9 @@ class SpaceAccessRequestControllerTest {
                         .cookie(new jakarta.servlet.http.Cookie("platform_session", "session-1")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[0].id").value(21L))
+                .andExpect(jsonPath("$.data[0].applicantUsername").value("tester"))
+                .andExpect(jsonPath("$.data[0].applicantNickname").value("测试用户"))
+                .andExpect(jsonPath("$.data[0].applicantAvatarUrl").value("http://localhost:10000/qa-report/avatars/tester.png?X-Amz-Signature=demo"))
                 .andExpect(jsonPath("$.data[0].requestedRole").value("OPERATOR"));
     }
 

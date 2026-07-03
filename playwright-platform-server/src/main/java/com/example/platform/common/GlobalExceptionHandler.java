@@ -20,6 +20,16 @@ public class GlobalExceptionHandler {
         this.applicationErrorSummaryService = applicationErrorSummaryServiceProvider.getIfAvailable(NoopApplicationErrorSummaryService::new);
     }
 
+    @ExceptionHandler(BusinessException.class)
+    public ResponseEntity<ApiErrorResponse> handleBusinessException(BusinessException ex) {
+        HttpStatus status = switch (ex.getCode()) {
+            case "BAD_REQUEST", "INVALID_PASSWORD", "ACCESS_REQUEST_LIST_FAILED" -> HttpStatus.BAD_REQUEST;
+            default -> HttpStatus.CONFLICT;
+        };
+        return ResponseEntity.status(status)
+                .body(new ApiErrorResponse(ex.getCode(), null, ex.getMessage()));
+    }
+
     @ExceptionHandler(IllegalArgumentException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public ApiErrorResponse handleIllegalArgument(IllegalArgumentException ex) {
@@ -41,6 +51,15 @@ public class GlobalExceptionHandler {
         }
         if (message.contains("uk_scene_name") || message.contains("scene.name")) {
             return new ApiErrorResponse("CONFLICT", null, "场景名称已存在，请更换后重试");
+        }
+        if (message.contains("uk_platform_user_username") || message.contains("platform_user.username")) {
+            return new ApiErrorResponse("USERNAME_ALREADY_EXISTS", null, "该用户名已被使用，请换一个");
+        }
+        if (message.contains("uk_platform_user_nickname") || message.contains("platform_user.nickname")) {
+            return new ApiErrorResponse("NICKNAME_ALREADY_EXISTS", null, "该昵称已被使用，请换一个");
+        }
+        if (message.contains("uk_space_name") || message.contains("space.name")) {
+            return new ApiErrorResponse("SPACE_NAME_ALREADY_EXISTS", null, "空间名称已存在，请更换后重试");
         }
         return new ApiErrorResponse("CONFLICT", null, "数据保存冲突，请稍后重试");
     }

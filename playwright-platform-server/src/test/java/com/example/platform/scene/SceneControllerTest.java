@@ -4,6 +4,9 @@ import com.example.platform.common.PageResponse;
 import com.example.platform.audit.mapper.PlatformAuditLogMapper;
 import com.example.platform.auth.config.AuthProperties;
 import com.example.platform.auth.crypto.AuthKeyProvider;
+import com.example.platform.auth.mapper.PlatformUserMapper;
+import com.example.platform.auth.mapper.UserSessionMapper;
+import com.example.platform.auth.model.AuthSession;
 import com.example.platform.auth.service.AuthService;
 import com.example.platform.repository.mapper.TestRepositoryMapper;
 import com.example.platform.scene.dto.SceneCardResponse;
@@ -15,6 +18,7 @@ import com.example.platform.scene.service.SceneService;
 import com.example.platform.space.mapper.SpaceAccessRequestMapper;
 import com.example.platform.space.mapper.SpaceMapper;
 import com.example.platform.space.mapper.SpaceMemberMapper;
+import com.example.platform.space.service.SpaceAuthorizationService;
 import com.example.platform.task.mapper.ArtifactMapper;
 import com.example.platform.task.mapper.CaseResultMapper;
 import com.example.platform.task.mapper.TaskMapper;
@@ -28,6 +32,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import static org.hamcrest.Matchers.nullValue;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -47,6 +52,8 @@ class SceneControllerTest {
     @MockitoBean private AuthService authService;
     @MockitoBean private AuthKeyProvider authKeyProvider;
     @MockitoBean private AuthProperties authProperties;
+    @MockitoBean private PlatformUserMapper platformUserMapper;
+    @MockitoBean private UserSessionMapper userSessionMapper;
 
     @MockitoBean
     private PlatformAuditLogMapper platformAuditLogMapper;
@@ -65,6 +72,7 @@ class SceneControllerTest {
     @MockitoBean private SpaceMapper spaceMapper;
     @MockitoBean private SpaceMemberMapper spaceMemberMapper;
     @MockitoBean private SpaceAccessRequestMapper spaceAccessRequestMapper;
+    @MockitoBean private SpaceAuthorizationService spaceAuthorizationService;
 
     @MockitoBean
     private TaskMapper taskMapper;
@@ -104,7 +112,7 @@ class SceneControllerTest {
         Mockito.when(sceneService.create(Mockito.any(SceneEntity.class))).thenReturn(entity);
         Mockito.when(sceneService.listCards(7L, 1, 10)).thenReturn(new PageResponse<>(List.of(card), 1, 1, 10, 1, false, false));
 
-        mockMvc.perform(post("/api/spaces/7/scenes")
+        mockMvc.perform(authenticated(post("/api/spaces/7/scenes")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {
@@ -115,13 +123,13 @@ class SceneControllerTest {
                       "testSelectorValue": "tests/login.spec.ts",
                       "runCommand": "node ./scripts/run-e2e.cjs --target tests/login.spec.ts"
                     }
-                    """))
+                    """)))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.code").value("OK"))
             .andExpect(jsonPath("$.data.name").value("login-smoke"))
             .andExpect(jsonPath("$.msg").value("success"));
 
-        mockMvc.perform(get("/api/spaces/7/scenes"))
+        mockMvc.perform(authenticated(get("/api/spaces/7/scenes")))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.code").value("OK"))
             .andExpect(jsonPath("$.data.items[0].name").value("checkout smoke"))
@@ -160,7 +168,7 @@ class SceneControllerTest {
         Mockito.when(sceneService.create(Mockito.any(SceneEntity.class))).thenReturn(created);
         Mockito.when(sceneService.update(Mockito.eq(7L), Mockito.eq(2L), Mockito.any(SceneEntity.class))).thenReturn(updated);
 
-        mockMvc.perform(post("/api/spaces/7/scenes")
+        mockMvc.perform(authenticated(post("/api/spaces/7/scenes")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {
@@ -174,14 +182,14 @@ class SceneControllerTest {
                       "scheduleEnabled": true,
                       "cronExpression": "0 0 2 * * ?"
                     }
-                    """))
+                    """)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value("OK"))
                 .andExpect(jsonPath("$.data.scheduleEnabled").value(true))
                 .andExpect(jsonPath("$.data.cronExpression").value("0 0 2 * * ?"))
                 .andExpect(jsonPath("$.msg").value("success"));
 
-        mockMvc.perform(put("/api/spaces/7/scenes/2")
+        mockMvc.perform(authenticated(put("/api/spaces/7/scenes/2")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {
@@ -195,7 +203,7 @@ class SceneControllerTest {
                       "scheduleEnabled": true,
                       "cronExpression": "0 15 2 * * ?"
                     }
-                    """))
+                    """)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value("OK"))
                 .andExpect(jsonPath("$.data.scheduleEnabled").value(true))
@@ -218,7 +226,7 @@ class SceneControllerTest {
 
         Mockito.when(sceneService.create(Mockito.any(SceneEntity.class))).thenReturn(entity);
 
-        mockMvc.perform(post("/api/spaces/7/scenes")
+        mockMvc.perform(authenticated(post("/api/spaces/7/scenes")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {
@@ -231,7 +239,7 @@ class SceneControllerTest {
                       "scheduleEnabled": false,
                       "cronExpression": ""
                     }
-                    """))
+                    """)))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.code").value("OK"))
             .andExpect(jsonPath("$.data.name").value("all-tests"))
@@ -262,14 +270,14 @@ class SceneControllerTest {
         Mockito.when(sceneService.get(7L, 1L)).thenReturn(entity);
         Mockito.when(sceneService.update(Mockito.eq(7L), Mockito.eq(1L), Mockito.any(SceneEntity.class))).thenReturn(updated);
 
-        mockMvc.perform(get("/api/spaces/7/scenes/1"))
+        mockMvc.perform(authenticated(get("/api/spaces/7/scenes/1")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value("OK"))
                 .andExpect(jsonPath("$.data.name").value("login-smoke"))
                 .andExpect(jsonPath("$.data.enabled").doesNotExist())
                 .andExpect(jsonPath("$.msg").value("success"));
 
-        mockMvc.perform(put("/api/spaces/7/scenes/1")
+        mockMvc.perform(authenticated(put("/api/spaces/7/scenes/1")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {
@@ -280,7 +288,7 @@ class SceneControllerTest {
                       "testSelectorValue": "@smoke",
                       "runCommand": "node ./scripts/run-e2e.cjs --grep @smoke"
                     }
-                    """))
+                    """)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value("OK"))
                 .andExpect(jsonPath("$.data.name").value("login-regression"))
@@ -291,7 +299,7 @@ class SceneControllerTest {
 
     @Test
     void shouldDeleteScene() throws Exception {
-        mockMvc.perform(delete("/api/spaces/7/scenes/1"))
+        mockMvc.perform(authenticated(delete("/api/spaces/7/scenes/1")))
                 .andExpect(status().isNoContent());
 
         Mockito.verify(sceneService).delete(7L, 1L);
@@ -302,14 +310,14 @@ class SceneControllerTest {
         Mockito.when(sceneService.create(Mockito.any(SceneEntity.class)))
                 .thenThrow(new IllegalArgumentException("所属仓库已停用，请先启用仓库"));
 
-        mockMvc.perform(post("/api/spaces/7/scenes")
+        mockMvc.perform(authenticated(post("/api/spaces/7/scenes")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {
                       "repoId": 1,
                       "name": "nightly smoke"
                     }
-                    """))
+                    """)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("BAD_REQUEST"))
                 .andExpect(jsonPath("$.data").value(nullValue()))
@@ -320,7 +328,7 @@ class SceneControllerTest {
     void shouldReturnUnifiedErrorResponseForUnexpectedSceneFailure() throws Exception {
         Mockito.when(sceneService.get(7L, 3L)).thenThrow(new RuntimeException("boom"));
 
-        mockMvc.perform(get("/api/spaces/7/scenes/3"))
+        mockMvc.perform(authenticated(get("/api/spaces/7/scenes/3")))
                 .andExpect(status().isInternalServerError())
                 .andExpect(jsonPath("$.code").value("INTERNAL_SERVER_ERROR"))
                 .andExpect(jsonPath("$.data").value(nullValue()))
@@ -332,7 +340,7 @@ class SceneControllerTest {
         Mockito.when(sceneService.create(Mockito.any(SceneEntity.class)))
                 .thenThrow(new IllegalStateException("场景名称已存在，请更换后重试"));
 
-        mockMvc.perform(post("/api/spaces/7/scenes")
+        mockMvc.perform(authenticated(post("/api/spaces/7/scenes")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {
@@ -341,10 +349,24 @@ class SceneControllerTest {
                       "browser": "chromium",
                       "matchValue": "tests/login.spec.ts"
                     }
-                    """))
+                    """)))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("CONFLICT"))
                 .andExpect(jsonPath("$.data").value(nullValue()))
                 .andExpect(jsonPath("$.msg").value("场景名称已存在，请更换后重试"));
+    }
+
+    private MockHttpServletRequestBuilder authenticated(MockHttpServletRequestBuilder builder) {
+        Mockito.when(authProperties.getCookieName()).thenReturn("platform_session");
+        Mockito.when(authService.findSession("session-1"))
+                .thenReturn(java.util.Optional.of(new AuthSession(
+                        "session-1",
+                        1L,
+                        "admin",
+                        "平台管理员",
+                        "avatars/admin.png",
+                        7L,
+                        LocalDateTime.now().plusDays(14))));
+        return builder.cookie(new jakarta.servlet.http.Cookie("platform_session", "session-1"));
     }
 }

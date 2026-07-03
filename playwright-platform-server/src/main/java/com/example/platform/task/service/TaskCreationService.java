@@ -51,7 +51,9 @@ public class TaskCreationService {
         SceneEntity scene = sceneMapper.findByIdForUpdate(sceneId)
                 .or(() -> sceneMapper.findById(sceneId))
                 .orElseThrow(() -> new IllegalArgumentException("Scene not found: " + sceneId));
-        TestRepositoryEntity repository = repositoryMapper.findById(scene.getRepoId())
+        TestRepositoryEntity repository = (scene.getSpaceId() == null
+                ? repositoryMapper.findById(scene.getRepoId())
+                : repositoryMapper.findByIdAndSpaceId(scene.getRepoId(), scene.getSpaceId()))
                 .orElseThrow(() -> new IllegalArgumentException("Repository not found: " + scene.getRepoId()));
         if (!Boolean.TRUE.equals(repository.getEnabled())) {
             throw new IllegalArgumentException("所属仓库已停用，请先启用仓库");
@@ -66,6 +68,7 @@ public class TaskCreationService {
                 : repository.getDefaultBranch();
         String resolvedRunCommand = taskCommandBuilder.buildRunCommand(repository, scene);
         task.setSceneId(scene.getId());
+        task.setSpaceId(scene.getSpaceId());
         task.setRepoId(repository.getId());
         task.setStatus("QUEUED");
         task.setCurrentStage("QUEUED");
@@ -86,13 +89,14 @@ public class TaskCreationService {
         scene.setLastTaskStatus(task.getStatus());
         scene.setLastRunAt(task.getQueuedAt());
         sceneMapper.update(scene);
-        invalidateSceneDetail(scene.getId());
+        invalidateSceneDetail(scene.getSpaceId(), scene.getId());
         return task;
     }
 
-    private void invalidateSceneDetail(Long sceneId) {
+    private void invalidateSceneDetail(Long spaceId, Long sceneId) {
         if (detailCacheService != null && sceneId != null) {
-            detailCacheService.invalidate("scene", sceneId);
+            String key = spaceId == null ? "scene" : "scene:%d".formatted(spaceId);
+            detailCacheService.invalidate(key, sceneId);
         }
     }
 }

@@ -627,6 +627,11 @@ class SceneServiceImplTest {
         }
 
         @Override
+        public TaskEntity createAndStart(Long spaceId, Long sceneId) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
         public TaskEntity createAndRun(Long sceneId) {
             throw new UnsupportedOperationException();
         }
@@ -650,7 +655,17 @@ class SceneServiceImplTest {
         }
 
         @Override
+        public PageResponse<SceneTaskListResponse> list(Long spaceId, int page, int size) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
         public PageResponse<SceneTaskListResponse> listByScene(Long sceneId, int page, int size) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public PageResponse<SceneTaskListResponse> listByScene(Long spaceId, Long sceneId, int page, int size) {
             throw new UnsupportedOperationException();
         }
 
@@ -660,7 +675,17 @@ class SceneServiceImplTest {
         }
 
         @Override
+        public TaskDetailResponse getDetail(Long spaceId, Long taskId) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
         public TaskDiagnosticsResponse getDiagnostics(Long taskId) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public TaskDiagnosticsResponse getDiagnostics(Long spaceId, Long taskId) {
             throw new UnsupportedOperationException();
         }
 
@@ -670,12 +695,27 @@ class SceneServiceImplTest {
         }
 
         @Override
+        public TaskEntity get(Long spaceId, Long taskId) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
         public List<ArtifactEntity> listArtifacts(Long taskId) {
             throw new UnsupportedOperationException();
         }
 
         @Override
+        public List<ArtifactEntity> listArtifacts(Long spaceId, Long taskId) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
         public List<CaseResultResponse> listCaseResultResponses(Long taskId) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public List<CaseResultResponse> listCaseResultResponses(Long spaceId, Long taskId) {
             throw new UnsupportedOperationException();
         }
 
@@ -690,7 +730,17 @@ class SceneServiceImplTest {
         }
 
         @Override
+        public List<ArtifactEntity> listArtifactsByCaseResult(Long spaceId, Long taskId, Long caseResultId) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
         public void cancelTask(Long taskId, String operatorName) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void cancelTask(Long spaceId, Long taskId, String operatorName) {
             throw new UnsupportedOperationException();
         }
 
@@ -700,12 +750,27 @@ class SceneServiceImplTest {
         }
 
         @Override
+        public List<TaskStageLogResponse> listStageLogs(Long spaceId, Long taskId) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
         public ResponseEntity<Resource> downloadArtifact(Long taskId, Long artifactId) {
             throw new UnsupportedOperationException();
         }
 
         @Override
+        public ResponseEntity<Resource> downloadArtifact(Long spaceId, Long taskId, Long artifactId) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
         public ResponseEntity<Resource> downloadStageLog(Long taskId, Long stageLogId) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public ResponseEntity<Resource> downloadStageLog(Long spaceId, Long taskId, Long stageLogId) {
             throw new UnsupportedOperationException();
         }
     }

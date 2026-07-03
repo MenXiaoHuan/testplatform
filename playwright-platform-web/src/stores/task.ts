@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { cancelTask, fetchSceneTasks, getTask, listArtifacts, listTaskCases, listTaskLogs, listTasks, runScene } from '../api/task'
+import { requireCurrentSpaceId } from './space'
 import type { CaseResultRecord } from '../types/report'
 import type { ArtifactRecord, TaskRecord, TaskStageLogRecord } from '../types/task'
 
@@ -25,11 +26,12 @@ export const useTaskStore = defineStore('task', {
   }),
   actions: {
     async fetchAll(page?: number, size?: number) {
+      const spaceId = requireCurrentSpaceId()
       const currentPage = page ?? this.page
       const currentSize = size ?? this.size
       this.loading = true
       try {
-        const response = await listTasks(currentPage, currentSize)
+        const response = await listTasks(spaceId, currentPage, currentSize)
         this.items = response.items
         this.page = response.page
         this.size = response.size
@@ -40,11 +42,12 @@ export const useTaskStore = defineStore('task', {
       }
     },
     async fetchByScene(sceneId: number, page?: number, size?: number) {
+      const spaceId = requireCurrentSpaceId()
       const currentPage = page ?? this.page
       const currentSize = size ?? this.size
       this.loading = true
       try {
-        const response = await fetchSceneTasks(sceneId, currentPage, currentSize)
+        const response = await fetchSceneTasks(spaceId, sceneId, currentPage, currentSize)
         this.items = response.items
         this.page = response.page
         this.size = response.size
@@ -55,9 +58,10 @@ export const useTaskStore = defineStore('task', {
       }
     },
     async refreshList(sceneId?: number | null) {
+      const spaceId = requireCurrentSpaceId()
       const response = typeof sceneId === 'number'
-        ? await fetchSceneTasks(sceneId, this.page, this.size)
-        : await listTasks(this.page, this.size)
+        ? await fetchSceneTasks(spaceId, sceneId, this.page, this.size)
+        : await listTasks(spaceId, this.page, this.size)
       this.items = response.items
       this.page = response.page
       this.size = response.size
@@ -65,7 +69,7 @@ export const useTaskStore = defineStore('task', {
       this.totalPages = response.totalPages
     },
     async executeScene(sceneId: number, _refreshSceneId?: number | null) {
-      const createdTask = await runScene(sceneId)
+      const createdTask = await runScene(requireCurrentSpaceId(), sceneId)
       this.page = 1
       this.total += 1
       this.totalPages = Math.ceil(this.total / this.size)
@@ -92,21 +96,23 @@ export const useTaskStore = defineStore('task', {
       this.totalPages = 0
     },
     async fetchDetail(taskId: number) {
+      const spaceId = requireCurrentSpaceId()
       const [task, artifacts, stageLogs] = await Promise.all([
-        getTask(taskId),
-        listArtifacts(taskId),
-        listTaskLogs(taskId),
+        getTask(spaceId, taskId),
+        listArtifacts(spaceId, taskId),
+        listTaskLogs(spaceId, taskId),
       ])
       this.current = task
       this.artifacts = artifacts
       this.stageLogs = stageLogs
     },
     async fetchTaskDetailPage(taskId: number) {
+      const spaceId = requireCurrentSpaceId()
       const [taskResult, artifactResult, caseResult, stageLogResult] = await Promise.allSettled([
-        getTask(taskId),
-        listArtifacts(taskId),
-        listTaskCases(taskId),
-        listTaskLogs(taskId),
+        getTask(spaceId, taskId),
+        listArtifacts(spaceId, taskId),
+        listTaskCases(spaceId, taskId),
+        listTaskLogs(spaceId, taskId),
       ])
 
       if (taskResult.status === 'rejected') {
@@ -133,8 +139,9 @@ export const useTaskStore = defineStore('task', {
       }
     },
     async cancelCurrentTask(taskId: number) {
-      await cancelTask(taskId)
-      this.current = await getTask(taskId)
+      const spaceId = requireCurrentSpaceId()
+      await cancelTask(spaceId, taskId)
+      this.current = await getTask(spaceId, taskId)
     },
   },
 })
