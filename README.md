@@ -1,70 +1,118 @@
 # Playwright Test Platform
 
-一个用于管理 Playwright 自动化测试仓库、执行场景任务、查看用例结果与运行产物的测试平台。
+一个面向 Playwright 自动化测试的执行与管理平台。平台支持维护测试仓库、配置测试场景、手动或定时触发任务，并统一查看任务状态、用例结果、阶段日志、截图、视频、Trace 等运行产物。
 
-当前仓库实际包含两个子项目：
+---
 
-- `playwright-platform-server`：Spring Boot 后端
-- `playwright-platform-web`：Vue 3 + Vite 前端
+## 1. 项目定位
 
-## 功能概览
+传统 Playwright 测试通常分散在不同仓库、机器和命令行环境中，执行记录、日志、截图、视频、Trace 和结果文件也不容易集中追踪。本项目把这些能力平台化：
 
-- 管理测试仓库配置：Git 地址、默认分支、工作目录、安装命令、测试执行命令、测试目录等
-- 管理 E2E 场景：关联仓库、浏览器、测试选择器、环境变量、定时执行配置
-- 手动触发场景执行，按场景查看任务历史
-- 查看任务详情、阶段状态、阶段日志、用例结果
-- 展示运行产物，包括截图、视频、Trace 等，下载与 Trace 查看统一通过平台后端代理
-- 支持任务取消和任务重新执行
+- 管理测试仓库配置：Git 地址、默认分支、工作目录、安装命令、测试执行命令、结果文件路径和产物目录。
+- 管理测试场景：关联仓库、浏览器、测试选择器、环境变量、Cron 定时规则。
+- 执行测试任务：支持手动触发、定时触发、任务取消和重新执行。
+- 查看执行结果：任务状态、阶段日志、用例结果、截图、视频、Trace 和报告。
+- 统一运行环境：通过 Docker Compose 启动 MySQL、Redis、MinIO、后端和前端。
 
-## 技术栈
+---
 
-- 前端：Vue 3、TypeScript、Vite、Pinia、Element Plus、Vitest
-- 后端：Spring Boot 3.5、Spring Web、注解式 MyBatis、Flyway、Spring Data Redis
-- 存储与依赖：MySQL、Redis、MinIO
+## 2. 技术栈
 
-### 持久层
+| 分层 | 技术 | 说明 |
+|---|---|---|
+| 前端 | Vue 3、TypeScript、Vite、Pinia、Element Plus、Axios、Vitest | 后台页面、状态管理、接口请求和单元测试 |
+| 后端 | Spring Boot 3.5、Spring Web、MyBatis、Flyway、Spring Data Redis | REST API、业务编排、数据库迁移和缓存 |
+| 存储 | MySQL、Redis、MinIO | 结构化数据、详情缓存、对象文件 |
+| 执行 | Local Runner、Docker Runner、Playwright Runner 镜像 | 执行外部测试仓库命令 |
+| 工程化 | Docker、Docker Compose、GitHub Actions、JaCoCo | 本地开发、单机部署、CI 和覆盖率 |
 
-后端只使用注解式 MyBatis，Flyway 管理 schema，无 JPA/XML mapper。
+后端持久层只使用注解式 MyBatis，Flyway 管理 schema，不使用 JPA，也不使用 XML Mapper。
 
-## 目录结构
+---
+
+## 3. 系统架构
+
+```mermaid
+flowchart LR
+    User[用户浏览器] --> Web[Vue 3 / Nginx or Vite]
+    Web -->|/api| Server[Spring Boot 后端]
+    Server -->|MyBatis| MySQL[(MySQL)]
+    Server -->|RedisTemplate| Redis[(Redis)]
+    Server -->|MinIO SDK| MinIO[(MinIO)]
+    Server --> Runner[RunnerExecutionService]
+    Runner --> DockerRunner[Docker Runner 容器]
+    DockerRunner --> Repo[外部 Playwright 测试仓库]
+```
+
+核心设计：
+
+- 前端负责配置录入、任务状态展示、日志和产物查看。
+- 后端负责业务规则、任务调度、异步执行编排、结果解析和产物归档。
+- MySQL 保存用户、空间、仓库、场景、任务、用例结果和产物元数据。
+- Redis 缓存仓库详情、场景详情和任务详情，并处理缓存穿透、击穿、雪崩风险。
+- MinIO 保存截图、视频、Trace、阶段日志、头像等对象文件。
+- 长任务交给自定义线程池和 Runner 执行，不阻塞 Spring Web 请求线程。
+
+---
+
+## 4. 目录结构
 
 ```text
 .
 ├── README.md
+├── docker-compose.yml
+├── docker-compose.prod.yml
+├── docs
+│   ├── deployment.md
+│   ├── docker.md
+│   └── guide.md
 ├── playwright-platform-server
+│   ├── Dockerfile
+│   ├── Dockerfile.dev
 │   ├── pom.xml
 │   └── src
 └── playwright-platform-web
+    ├── Dockerfile
+    ├── Dockerfile.dev
     ├── package.json
     └── src
 ```
 
-## 环境要求
+| 路径 | 作用 |
+|---|---|
+| `playwright-platform-server` | Spring Boot 后端 |
+| `playwright-platform-web` | Vue 3 + Vite 前端 |
+| `docker-compose.yml` | 本地开发编排 |
+| `docker-compose.prod.yml` | 单机生产部署编排 |
+| `docs/deployment.md` | 生产部署手册 |
+| `docs/docker.md` | Docker 文件职责说明 |
+| `docs/guide.md` | 项目架构与技术讲解指南 |
 
-- Node.js 20+
-- npm
-- Java 21
-- Maven 3.9+
-- MySQL 8+
-- Redis 7+
-- MinIO
+---
 
-## Docker Compose 开发环境
+## 5. 快速启动：Docker Compose
 
-本地已安装 Docker 后，可以使用 Compose 一键启动 MySQL、Redis、MinIO、后端和前端。首次启动前先创建本机私有 `.env` 文件，填写端口、连接地址、账号和密码；该文件已被 `.gitignore` 忽略，不会上传到 GitHub。
+推荐本地直接用 Docker Compose 启动完整开发环境。
 
-```bash
-docker compose config
-docker compose up --build
-```
+### 5.1 环境要求
 
-启动后可访问：
+- Docker Desktop 或 Docker Engine。
+- Docker Compose Plugin。
+- Git。
 
-- 前端：`http://localhost:${PLATFORM_WEB_HOST_PORT}`
-- 后端：`http://localhost:${PLATFORM_SERVER_HOST_PORT}`
-- MinIO Console：`http://localhost:${PLATFORM_MINIO_CONSOLE_HOST_PORT}`
+如果不使用 Docker Compose，本机还需要安装：
 
-推荐按以下结构维护本机 `.env`，前端独立分组，后端依赖作为后端子类目：
+- Java 21。
+- Maven 3.9+。
+- Node.js 20+。
+- npm。
+- MySQL 8+。
+- Redis 7+。
+- MinIO。
+
+### 5.2 创建 `.env`
+
+首次启动前，在项目根目录创建本机私有 `.env` 文件。该文件已被 `.gitignore` 忽略，不会上传到 GitHub。
 
 ```env
 # Frontend
@@ -100,7 +148,7 @@ PLATFORM_STORAGE_BUCKET=qa-report
 # Backend - Runner
 PLATFORM_RUNNER_MODE=docker
 PLATFORM_RUNNER_WORKSPACE_ROOT=/runner-workspaces
-PLATFORM_RUNNER_HOST_WORKSPACE_ROOT=/Users/<your-user>/test_platform/.runner-workspaces
+PLATFORM_RUNNER_HOST_WORKSPACE_ROOT=<absolute-path-to-project>/.runner-workspaces
 PLATFORM_RUNNER_DOCKER_IMAGE=mcr.microsoft.com/playwright:v1.61.1-noble
 PLATFORM_RUNNER_DOCKER_NETWORK=bridge
 PLATFORM_RUNNER_DOCKER_MEMORY=2g
@@ -108,17 +156,39 @@ PLATFORM_RUNNER_DOCKER_CPUS=2
 PLATFORM_RUNNER_DOCKER_CONTAINER_WORKSPACE_ROOT=/workspace/task
 ```
 
-本地 Compose 会读取 `.env`，其中真实账号和密码只保留在本机：
+注意：
 
-- MySQL：账号和密码来自 `PLATFORM_DB_USERNAME`、`PLATFORM_DB_PASSWORD`
-- Redis：连接地址和密码来自 `PLATFORM_REDIS_HOST`、`PLATFORM_REDIS_PORT`、`PLATFORM_REDIS_PASSWORD`
-- MinIO：账号和密码来自 `PLATFORM_MINIO_ACCESS_KEY`、`PLATFORM_MINIO_SECRET_KEY`
-- MinIO 对外下载地址：浏览器通过 `PLATFORM_MINIO_PUBLIC_ENDPOINT` 访问对象存储
-- 前端代理：容器内开发服务器通过 `PLATFORM_WEB_API_PROXY_TARGET` 转发到后端
-- 端口映射：宿主机端口来自 `PLATFORM_WEB_HOST_PORT`、`PLATFORM_SERVER_HOST_PORT`、`PLATFORM_MYSQL_HOST_PORT`、`PLATFORM_REDIS_HOST_PORT`、`PLATFORM_MINIO_API_HOST_PORT`、`PLATFORM_MINIO_CONSOLE_HOST_PORT`
-- Runner 工作区：宿主机路径来自 `PLATFORM_RUNNER_HOST_WORKSPACE_ROOT`，容器内路径来自 `PLATFORM_RUNNER_WORKSPACE_ROOT`
+- 不要把真实密码写进代码库。
+- `PLATFORM_MINIO_ENDPOINT` 和 `PLATFORM_MINIO_INTERNAL_ENDPOINT` 是 Docker 内部地址，保持 `http://minio:9000`。
+- `PLATFORM_MINIO_PUBLIC_ENDPOINT` 是浏览器访问对象存储的宿主机地址，本地通常是 `http://localhost:10000`。
+- `PLATFORM_RUNNER_HOST_WORKSPACE_ROOT` 建议填写宿主机绝对路径，例如 `/opt/testplatform/.runner-workspaces`。
+- 如果 MySQL、Redis 或 MinIO 已经使用 Docker volume 初始化过，修改 `.env` 密码不会自动修改已有 volume 内账号密码。
 
-如果 MySQL、Redis 或 MinIO 已经使用 Docker volume 初始化过，修改 `.env` 中的账号密码不会自动修改已有 volume 内部的账号密码。需要沿用旧密码，或执行 `docker compose down -v` 清理数据卷后重新初始化。
+### 5.3 启动
+
+```bash
+docker compose config
+docker compose up -d --build
+docker compose ps
+```
+
+查看日志：
+
+```bash
+docker compose logs -f server
+docker compose logs -f web
+```
+
+访问地址：
+
+| 服务 | 地址 |
+|---|---|
+| 前端 | `http://localhost:5173` |
+| 后端 | `http://localhost:8080` |
+| MySQL | `localhost:4306` |
+| Redis | `localhost:7379` |
+| MinIO API | `http://localhost:10000` |
+| MinIO Console | `http://localhost:10001` |
 
 停止服务：
 
@@ -126,317 +196,220 @@ PLATFORM_RUNNER_DOCKER_CONTAINER_WORKSPACE_ROOT=/workspace/task
 docker compose down
 ```
 
-如需同时清理 MySQL、Redis、MinIO、Maven 缓存和前端依赖数据卷：
+删除容器和数据卷：
 
 ```bash
 docker compose down -v
 ```
 
-该 Compose 配置用于本地开发，会启用后端 `dev` profile。生产环境请显式注入敏感配置，不要使用 `dev` profile。
+`down -v` 会删除 MySQL、Redis、MinIO、Maven 缓存和前端依赖数据卷，谨慎执行。
 
-### 开发镜像与生产镜像
+---
 
-前后端都区分开发镜像和生产镜像：
+## 6. 生产部署
 
-- 开发镜像：`playwright-platform-server/Dockerfile.dev`、`playwright-platform-web/Dockerfile.dev`，由 `docker-compose.yml` 使用，适合本地挂载源码和热更新。
-- 生产镜像：`playwright-platform-server/Dockerfile`、`playwright-platform-web/Dockerfile`，使用多阶段构建，适合 CI/CD 或部署流水线。
-- 后端生产镜像：先用 Maven 打包 Spring Boot jar，再用 JRE 镜像运行，运行时不包含 Maven。
-- 前端生产镜像：先用 `npm ci` 和 Vite 构建静态资源，再用 Nginx 托管 `dist`，并支持 SPA 路由 fallback。
-
-生产镜像示例构建命令：
-
-```bash
-docker build -f playwright-platform-server/Dockerfile -t test-platform-server:prod ./playwright-platform-server
-docker build -f playwright-platform-web/Dockerfile -t test-platform-web:prod ./playwright-platform-web
-```
-
-单机生产部署可以使用 `docker-compose.prod.yml`：
+单机生产部署使用 `docker-compose.prod.yml` 和生产 Dockerfile。
 
 ```bash
 docker compose -f docker-compose.prod.yml config
 docker compose -f docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.prod.yml ps
 ```
 
-正式对团队开放时，推荐前后端分域名部署：
+生产环境特点：
 
-- 前端：`https://test-platform.example.com`
-- 后端 API：`https://api.test-platform.example.com`
+- 后端使用 `playwright-platform-server/Dockerfile`，构建 jar 后用 JRE 运行。
+- 前端使用 `playwright-platform-web/Dockerfile`，构建 `dist` 后由 Nginx 托管。
+- MySQL、Redis、后端默认只在 Docker 内部网络访问。
+- 敏感配置通过服务器私有 `.env` 注入。
+- 正式对团队开放时，推荐前后端分域名：
+  - 前端：`https://test-platform.example.com`
+  - 后端 API：`https://api.test-platform.example.com`
 
-当前 `docker-compose.prod.yml` 先提供单机可运行版本，完整步骤和分域名接入说明见 `docs/deployment.md`。
+完整部署步骤见 `docs/deployment.md`。
 
-### Docker Runner
+---
 
-Compose 开发环境默认启用 `PLATFORM_RUNNER_MODE=docker`。后端会通过 Docker socket 启动短生命周期 Runner 容器来执行安装和测试命令，任务工作区由 `PLATFORM_RUNNER_HOST_WORKSPACE_ROOT` 和 `PLATFORM_RUNNER_WORKSPACE_ROOT` 控制。
+## 7. Docker 文件说明
 
-该模式会把宿主机 `/var/run/docker.sock` 挂载给 server 容器。Docker socket 具备较高权限，仅建议用于本地开发或受控环境。Runner 容器本身不会挂载 Docker socket，只挂载当前任务 workspace。
+| 文件 | 作用 |
+|---|---|
+| `playwright-platform-server/Dockerfile.dev` | 后端开发镜像，挂载源码后运行 `mvn spring-boot:run` |
+| `playwright-platform-server/Dockerfile` | 后端生产镜像，多阶段构建 jar，运行阶段只保留 JRE |
+| `playwright-platform-server/.dockerignore` | 排除后端构建产物、IDE 文件等 |
+| `playwright-platform-web/Dockerfile.dev` | 前端开发镜像，运行 Vite dev server |
+| `playwright-platform-web/Dockerfile` | 前端生产镜像，Node 构建后由 Nginx 托管 |
+| `playwright-platform-web/.dockerignore` | 排除 `node_modules`、`dist`、`.vite` 等 |
+| `docker-compose.yml` | 本地开发多服务编排 |
+| `docker-compose.prod.yml` | 单机生产多服务编排 |
 
-平台在 Docker Runner 模式下会把场景环境变量传递给执行容器，因此可以用场景 `envJson` 覆盖测试仓库中的基础地址等运行参数。例如本地通过 Docker Runner 执行前端站点测试时，可以将 `INTERVIEW_LOGIN_BASE_URL=https://host.docker.internal:5172` 写入场景环境变量，让 Runner 容器访问宿主机上的前端服务。
+详细说明见 `docs/docker.md`。
 
-运行产物不会再直接暴露 MinIO 内网地址或 presigned URL。后端会统一暴露平台代理下载接口，例如：
+---
 
-- `/api/tasks/{taskId}/artifacts/{artifactId}/download`
-- `/api/tasks/{taskId}/logs/{logId}/download`
+## 8. 后端核心能力
 
-浏览器、截图预览和 Playwright Trace Viewer 都通过这些平台接口下载文件；后端再到内网 MinIO 读取对象流返回给客户端。
+### 8.1 数据库与迁移
 
-如需回退到本地执行模式，在 `.env` 中设置：
+- Flyway 启动时自动执行 `playwright-platform-server/src/main/resources/db/migration` 下的迁移脚本。
+- 当前迁移覆盖初始化 schema、调度事件、空间模型、用户会话和自助注册约束。
+- `SCHEMA_OVERVIEW.sql` 仅作为结构参考，不是首选初始化方式。
 
-```bash
-PLATFORM_RUNNER_MODE=local
-```
+### 8.2 Redis 详情缓存
 
-## 快速开始
+仓库详情、场景详情和任务详情会先查 Redis。列表接口、任务日志、用例、产物等目前直接查 MySQL 或对象存储相关服务。
 
-### 1. 克隆仓库
+缓存策略：
 
-```bash
-git clone <your-repo-url>
-cd test_platform
-```
+- 空值缓存：降低不存在 ID 的重复数据库查询，防穿透。
+- TTL 随机抖动：避免大量 key 同时过期，防雪崩。
+- 互斥刷新：热点 key 未命中时减少并发回源，防击穿。
+- 写后失效：仓库、场景、任务变更后删除对应详情缓存。
 
-### 2. 准备基础依赖
+### 8.3 事务策略
 
-先启动本地 MySQL、Redis 和 MinIO。
+- 仓库、场景创建/更新/删除使用短事务。
+- 任务创建、取消、状态更新使用短事务。
+- Playwright 安装、测试执行、结果解析、产物上传不包在一个大事务里。
+- 长任务状态落库由独立 mutation service 分阶段提交，避免长时间占用数据库连接和锁。
 
-本地开发可启用后端 `dev` profile。配置文件只读取环境变量，不内置数据库、Redis 或对象存储连接地址：
+### 8.4 多线程与 Runner
 
-- MySQL 连接：通过 `PLATFORM_DB_URL` 注入
-- 用户名：通过 `PLATFORM_DB_USERNAME` 注入
-- 密码：通过 `PLATFORM_DB_PASSWORD` 注入
-- Redis：通过 `PLATFORM_REDIS_HOST`、`PLATFORM_REDIS_PORT`、`PLATFORM_REDIS_PASSWORD` 注入
-- MinIO：通过 `PLATFORM_MINIO_ENDPOINT` 注入
-- Bucket：`qa-report`
+- HTTP 请求线程由内嵌 Tomcat 管理，只负责接收请求和快速返回。
+- 长任务执行使用自定义 `taskExecutionExecutor`。
+- Docker Runner 通过 Docker socket 启动短生命周期 Playwright 容器执行测试。
+- Runner workspace 由 `PLATFORM_RUNNER_HOST_WORKSPACE_ROOT` 和 `PLATFORM_RUNNER_WORKSPACE_ROOT` 控制。
+- 线程池满载时 fail-fast，任务会被标记为 `FAILED` / `SYSTEM_BUSY`，避免无限排队。
 
-如需覆盖，使用环境变量：
+### 8.5 对象存储
 
-```bash
-export PLATFORM_DB_URL='<your-db-jdbc-url>'
-export PLATFORM_DB_USERNAME='<your-db-username>'
-export PLATFORM_DB_PASSWORD='<your-db-password>'
-export PLATFORM_REDIS_HOST='<your-redis-host>'
-export PLATFORM_REDIS_PORT='<your-redis-port>'
-export PLATFORM_REDIS_PASSWORD='<your-redis-password>'
-export PLATFORM_MINIO_ENDPOINT='<your-minio-endpoint>'
-export PLATFORM_MINIO_ACCESS_KEY='<your-minio-access-key>'
-export PLATFORM_MINIO_SECRET_KEY='<your-minio-secret-key>'
-export PLATFORM_STORAGE_BUCKET='qa-report'
-```
+- MinIO 保存截图、视频、Trace、阶段日志和头像。
+- MySQL 只保存 bucket、object key、content type、size 等元数据。
+- 运行产物下载通过后端平台代理接口返回，避免前端直接依赖 MinIO 内网地址。
 
-如果使用本机 Redis，请先给 Redis 配置密码，或直接使用 Compose 中已启用 `requirepass` 的 Redis。真实密码只写入本地 `.env` 或本机 Redis 配置，不提交到代码库。
+---
 
-本机 Redis 尚未设置密码时，可任选一种方式：
+## 9. 本地非 Docker 启动
 
-- 推荐：使用 `docker compose up redis` 启动 Compose Redis，并在本地 `.env` 中填写 `PLATFORM_REDIS_PASSWORD`
-- 临时：执行 `redis-cli CONFIG SET requirepass '<your-redis-password>'`，重启 Redis 后可能失效
-- 持久：在本机 `redis.conf` 中配置 `requirepass <your-redis-password>`，然后重启 Redis
+不推荐新手使用这种方式，除非你已经本机准备好了 MySQL、Redis 和 MinIO。
 
-### 3. 初始化数据库
-
-后端启动时会通过 Flyway 自动执行 `playwright-platform-server/src/main/resources/db/migration` 下的版本化迁移脚本。
-
-`SCHEMA_OVERVIEW.sql` 仅作为结构参考，不再是首选初始化方式。
-
-### 4. 安装前端依赖
-
-```bash
-cd playwright-platform-web
-npm install
-cd ..
-```
-
-### 5. 启动后端
+### 9.1 启动后端
 
 ```bash
 cd playwright-platform-server
 mvn spring-boot:run -Dspring-boot.run.profiles=dev
 ```
 
-默认监听 `http://localhost:8080`。
+后端默认监听：
 
-### 6. 启动前端
+```text
+http://localhost:8080
+```
+
+### 9.2 启动前端
 
 ```bash
 cd playwright-platform-web
+npm ci
 npm run dev
 ```
 
-Vite 默认访问地址通常为 `http://localhost:5173`。如果需要固定端口，可以这样启动：
+Vite 默认访问：
 
-```bash
-cd playwright-platform-web
-npm run dev -- --host 0.0.0.0 --port 4173
+```text
+http://localhost:5173
 ```
 
-前端开发服务器会将 `/api` 代理到 `http://localhost:8080`。
+---
 
-## 生产配置
+## 10. 测试与 CI
 
-生产环境必须显式注入以下配置，不要依赖本地开发示例值，也不要启用 `dev` profile：
+### 10.1 本地测试
 
-- `PLATFORM_DB_URL`
-- `PLATFORM_DB_USERNAME`
-- `PLATFORM_DB_PASSWORD`
-- `PLATFORM_REDIS_HOST`
-- `PLATFORM_REDIS_PORT`
-- `PLATFORM_REDIS_PASSWORD`
-- `PLATFORM_MINIO_ENDPOINT`
-- `PLATFORM_MINIO_ACCESS_KEY`
-- `PLATFORM_MINIO_SECRET_KEY`
-- `PLATFORM_STORAGE_BUCKET`
-
-### Redis 详情缓存
-
-仓库详情、场景详情和任务详情使用 Redis 缓存，降低高频查询对 MySQL 的压力。写入路径采用写后失效策略，仓库、场景和任务的新增、更新、取消、状态流转、完成归档等变更会删除相关详情缓存。
-
-缓存治理配置由 `platform.cache` 管理：
-
-- `detail-ttl`：正常详情缓存 TTL，默认 `${PLATFORM_CACHE_DETAIL_TTL:5m}`
-- `null-ttl`：空值缓存 TTL，默认 `${PLATFORM_CACHE_NULL_TTL:1m}`，用于防穿透
-- `jitter-seconds`：随机 TTL 抖动秒数，默认 `${PLATFORM_CACHE_JITTER_SECONDS:60}`，用于防雪崩
-- `mutex-ttl`：缓存未命中加载互斥锁 TTL，默认 `${PLATFORM_CACHE_MUTEX_TTL:5s}`，用于防击穿
-
-### 事务策略
-
-平台只在短写操作上开启事务边界，例如仓库、场景、任务取消、任务状态更新、场景摘要更新和启动恢复补偿。长时间执行的 Playwright 安装、测试、解析和产物归档不放在单个数据库事务中，避免外部命令运行期间占用连接和锁。
-
-### 线程池治理
-
-长任务执行继续使用自定义 `taskExecutionExecutor`，不会占用 Spring Web/Tomcat 请求线程执行 Playwright 命令。线程池参数由 `platform.task.execution` 管理：
-
-- `core-pool-size`：核心执行线程数，默认 `2`
-- `max-pool-size`：最大执行线程数，默认 `4`
-- `queue-capacity`：等待队列容量，默认 `50`
-- `keep-alive-seconds`：非核心线程空闲存活时间，默认 `60`
-- `install-timeout-seconds`：依赖安装阶段超时，默认 `600`
-- `test-timeout-seconds`：测试执行阶段超时，默认 `1800`
-- `monitor-log-interval-seconds`：线程池监控日志输出间隔，默认 `30`
-
-`taskExecutionExecutor` 使用 fail-fast 拒绝策略。线程池满载时会记录 active、pool、max、queue 等指标日志，便于日志告警系统按 `Task execution rejected` 关键字触发告警；业务侧捕获拒绝异常后将任务补偿为 `FAILED`，`resultCode=SYSTEM_BUSY`，并同步刷新场景摘要和详情缓存。
-
-启动恢复会扫描历史 `QUEUED/RUNNING` 任务。未取消的 `QUEUED` 任务会重新派发，重启前已进入 `RUNNING` 或已取消的任务会按失败/取消路径补偿，避免服务重启后任务长期卡在执行中。
-
-### Tomcat 请求线程
-
-HTTP 请求线程由内嵌 Tomcat 管理，只负责接收请求和提交后台任务。可通过以下环境变量调整请求线程池和连接积压队列：
-
-- `SERVER_TOMCAT_THREADS_MAX`：最大请求线程数，默认 `200`
-- `SERVER_TOMCAT_THREADS_MIN_SPARE`：最小空闲请求线程数，默认 `10`
-- `SERVER_TOMCAT_ACCEPT_COUNT`：请求线程耗尽时的连接等待队列长度，默认 `100`
-
-## 开发命令
-
-### 后端
+后端：
 
 ```bash
 cd playwright-platform-server
-mvn spring-boot:run -Dspring-boot.run.profiles=dev
 mvn test
 ```
 
-### 前端
+前端：
 
 ```bash
 cd playwright-platform-web
-npm install
-npm run dev
+npm test
 npm run build
-npm test
 ```
 
-## CI
+### 10.2 GitHub Actions
 
-项目使用 GitHub Actions 作为主干质量门禁。每次 `push` 和 `pull_request` 会自动执行：
+项目使用 GitHub Actions 作为主干质量门禁。每次 `push` 和 `pull_request` 会执行：
 
-- 后端：`mvn test`（同步生成 JaCoCo 覆盖率报告）
-- 前端：`npm ci`
-- 前端：`npm test -- --coverage`（生成 Vitest v8 覆盖率报告）
-- 前端：`npm run build`
-- 前端：`npm audit --audit-level=high`（信息性检查，不阻塞构建）
+| Job | 步骤 |
+|---|---|
+| backend | Java 21、Maven cache、`mvn test`、上传 JaCoCo 覆盖率 |
+| frontend | Node 20、`npm ci`、`npm test -- --coverage`、`npm run build`、`npm audit` |
 
-运行结束后，覆盖率报告会通过 GitHub Actions artifact 上传，可在 CI 运行详情中下载查看。
+覆盖率报告：
 
-### 覆盖率报告
+- 后端：`playwright-platform-server/target/site/jacoco/index.html`。
+- 前端：`playwright-platform-web/coverage/index.html`。
 
-**后端（JaCoCo）**
+---
 
-运行 `mvn test` 后，报告位于 `playwright-platform-server/target/site/jacoco/index.html`。
+## 11. 核心接口
 
-**前端（Vitest + v8）**
+| 接口 | 说明 |
+|---|---|
+| `GET /api/repos` | 仓库列表 |
+| `POST /api/repos` | 创建仓库 |
+| `GET /api/scenes` | 场景列表 |
+| `POST /api/scenes` | 创建场景 |
+| `POST /api/scenes/{sceneId}/run` | 执行场景 |
+| `GET /api/tasks` | 任务列表 |
+| `GET /api/scenes/{sceneId}/tasks` | 某个场景的任务 |
+| `GET /api/tasks/{taskId}` | 任务详情 |
+| `POST /api/tasks/{taskId}/cancel` | 取消任务 |
+| `GET /api/tasks/{taskId}/artifacts` | 任务产物 |
+| `GET /api/tasks/{taskId}/artifacts/{artifactId}/download` | 下载任务产物 |
+| `GET /api/tasks/{taskId}/cases` | 用例结果 |
+| `GET /api/tasks/{taskId}/logs` | 阶段日志 |
+| `GET /api/tasks/{taskId}/logs/{logId}/download` | 下载阶段日志 |
 
-运行 `npm test -- --coverage` 后，报告位于 `playwright-platform-web/coverage/index.html`。同时生成 `lcov.info` 便于后续对接代码覆盖率平台。
+---
 
-### TypeScript 严格模式
+## 12. 测试仓库接入建议
 
-前端 `tsconfig.app.json` 已启用 `"strict": true`，确保所有新增代码在类型层面被严格检查。`npm run build` 使用 `vue-tsc -b` 进行类型检查。
+平台中的“测试仓库”指被平台拉取并执行的 Playwright 自动化项目。接入时建议：
 
-## 核心页面与能力
+- `工作目录`：单仓库项目可留空，Monorepo 填写子目录。
+- `安装命令`：建议使用 `npm ci` 或与测试仓库锁文件匹配的安装命令。
+- `测试执行命令`：例如 `npx playwright test`。
+- 如果用 npm script 包装测试命令，保持参数透传，例如 `npm run test:e2e --`。
+- `测试目录`：相对工作目录，例如 `tests`。
+- `结果索引文件`：相对工作目录，例如 `test-results/.playwright-results.json`。
+- `运行产物目录`：相对工作目录，例如 `.playwright-artifacts`。
+- Runner 镜像已包含浏览器环境时，不建议默认执行 `npx playwright install`，避免重复下载浏览器。
+- 测试仓库的 `@playwright/test` 版本建议与 Runner 镜像版本对齐。
 
-### 仓库管理
+---
 
-- 新增、编辑、复制、删除测试仓库
-- 启用或停用仓库
-- 配置工作目录、安装命令、执行命令模板、测试目录、结果索引文件和产物目录
+## 13. 文档导航
 
-### 场景管理
+| 文档 | 内容 |
+|---|---|
+| `docs/guide.md` | 项目前后端架构、文件职责、核心业务链路、常见问题讲解 |
+| `docs/docker.md` | Dockerfile、Dockerfile.dev、.dockerignore 与 Compose 职责划分 |
+| `docs/deployment.md` | 单机生产部署、`.env`、验证、备份、回滚、域名 HTTPS、排障 |
 
-- 创建和编辑 E2E 场景
-- 选择浏览器、分支、用例路径或目录
-- 配置环境变量 JSON
-- 配置定时执行 Cron 表达式
+---
 
-### 任务管理
+## 14. 注意事项
 
-- 手动触发场景执行
-- 查看任务列表、状态、阶段、耗时、结果归因
-- 查看任务详情、阶段日志、用例结果
-- 查看截图、视频、Trace 等产物
-- 取消运行中的任务，或对历史任务重新执行
-
-## 主要接口
-
-后端当前暴露的核心接口包括：
-
-- `GET /api/repos`
-- `POST /api/repos`
-- `GET /api/scenes`
-- `POST /api/scenes`
-- `POST /api/scenes/{sceneId}/run`
-- `GET /api/tasks`
-- `GET /api/scenes/{sceneId}/tasks`
-- `GET /api/tasks/{taskId}`
-- `POST /api/tasks/{taskId}/cancel`
-- `GET /api/tasks/{taskId}/artifacts`
-- `GET /api/tasks/{taskId}/artifacts/{artifactId}/download`
-- `GET /api/tasks/{taskId}/cases`
-- `GET /api/tasks/{taskId}/logs`
-- `GET /api/tasks/{taskId}/logs/{logId}/download`
-
-## 仓库接入说明
-
-平台中的“测试仓库”指被平台拉取并执行的 Playwright 自动化项目。接入时建议使用以下约定：
-
-- `工作目录`：单仓库项目可留空；Monorepo 可填写子目录
-- `安装命令`：默认建议使用 `npm install`
-- `测试执行命令`：例如 `npx playwright test`
-- 如果使用 npm script 包装测试命令，必须保持参数透传，例如 `npm run test:e2e --`
-- `测试目录`：相对工作目录，例如 `tests`
-- `结果索引文件`：相对工作目录，例如 `test-results/.playwright-results.json`
-- `运行产物目录`：相对工作目录，例如 `.playwright-artifacts`
-
-如果 Runner 镜像已经内置浏览器环境，通常不建议把 `npx playwright install` 写进默认安装命令，否则容器内会重复下载浏览器，增加超时和 CDN 失败概率。更稳妥的做法是让测试仓库的 `@playwright/test` 版本与 Runner 镜像版本对齐。
-
-## 测试
-
-```bash
-cd playwright-platform-server
-mvn test
-
-cd ../playwright-platform-web
-npm test
-```
-
-## 注意事项
-
-- 前端项目内默认 `README.md` 仍是 Vite 模板文件，不代表当前平台说明
-- 本仓库当前并不包含 `playwright_framework` 子目录，相关旧说明已不适用
-- 后端任务执行依赖 MySQL、MinIO 以及可被拉取和执行的 Playwright 测试仓库
+- `.env` 保存本地或服务器真实配置，不要提交 GitHub。
+- `.env.example` 当前按项目要求不保留，创建 `.env` 时参考本文档和 `docs/deployment.md`。
+- MySQL、Redis、MinIO 使用 Docker volume 初始化后，修改 `.env` 密码不会自动修改已有数据卷里的账号密码。
+- 不要公网开放 MySQL 和 Redis。
+- MinIO Console 只建议限制来源 IP 后开放。
+- Docker Runner 需要挂载 `/var/run/docker.sock`，该权限较高，只建议用于本地开发或受控服务器。
+- 前端项目内如果存在 Vite 模板说明，以本仓库根目录 README 为准。
