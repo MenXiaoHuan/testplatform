@@ -20,6 +20,7 @@ import com.example.platform.task.dto.CaseResultResponse;
 import com.example.platform.task.dto.SceneTaskListResponse;
 import com.example.platform.task.dto.TaskDiagnosticsResponse;
 import com.example.platform.task.dto.TaskDetailResponse;
+import com.example.platform.task.dto.TaskTraceShareResponse;
 import com.example.platform.task.dto.TaskStageLogResponse;
 import com.example.platform.task.mapper.ArtifactMapper;
 import com.example.platform.task.mapper.CaseResultMapper;
@@ -28,6 +29,7 @@ import com.example.platform.task.mapper.TaskStageLogMapper;
 import com.example.platform.task.model.ArtifactEntity;
 import com.example.platform.task.model.TaskEntity;
 import com.example.platform.task.service.TaskService;
+import com.example.platform.task.service.TaskTraceShareService;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -59,6 +61,8 @@ class TaskControllerTest {
 
     @MockitoBean
     private TaskService taskService;
+    @MockitoBean
+    private TaskTraceShareService taskTraceShareService;
     @MockitoBean
     private AuthService authService;
     @MockitoBean
@@ -233,6 +237,40 @@ class TaskControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
                         .string("Access-Control-Allow-Origin", "https://trace.playwright.dev"));
+    }
+
+    @Test
+    void shouldCreateTraceShareUrlThroughPlatform() throws Exception {
+        TaskTraceShareResponse shareResponse = new TaskTraceShareResponse(
+                "/api/public/traces/download?token=trace-token",
+                Instant.parse("2026-07-03T10:15:30Z"));
+        Mockito.when(taskTraceShareService.createTraceShare(7L, 101L, 11L)).thenReturn(shareResponse);
+
+        mockMvc.perform(authenticated(post("/api/spaces/7/tasks/101/artifacts/11/trace-share")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("OK"))
+                .andExpect(jsonPath("$.data.shareUrl").value("/api/public/traces/download?token=trace-token"))
+                .andExpect(jsonPath("$.data.expiresAt").value("2026-07-03T10:15:30Z"))
+                .andExpect(jsonPath("$.msg").value("success"));
+    }
+
+    @Test
+    void shouldDownloadSharedTraceWithoutAuthentication() throws Exception {
+        ByteArrayResource resource = new ByteArrayResource("trace-data".getBytes());
+        ResponseEntity<Resource> response = ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType("application/zip"))
+                .header("Content-Disposition", "attachment; filename=\"trace.zip\"")
+                .body(resource);
+        Mockito.when(taskTraceShareService.downloadSharedTrace("trace-token")).thenReturn(response);
+
+        mockMvc.perform(get("/api/public/traces/download").param("token", "trace-token")
+                        .header("Origin", "https://trace.playwright.dev"))
+                .andExpect(status().isOk())
+                .andExpect(content().bytes("trace-data".getBytes()))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
+                        .string("Access-Control-Allow-Origin", "https://trace.playwright.dev"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
+                        .string("Content-Type", "application/zip"));
     }
 
     @Test

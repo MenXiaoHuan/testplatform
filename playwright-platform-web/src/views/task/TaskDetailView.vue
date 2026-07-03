@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { createTraceShareUrl } from '../../api/task'
 import { useTaskStore } from '../../stores/task'
 import type { CaseArtifactLinkRecord, CaseResultRecord } from '../../types/report'
 import type { TaskStageLogRecord } from '../../types/task'
@@ -129,15 +130,46 @@ function isExternalUrl(value?: string | null) {
   return typeof value === 'string' && /^https?:\/\//i.test(value)
 }
 
-function openTraceViewer(traceUrl?: string | null) {
-  if (!traceUrl) {
+function extractArtifactIdFromDownloadUrl(value?: string | null) {
+  if (!value) {
+    return null
+  }
+  try {
+    const resolvedUrl = isExternalUrl(value)
+      ? new URL(value)
+      : new URL(value, window.location.origin)
+    const pathSegments = resolvedUrl.pathname.split('/').filter(Boolean)
+    const artifactSegmentIndex = pathSegments.lastIndexOf('artifacts')
+    if (artifactSegmentIndex < 0 || artifactSegmentIndex + 1 >= pathSegments.length) {
+      return null
+    }
+    const artifactId = Number(pathSegments[artifactSegmentIndex + 1])
+    return Number.isFinite(artifactId) ? artifactId : null
+  } catch {
+    return null
+  }
+}
+
+async function openTraceViewer(item: CaseResultRecord) {
+  const traceUrl = caseTraceUrl(item)
+  if (!traceUrl || spaceId.value === null || typeof task.value?.id !== 'number') {
     return
   }
-  const resolvedTraceUrl = isExternalUrl(traceUrl)
-    ? traceUrl
-    : new URL(traceUrl, window.location.origin).toString()
-  const viewerUrl = `${TRACE_VIEWER_BASE_URL}?trace=${encodeURIComponent(resolvedTraceUrl)}`
-  window.open(viewerUrl, '_blank', 'noopener')
+  const artifactId = extractArtifactIdFromDownloadUrl(traceUrl)
+  if (artifactId === null) {
+    showAppToast('Trace 地址无效', 'error')
+    return
+  }
+  try {
+    const share = await createTraceShareUrl(spaceId.value, task.value.id, artifactId)
+    const resolvedShareUrl = isExternalUrl(share.shareUrl)
+      ? share.shareUrl
+      : new URL(share.shareUrl, window.location.origin).toString()
+    const viewerUrl = `${TRACE_VIEWER_BASE_URL}?trace=${encodeURIComponent(resolvedShareUrl)}`
+    window.open(viewerUrl, '_blank', 'noopener')
+  } catch (error) {
+    showAppToast(toErrorMessage(error, 'Trace 分享链接生成失败'), 'error')
+  }
 }
 
 function stageLogText(item: TaskStageLogRecord) {
@@ -412,7 +444,7 @@ useTaskDetailLoader({
                       <div class="task-runtime-panel__header">
                         <strong class="task-runtime-section-title">执行轨迹</strong>
                         <div class="task-case-runtime__toolbar">
-                          <el-button link type="primary" :disabled="!caseTraceUrl(item)" @click="openTraceViewer(caseTraceUrl(item))">查看 Trace</el-button>
+                          <el-button link type="primary" :disabled="!caseTraceUrl(item)" @click="openTraceViewer(item)">查看 Trace</el-button>
                         </div>
                       </div>
 

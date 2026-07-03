@@ -1,6 +1,6 @@
 import { get, post } from './http'
 import type { PageResult } from '../types/common'
-import type { ArtifactRecord, TaskDiagnosticsRecord, TaskRecord, TaskStageLogRecord } from '../types/task'
+import type { ArtifactRecord, TaskDiagnosticsRecord, TaskRecord, TaskStageLogRecord, TaskTraceShareRecord } from '../types/task'
 import type { CaseResultRecord } from '../types/report'
 
 export const listTasks = async (spaceId: number, page = 1, size = 10) => {
@@ -41,4 +41,8 @@ export const listTaskLogs = async (spaceId: number, taskId: number) => {
 
 export const getTaskDiagnostics = async (spaceId: number, taskId: number) => {
   return get<TaskDiagnosticsRecord>(`/spaces/${spaceId}/tasks/${taskId}/diagnostics`)
+}
+
+export const createTraceShareUrl = async (spaceId: number, taskId: number, artifactId: number) => {
+  return post<TaskTraceShareRecord>(`/spaces/${spaceId}/tasks/${taskId}/artifacts/${artifactId}/trace-share`)
 }

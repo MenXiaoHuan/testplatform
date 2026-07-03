@@ -80,3 +80,8 @@ export interface TaskStageLogRecord {
   lineCount: number
   downloadUrl?: string | null
 }
+
+export interface TaskTraceShareRecord {
+  shareUrl: string
+  expiresAt: string
+}

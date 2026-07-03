@@ -8,10 +8,12 @@ import com.example.platform.task.dto.CaseResultResponse;
 import com.example.platform.task.dto.SceneTaskListResponse;
 import com.example.platform.task.dto.TaskDetailResponse;
 import com.example.platform.task.dto.TaskDiagnosticsResponse;
+import com.example.platform.task.dto.TaskTraceShareResponse;
 import com.example.platform.task.dto.TaskRunResponse;
 import com.example.platform.task.dto.TaskStageLogResponse;
 import com.example.platform.task.model.ArtifactEntity;
 import com.example.platform.task.service.TaskService;
+import com.example.platform.task.service.TaskTraceShareService;
 import java.util.List;
 import org.springframework.core.io.Resource;
 import org.springframework.http.ResponseEntity;
@@ -26,12 +28,15 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 public class TaskController {
     private final TaskService taskService;
+    private final TaskTraceShareService taskTraceShareService;
     private final SpaceAuthorizationService spaceAuthorizationService;
 
     public TaskController(
             TaskService taskService,
+            TaskTraceShareService taskTraceShareService,
             SpaceAuthorizationService spaceAuthorizationService) {
         this.taskService = taskService;
+        this.taskTraceShareService = taskTraceShareService;
         this.spaceAuthorizationService = spaceAuthorizationService;
     }
 
@@ -104,6 +109,15 @@ public class TaskController {
         return taskService.downloadArtifact(spaceId, taskId, artifactId);
     }
 
+    @PostMapping("/api/spaces/{spaceId}/tasks/{taskId}/artifacts/{artifactId}/trace-share")
+    public ApiResponse<TaskTraceShareResponse> createTraceShare(
+            @PathVariable Long spaceId,
+            @PathVariable Long taskId,
+            @PathVariable Long artifactId) {
+        spaceAuthorizationService.requireReadableSpace(spaceId, AuthContextHolder.require());
+        return ApiResponse.ok(taskTraceShareService.createTraceShare(spaceId, taskId, artifactId));
+    }
+
     @GetMapping("/api/spaces/{spaceId}/tasks/{taskId}/logs")
     public ApiResponse<List<TaskStageLogResponse>> listTaskLogs(@PathVariable Long spaceId, @PathVariable Long taskId) {
         spaceAuthorizationService.requireReadableSpace(spaceId, AuthContextHolder.require());
@@ -115,5 +129,11 @@ public class TaskController {
     public ResponseEntity<Resource> downloadTaskLog(@PathVariable Long spaceId, @PathVariable Long taskId, @PathVariable Long logId) {
         spaceAuthorizationService.requireReadableSpace(spaceId, AuthContextHolder.require());
         return taskService.downloadStageLog(spaceId, taskId, logId);
+    }
+
+    @CrossOrigin(origins = "https://trace.playwright.dev")
+    @GetMapping("/api/public/traces/download")
+    public ResponseEntity<Resource> downloadSharedTrace(@RequestParam String token) {
+        return taskTraceShareService.downloadSharedTrace(token);
     }
 }
