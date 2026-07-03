@@ -108,7 +108,7 @@ describe('LoginView', () => {
     expect(pushMock).toHaveBeenCalledWith('/home')
   })
 
-  it('should render login page copy with product highlights', () => {
+  it('should render the redesigned login page copy and brand highlights', () => {
     const wrapper = mount(LoginView, {
       global: {
         plugins: [pinia],
@@ -122,11 +122,12 @@ describe('LoginView', () => {
     })
 
     expect(wrapper.text()).toContain('测试平台')
-    expect(wrapper.text()).toContain('产品亮点')
-    expect(wrapper.text()).toContain('空间化协作')
-    expect(wrapper.text()).toContain('任务与调度联动')
-    expect(wrapper.text()).toContain('安全登录与留痕')
-    expect(wrapper.text()).toContain('账号登录')
+    expect(wrapper.text()).toContain('自动化测试协作平台')
+    expect(wrapper.text()).toContain('一站式自动化测试协作解决方案')
+    expect(wrapper.text()).toContain('空间与权限协作')
+    expect(wrapper.text()).toContain('场景执行与调度')
+    expect(wrapper.text()).toContain('结果留痕与产物归档')
+    expect(wrapper.text()).toContain('欢迎回来')
   })
 
   it('should switch to register mode and jump to personal space after registration', async () => {
