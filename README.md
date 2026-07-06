@@ -137,7 +137,6 @@ PLATFORM_REDIS_PASSWORD=<your-redis-password>
 
 # Backend - MinIO
 PLATFORM_MINIO_ENDPOINT=http://minio:9000
-PLATFORM_MINIO_INTERNAL_ENDPOINT=http://minio:9000
 PLATFORM_MINIO_PUBLIC_ENDPOINT=http://localhost:10000
 PLATFORM_MINIO_API_HOST_PORT=10000
 PLATFORM_MINIO_CONSOLE_HOST_PORT=10001
@@ -149,7 +148,7 @@ PLATFORM_STORAGE_BUCKET=qa-report
 PLATFORM_RUNNER_MODE=docker
 PLATFORM_RUNNER_WORKSPACE_ROOT=/runner-workspaces
 PLATFORM_RUNNER_HOST_WORKSPACE_ROOT=<absolute-path-to-project>/.runner-workspaces
-PLATFORM_RUNNER_DOCKER_IMAGE=mcr.microsoft.com/playwright:v1.61.1-noble
+PLATFORM_RUNNER_DOCKER_IMAGE=mcr.microsoft.com/playwright:v1.44.0-jammy
 PLATFORM_RUNNER_DOCKER_NETWORK=bridge
 PLATFORM_RUNNER_DOCKER_MEMORY=2g
 PLATFORM_RUNNER_DOCKER_CPUS=2
@@ -159,8 +158,8 @@ PLATFORM_RUNNER_DOCKER_CONTAINER_WORKSPACE_ROOT=/workspace/task
 注意：
 
 - 不要把真实密码写进代码库。
-- `PLATFORM_MINIO_ENDPOINT` 和 `PLATFORM_MINIO_INTERNAL_ENDPOINT` 是 Docker 内部地址，保持 `http://minio:9000`。
-- `PLATFORM_MINIO_PUBLIC_ENDPOINT` 是浏览器访问对象存储的宿主机地址，本地通常是 `http://localhost:10000`。
+- `PLATFORM_MINIO_ENDPOINT` 是后端访问 MinIO 的 Docker 内部地址，保持 `http://minio:9000`。
+- `PLATFORM_MINIO_PUBLIC_ENDPOINT` 用于生成公网可访问的 MinIO 预签名地址，本地通常是 `http://localhost:10000`；任务产物下载和 Trace 分享仍优先通过后端平台代理接口返回。
 - `PLATFORM_RUNNER_HOST_WORKSPACE_ROOT` 建议填写宿主机绝对路径，例如 `/opt/testplatform/.runner-workspaces`。
 - 如果 MySQL、Redis 或 MinIO 已经使用 Docker volume 初始化过，修改 `.env` 密码不会自动修改已有 volume 内账号密码。
 
@@ -361,20 +360,40 @@ npm run build
 
 | 接口 | 说明 |
 |---|---|
-| `GET /api/repos` | 仓库列表 |
-| `POST /api/repos` | 创建仓库 |
-| `GET /api/scenes` | 场景列表 |
-| `POST /api/scenes` | 创建场景 |
-| `POST /api/scenes/{sceneId}/run` | 执行场景 |
-| `GET /api/tasks` | 任务列表 |
-| `GET /api/scenes/{sceneId}/tasks` | 某个场景的任务 |
-| `GET /api/tasks/{taskId}` | 任务详情 |
-| `POST /api/tasks/{taskId}/cancel` | 取消任务 |
-| `GET /api/tasks/{taskId}/artifacts` | 任务产物 |
-| `GET /api/tasks/{taskId}/artifacts/{artifactId}/download` | 下载任务产物 |
-| `GET /api/tasks/{taskId}/cases` | 用例结果 |
-| `GET /api/tasks/{taskId}/logs` | 阶段日志 |
-| `GET /api/tasks/{taskId}/logs/{logId}/download` | 下载阶段日志 |
+| `GET /api/auth/public-key` | 获取登录加密公钥 |
+| `POST /api/auth/login` | 登录 |
+| `POST /api/auth/register` | 注册 |
+| `GET /api/auth/me` | 获取当前用户 |
+| `PUT /api/auth/profile` | 更新当前用户资料 |
+| `POST /api/auth/avatar` | 上传当前用户头像 |
+| `POST /api/auth/logout` | 退出登录 |
+| `GET /api/spaces` | 当前用户空间列表 |
+| `GET /api/spaces/plaza` | 空间广场 |
+| `POST /api/spaces` | 创建空间 |
+| `GET /api/spaces/{spaceId}/access-requests` | 空间加入/权限申请列表 |
+| `POST /api/spaces/{spaceId}/access-requests` | 提交空间加入/权限申请 |
+| `POST /api/spaces/{spaceId}/access-requests/{requestId}/approve` | 审批通过空间申请 |
+| `POST /api/spaces/{spaceId}/access-requests/{requestId}/reject` | 拒绝空间申请 |
+| `GET /api/spaces/{spaceId}/repos` | 仓库列表 |
+| `POST /api/spaces/{spaceId}/repos` | 创建仓库 |
+| `GET /api/spaces/{spaceId}/scenes` | 场景列表 |
+| `POST /api/spaces/{spaceId}/scenes` | 创建场景 |
+| `POST /api/spaces/{spaceId}/scenes/{sceneId}/run` | 执行场景 |
+| `GET /api/spaces/{spaceId}/tasks` | 任务列表 |
+| `GET /api/spaces/{spaceId}/scenes/{sceneId}/tasks` | 某个场景的任务 |
+| `GET /api/spaces/{spaceId}/tasks/{taskId}` | 任务详情 |
+| `POST /api/spaces/{spaceId}/tasks/{taskId}/cancel` | 取消任务 |
+| `GET /api/spaces/{spaceId}/tasks/{taskId}/diagnostics` | 任务诊断信息 |
+| `GET /api/spaces/{spaceId}/tasks/{taskId}/artifacts` | 任务产物 |
+| `GET /api/spaces/{spaceId}/tasks/{taskId}/artifacts/{artifactId}/download` | 下载任务产物 |
+| `POST /api/spaces/{spaceId}/tasks/{taskId}/artifacts/{artifactId}/trace-share` | 创建 Trace 分享下载地址 |
+| `GET /api/public/traces/download` | 使用分享 token 下载 Trace |
+| `GET /api/spaces/{spaceId}/tasks/{taskId}/cases` | 用例结果 |
+| `GET /api/spaces/{spaceId}/tasks/{taskId}/cases/{caseResultId}/artifacts` | 某条用例关联产物 |
+| `GET /api/spaces/{spaceId}/tasks/{taskId}/logs` | 阶段日志 |
+| `GET /api/spaces/{spaceId}/tasks/{taskId}/logs/{logId}/download` | 下载阶段日志 |
+| `GET /api/spaces/{spaceId}/schedule-events` | 调度事件列表 |
+| `POST /api/spaces/{spaceId}/schedule-events/{eventId}/retry` | 重试调度事件 |
 
 ---
 

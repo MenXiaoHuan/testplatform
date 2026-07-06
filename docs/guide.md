@@ -291,8 +291,8 @@ sequenceDiagram
     participant M as MinIO
 
     U->>W: 点击执行场景
-    W->>C: POST /api/scenes/{sceneId}/run
-    C->>S: createAndStart(sceneId)
+    W->>C: POST /api/spaces/{spaceId}/scenes/{sceneId}/run
+    C->>S: createAndStart(spaceId, sceneId)
     S->>DB: 创建 task，状态 QUEUED
     S->>E: 提交后台执行
     S-->>W: 返回 taskId
@@ -312,7 +312,7 @@ sequenceDiagram
 | 步骤 | 发生位置 | 做什么 | 设计意义 |
 |---|---|---|---|
 | 1 | 前端 | 用户点击执行 | 用户入口 |
-| 2 | Controller | 接收 `/api/scenes/{sceneId}/run` | HTTP 边界保持薄 |
+| 2 | Controller | 接收 `/api/spaces/{spaceId}/scenes/{sceneId}/run` | HTTP 边界保持薄，并校验空间权限 |
 | 3 | Service | 创建 `task` | 先落库，任务可追踪 |
 | 4 | 线程池 | 提交异步执行 | 不阻塞请求线程 |
 | 5 | Orchestrator | 准备 workspace | 隔离每次任务目录 |
@@ -355,7 +355,7 @@ stateDiagram-v2
 
 | 步骤 | 说明 |
 |---|---|
-| 前端请求 | 调用 `POST /api/tasks/{taskId}/cancel` |
+| 前端请求 | 调用 `POST /api/spaces/{spaceId}/tasks/{taskId}/cancel` |
 | 写取消标记 | 后端设置 `cancel_requested`、`cancel_requested_at`、`cancel_requested_by` |
 | 执行器感知 | Runner 或执行流程检查取消标记 |
 | 清理资源 | Docker Runner 尝试停止并移除容器 |
@@ -419,12 +419,12 @@ flowchart TD
 
 | 接口 | Redis key | 是否先查 Redis |
 |---|---|---|
-| `GET /api/repos/{id}` | `detail:repository:{id}` | 是 |
-| `GET /api/scenes/{id}` | `detail:scene:{id}` | 是 |
-| `GET /api/tasks/{taskId}` | `detail:task:{taskId}` | 是 |
-| `GET /api/repos` | 无 | 否，直接分页查 MySQL |
-| `GET /api/scenes` | 无 | 否，直接分页查 MySQL |
-| `GET /api/tasks` | 无 | 否，直接分页查 MySQL |
+| `GET /api/spaces/{spaceId}/repos/{id}` | `detail:repository:{id}` | 是 |
+| `GET /api/spaces/{spaceId}/scenes/{id}` | `detail:scene:{id}` | 是 |
+| `GET /api/spaces/{spaceId}/tasks/{taskId}` | `detail:task:{taskId}` | 是 |
+| `GET /api/spaces/{spaceId}/repos` | 无 | 否，直接分页查 MySQL |
+| `GET /api/spaces/{spaceId}/scenes` | 无 | 否，直接分页查 MySQL |
+| `GET /api/spaces/{spaceId}/tasks` | 无 | 否，直接分页查 MySQL |
 | 日志/产物/用例接口 | 无 | 否，直接查 MySQL 或 MinIO 相关服务 |
 
 ### 9.3 缓存保护策略
@@ -452,8 +452,9 @@ flowchart LR
     Task --> Files[文件产物]
     Structured --> MySQL[(MySQL: task / case_result / artifact metadata)]
     Files --> MinIO[(MinIO: screenshots / videos / trace / logs)]
-    MySQL --> Web[前端查询元数据]
-    MinIO --> Web
+    MySQL --> Server[后端查询元数据]
+    MinIO --> Server
+    Server --> Web[前端通过平台代理接口下载或预览]
 ```
 
 ### 10.2 存储内容
@@ -471,8 +472,7 @@ flowchart LR
 
 | 方式 | 作用 | 是否必须 |
 |---|---|---|
-| `minio-init` 容器 | Compose 启动时提前创建 bucket | 不是绝对必须 |
-| 后端 `ensureBucket` | 上传前检查并创建 bucket | 兜底能力，建议保留 |
+| 后端 `ensureBucket` | 上传前检查并创建 bucket | 当前实际方式，Compose 不再依赖额外初始化容器 |
 
 ---
 
@@ -532,7 +532,7 @@ flowchart TD
 
 ## 13. Docker Compose
 
-Dockerfile、Dockerfile.dev、.dockerignore 与 Compose 的完整职责划分见 `docs/docker.md`。本节只保留Docker 总览。
+Dockerfile、Dockerfile.dev、.dockerignore 与 Compose 的完整职责划分见 `docs/docker.md`。本节只保留 Docker 总览。
 
 ### 13.1 开发与生产 Compose 对比
 
@@ -555,7 +555,6 @@ Dockerfile、Dockerfile.dev、.dockerignore 与 Compose 的完整职责划分见
 | `mysql` | 业务数据库 | 保存结构化数据 |
 | `redis` | 缓存 | 保存详情缓存和互斥锁 key |
 | `minio` | 对象存储 | 保存截图、视频、Trace、日志 |
-| `minio-init` | bucket 初始化 | 提前创建 bucket，后端也有兜底 |
 | `server` | Spring Boot 后端 | 提供 API 和任务编排 |
 | `web` | Vue 前端 | 开发环境 Vite，生产环境 Nginx |
 
