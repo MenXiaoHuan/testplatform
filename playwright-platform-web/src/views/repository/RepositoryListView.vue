@@ -190,7 +190,7 @@ async function handleSizeChange(size: number) {
     </template>
 
     <el-table class="list-table" :data="rows" :loading="loading" empty-text="暂无仓库">
-      <el-table-column label="On/Off" width="104">
+      <el-table-column label="开关" width="90" class-name="col-switch" :show-overflow-tooltip="false">
         <template #default="{ row }">
           <el-switch
             :model-value="row.enabled"
@@ -312,6 +312,12 @@ async function handleSizeChange(size: number) {
   font-size: 12px;
   font-weight: 600;
   cursor: help;
+}
+
+:deep(.col-switch .cell) {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .table-actions {
