@@ -40,14 +40,6 @@ export const useAiStore = defineStore('ai', {
       if (!this.sessionId) {
         this.sessionId = crypto.randomUUID()
       }
-
-      if (context?.taskId) {
-        const taskId = context.taskId
-        const prompt = context.sceneId
-          ? `请帮我分析任务 #${taskId} 的错误根因，该任务属于场景 #${context.sceneId}`
-          : `请帮我分析任务 #${taskId} 的错误根因`
-        void this.sendMessage(prompt, { taskId, sceneId: context.sceneId })
-      }
     },
     close() {
       this.visible = false

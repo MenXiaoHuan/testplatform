@@ -67,6 +67,7 @@ public class AgentCallManager {
 
     public <T> CallResult<T> executeWithRetry(Supplier<T> action, int retries) {
         Exception lastException = null;
+        long totalDurationMs = 0;
 
         for (int attempt = 0; attempt <= retries; attempt++) {
             if (attempt > 0) {
@@ -78,17 +79,19 @@ public class AgentCallManager {
                     Thread.currentThread().interrupt();
                     return CallResult.failure("请求被中断");
                 }
+                totalDurationMs += delay;
             }
 
             Instant startTime = Instant.now();
 
             try {
                 CallResult<T> result = executeWithTimeout(action);
+                Duration elapsed = Duration.between(startTime, Instant.now());
+                totalDurationMs += elapsed.toMillis();
                 if (result.success()) {
-                    Duration elapsed = Duration.between(startTime, Instant.now());
-                    log.debug("Agent call succeeded: attempt={}, time={}ms",
-                            attempt + 1, elapsed.toMillis());
-                    return result;
+                    log.debug("Agent call succeeded: attempt={}, time={}ms, totalTime={}ms",
+                            attempt + 1, elapsed.toMillis(), totalDurationMs);
+                    return CallResult.success(result.data(), totalDurationMs);
                 }
                 lastException = new RuntimeException(result.errorMessage());
                 log.warn("Agent call attempt {} failed: {}", attempt + 1, result.errorMessage());
@@ -99,7 +102,7 @@ public class AgentCallManager {
         }
 
         log.error("Agent call failed after {} attempts", retries + 1, lastException);
-        return CallResult.failure("经过" + (retries + 1) + "次尝试后仍然失败: " + lastException.getMessage());
+        return CallResult.failure("经过" + (retries + 1) + "次尝试后仍然失败: " + lastException.getMessage(), totalDurationMs);
     }
 
     public void shutdown() {
@@ -117,14 +120,35 @@ public class AgentCallManager {
     public record CallResult<T>(
             T data,
             boolean success,
-            String errorMessage
+            String errorMessage,
+            long durationMs
     ) {
         public static <T> CallResult<T> success(T data) {
-            return new CallResult<>(data, true, null);
+            return new CallResult<>(data, true, null, 0);
+        }
+
+        public static <T> CallResult<T> success(T data, long durationMs) {
+            return new CallResult<>(data, true, null, durationMs);
         }
 
         public static <T> CallResult<T> failure(String errorMessage) {
-            return new CallResult<>(null, false, errorMessage);
+            return new CallResult<>(null, false, errorMessage, 0);
         }
+
+        public static <T> CallResult<T> failure(String errorMessage, long durationMs) {
+            return new CallResult<>(null, false, errorMessage, durationMs);
+        }
+
+        public long durationMs() {
+            return durationMs;
+        }
+    }
+
+    public int getTimeoutSeconds() {
+        return timeoutSeconds;
+    }
+
+    public int getMaxRetries() {
+        return maxRetries;
     }
 }

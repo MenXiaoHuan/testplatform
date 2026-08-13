@@ -22,6 +22,7 @@ public class AgentTraceLogService {
     private static final String KEY_TRACE_PREFIX = "agent:trace:";
     private static final String KEY_TRACE_INDEX = "agent:trace:index";
     private static final int MAX_INDEX_SIZE = 10_000;
+    private static final int MAX_METADATA_VALUE_LENGTH = 2000;
 
     private final StringRedisTemplate redis;
     private final ObjectMapper objectMapper;
@@ -44,7 +45,7 @@ public class AgentTraceLogService {
                     level,
                     stage,
                     message,
-                    metadata != null ? metadata : Map.of()
+                    truncateMetadata(metadata != null ? metadata : Map.of())
             );
 
             String key = KEY_TRACE_PREFIX + traceId;
@@ -66,6 +67,32 @@ public class AgentTraceLogService {
         } catch (Exception e) {
             AgentTraceLogService.log.warn("Failed to write trace log to Redis: traceId={}", traceId, e);
         }
+    }
+
+    private Map<String, Object> truncateMetadata(Map<String, Object> metadata) {
+        Map<String, Object> truncated = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> entry : metadata.entrySet()) {
+            Object value = entry.getValue();
+            if (value instanceof String str) {
+                truncated.put(entry.getKey(), truncate(str, MAX_METADATA_VALUE_LENGTH));
+            } else if (value instanceof List<?> list) {
+                if (list.size() > 50) {
+                    truncated.put(entry.getKey(), list.subList(0, 50) + "...(total:" + list.size() + ")");
+                } else {
+                    truncated.put(entry.getKey(), value);
+                }
+            } else {
+                truncated.put(entry.getKey(), value);
+            }
+        }
+        return truncated;
+    }
+
+    private String truncate(String text, int maxLength) {
+        if (text == null || text.length() <= maxLength) {
+            return text;
+        }
+        return text.substring(0, maxLength) + "...[truncated]";
     }
 
     public void log(String traceId, String level, String stage, String message) {

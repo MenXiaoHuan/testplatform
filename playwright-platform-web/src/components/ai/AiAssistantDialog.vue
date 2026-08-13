@@ -599,6 +599,7 @@ function copyTraceId(traceId?: string) {
   min-width: 0;
   overflow: visible;
   align-items: flex-start;
+  margin-bottom: 2px;
 }
 
 .ai-message--user {
@@ -652,10 +653,9 @@ function copyTraceId(traceId?: string) {
 .ai-message__content {
   min-width: 0;
   overflow: visible;
-  display: flex;
+  display: inline-flex;
   flex-direction: column;
   gap: 2px;
-  flex: 0 1 auto;
   max-width: calc(100% - 48px);
 }
 
@@ -670,8 +670,8 @@ function copyTraceId(traceId?: string) {
 .ai-message__header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 2px;
+  gap: 6px;
+  margin-bottom: 1px;
 }
 
 .ai-message--user .ai-message__header {
@@ -690,16 +690,19 @@ function copyTraceId(traceId?: string) {
 }
 
 .ai-message__body {
-  padding: 8px 12px;
+  padding: 6px 12px;
   border-radius: 14px;
   font-size: 13px;
-  line-height: 1.65;
+  line-height: 1.6;
   word-break: break-word;
   overflow-wrap: anywhere;
   max-width: 340px;
-  width: fit-content;
   box-sizing: border-box;
   white-space: pre-wrap;
+}
+
+.ai-message__body > div {
+  display: contents;
 }
 
 .ai-message__body :deep(h1),
@@ -722,8 +725,8 @@ function copyTraceId(traceId?: string) {
 .ai-message__body :deep(h6) { font-size: 12px; }
 
 .ai-message__body :deep(p) {
-  margin: 0 0 10px;
-  line-height: 1.75;
+  margin: 0;
+  line-height: 1.6;
 }
 
 .ai-message__body :deep(p:last-child) {
@@ -891,7 +894,7 @@ function copyTraceId(traceId?: string) {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 6px;
+  margin-top: 4px;
   overflow: visible;
   flex-shrink: 0;
 }
@@ -1023,10 +1026,10 @@ function copyTraceId(traceId?: string) {
 }
 
 .ai-message--loading .ai-message__body {
-  padding: 10px 12px;
+  padding: 8px 12px;
   display: flex;
   align-items: center;
-  min-height: 28px;
+  min-height: 24px;
 }
 
 .ai-message__body--streaming {
@@ -1034,10 +1037,10 @@ function copyTraceId(traceId?: string) {
 }
 
 .ai-message__body--empty {
-  padding: 10px 12px;
+  padding: 8px 12px;
   display: flex;
   align-items: center;
-  min-height: 28px;
+  min-height: 24px;
 }
 
 .ai-cursor {

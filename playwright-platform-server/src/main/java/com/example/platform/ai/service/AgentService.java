@@ -58,16 +58,20 @@ public class AgentService {
         String sessionId = request.sessionId();
         String traceId = UUID.randomUUID().toString();
 
+        String userMessage = request.message() != null ? request.message() : "";
+
         log.info("[TRACE:{}] Processing chat request: sessionId={}, spaceId={}, taskId={}, messageLength={}",
-                traceId, sessionId, request.spaceId(), request.taskId(),
-                request.message() != null ? request.message().length() : 0);
+                traceId, sessionId, request.spaceId(), request.taskId(), userMessage.length());
 
         traceLogService.log(traceId, "INFO", "REQUEST_RECEIVED",
                 "Chat request received", Map.of(
                         "sessionId", sessionId != null ? sessionId : "new",
                         "spaceId", request.spaceId() != null ? request.spaceId() : 0,
                         "taskId", request.taskId() != null ? request.taskId() : "none",
-                        "messageLength", request.message() != null ? request.message().length() : 0
+                        "sceneId", request.sceneId() != null ? request.sceneId() : "none",
+                        "messageLength", userMessage.length(),
+                        "userMessage", truncate(userMessage, 500),
+                        "saveHistory", request.saveHistory()
                 ));
 
         observability.recordCall(traceId, sessionId);
@@ -91,6 +95,14 @@ public class AgentService {
 
             ChatSession session = sessionManager.getOrCreateSession(sessionId);
 
+            traceLogService.log(traceId, "INFO", "SESSION_READY",
+                    "Chat session loaded", Map.of(
+                            "sessionId", session.sessionId(),
+                            "messageCount", session.messageCount(),
+                            "estimatedTokens", session.estimatedTokens(),
+                            "hasSystemPrompt", session.systemPrompt() != null && !session.systemPrompt().isBlank()
+                    ));
+
             ContextCompressionService.CompressionResult compressionResult =
                     compressionService.compressIfNeeded(session);
             if (compressionResult.compressed()) {
@@ -101,18 +113,47 @@ public class AgentService {
                 traceLogService.log(traceId, "INFO", "CONTEXT_COMPRESSED",
                         "Session context compressed",
                         Map.of("originalTokens", compressionResult.originalTokens(),
-                                "compressedTokens", compressionResult.compressedTokens()));
+                                "compressedTokens", compressionResult.compressedTokens(),
+                                "messageCount", session.messageCount()));
             } else {
                 traceLogService.log(traceId, "INFO", "CONTEXT_READY",
-                        "Session context ready",
+                        "Session context ready (not compressed)",
                         Map.of("messageCount", session.messageCount(),
-                                "estimatedTokens", session.estimatedTokens()));
+                                "estimatedTokens", session.estimatedTokens(),
+                                "compressed", false));
             }
 
-            ChatMessage userMessage = ChatMessage.user(sanitizeResult.sanitizedInput());
-            session = sessionManager.appendMessage(sessionId, userMessage);
+            traceLogService.log(traceId, "INFO", "SYSTEM_PROMPT_LOADED",
+                    "System prompt and context prepared",
+                    Map.of(
+                            "systemPromptLength", session.systemPrompt() != null ? session.systemPrompt().length() : 0,
+                            "systemPromptPreview", truncate(session.systemPrompt(), 300),
+                            "contextMessageCount", session.messageCount(),
+                            "sessionId", session.sessionId()
+                    ));
+
+            ChatMessage chatUserMessage = ChatMessage.user(sanitizeResult.sanitizedInput());
+            session = sessionManager.appendMessage(sessionId, chatUserMessage);
 
             String prompt = buildPrompt(session, request);
+
+            traceLogService.log(traceId, "INFO", "PROMPT_BUILT",
+                    "Full prompt constructed for Agent call",
+                    Map.of(
+                            "promptLength", prompt.length(),
+                            "promptPreview", truncate(prompt, 500),
+                            "historyMessageCount", session.messageCount(),
+                            "currentUserMessage", truncate(sanitizeResult.sanitizedInput(), 200)
+                    ));
+
+            traceLogService.log(traceId, "INFO", "AGENT_CALL_STARTING",
+                    "Starting Agent call",
+                    Map.of(
+                            "model", "deepseek-chat",
+                            "maxRetries", callManager.getMaxRetries(),
+                            "timeoutSeconds", callManager.getTimeoutSeconds(),
+                            "toolCount", 5
+                    ));
 
             AgentCallManager.CallResult<String> callResult = callManager.executeWithRetry(
                     () -> {
@@ -141,7 +182,11 @@ public class AgentService {
 
             traceLogService.log(traceId, "INFO", "AGENT_CALL_SUCCESS",
                     "Agent call completed successfully",
-                    Map.of("responseLength", responseText != null ? responseText.length() : 0));
+                    Map.of(
+                            "responseLength", responseText != null ? responseText.length() : 0,
+                            "responsePreview", truncate(responseText, 500),
+                            "callDurationMs", callResult.durationMs()
+                    ));
 
             OutputFormatFallbackService.ParseResult parseResult =
                     outputFallbackService.parseAgentOutput(responseText);
@@ -157,10 +202,15 @@ public class AgentService {
 
             traceLogService.log(traceId, "INFO", "OUTPUT_PARSED",
                     "Agent output parsed",
-                    Map.of("parsingStrategy", parseResult.strategy(),
+                    Map.of(
+                            "parsingStrategy", parseResult.strategy(),
                             "responseType", result.responseType() != null ? result.responseType() : "UNKNOWN",
                             "usedTools", result.usedTools() != null ? String.join(",", result.usedTools()) : "",
-                            "confidence", result.confidence() != null ? result.confidence() : "UNKNOWN"));
+                            "usedToolsCount", result.usedTools() != null ? result.usedTools().size() : 0,
+                            "confidence", result.confidence() != null ? result.confidence() : "UNKNOWN",
+                            "responseLength", result.response() != null ? result.response().length() : 0,
+                            "responsePreview", truncate(result.response(), 300)
+                    ));
 
             if (result.response() == null || result.response().isBlank()) {
                 result = new ChatAssistantResult(traceId, responseText, result.usedTools(), result.confidence(), null, null);
@@ -267,8 +317,8 @@ public class AgentService {
                             "estimatedTokens", session.estimatedTokens(),
                             "compressed", compressionResult.compressed()));
 
-            ChatMessage userMessage = ChatMessage.user(sanitizeResult.sanitizedInput());
-            session = sessionManager.appendMessage(sessionId, userMessage);
+            ChatMessage chatUserMsg = ChatMessage.user(sanitizeResult.sanitizedInput());
+            session = sessionManager.appendMessage(sessionId, chatUserMsg);
 
             String prompt = buildPrompt(session, request);
 
@@ -297,7 +347,11 @@ public class AgentService {
 
             traceLogService.log(traceId, "INFO", "AGENT_CALL_SUCCESS",
                     "Agent call completed successfully",
-                    Map.of("responseLength", responseText != null ? responseText.length() : 0));
+                    Map.of(
+                            "responseLength", responseText != null ? responseText.length() : 0,
+                            "responsePreview", truncate(responseText, 500),
+                            "callDurationMs", callResult.durationMs()
+                    ));
 
             OutputFormatFallbackService.ParseResult parseResult =
                     outputFallbackService.parseAgentOutput(responseText);
