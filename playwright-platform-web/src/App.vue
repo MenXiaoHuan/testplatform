@@ -6,8 +6,10 @@ import 'cropperjs/dist/cropper.css'
 import defaultAvatarUrl from './assets/default-avatar.svg'
 import SidebarUserPanel from './components/layout/SidebarUserPanel.vue'
 import SpaceSwitcher from './components/layout/SpaceSwitcher.vue'
+import AiAssistantDialog from './components/ai/AiAssistantDialog.vue'
 import { useAuthStore } from './stores/auth'
 import { useSpaceStore } from './stores/space'
+import { useAiStore } from './stores/ai'
 import { getActiveSpaceMenuIndex, getSpaceMenuItems } from './utils/space-permissions'
 import { toErrorMessage } from './utils/error'
 import { showAppToast } from './utils/ui-feedback'
@@ -16,6 +18,7 @@ const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
 const spaceStore = useSpaceStore()
+const aiStore = useAiStore()
 const nicknameDialogVisible = ref(false)
 const savingNickname = ref(false)
 const avatarDialogVisible = ref(false)
@@ -33,6 +36,13 @@ const currentAvatarUrl = computed(() => authStore.user?.avatarUrl || '')
 
 const showShell = computed(() => route.path !== '/login' && authStore.isAuthenticated)
 const hasActiveSpace = computed(() => typeof spaceStore.currentSpaceId === 'number')
+const showAssistantButton = computed(() => showShell.value && hasActiveSpace.value)
+
+function openAssistant() {
+  if (typeof spaceStore.currentSpaceId === 'number') {
+    aiStore.open(spaceStore.currentSpaceId)
+  }
+}
 
 const menuItems = computed(() => {
   const spaceId = spaceStore.currentSpaceId
@@ -208,6 +218,23 @@ onBeforeUnmount(() => {
         </el-main>
       </el-container>
 
+      <Teleport to="body">
+        <button
+          v-if="showAssistantButton && !aiStore.visible"
+          class="ai-fab"
+          title="智能助手"
+          @click="openAssistant"
+        >
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2a8 8 0 0 0-8 8v6a4 4 0 0 0 4 4h8a4 4 0 0 0 4-4v-6a8 8 0 0 0-8-8z"/>
+            <circle cx="9" cy="11" r="1" fill="currentColor"/>
+            <circle cx="15" cy="11" r="1" fill="currentColor"/>
+            <path d="M9 15c1 1 2 1.5 3 1.5s2-.5 3-1.5"/>
+          </svg>
+          <span class="ai-fab__badge">AI</span>
+        </button>
+      </Teleport>
+
       <el-dialog v-model="nicknameDialogVisible" title="修改昵称" width="420px">
         <el-form label-position="top">
           <el-form-item label="昵称">
@@ -278,6 +305,10 @@ onBeforeUnmount(() => {
           </div>
         </template>
       </el-dialog>
+
+      <Teleport to="body">
+        <AiAssistantDialog />
+      </Teleport>
     </el-container>
   </el-config-provider>
 </template>
@@ -484,5 +515,55 @@ onBeforeUnmount(() => {
   background:
     radial-gradient(circle at 30% 30%, rgba(20, 184, 166, 0.28), transparent 45%),
     linear-gradient(135deg, rgba(59, 130, 246, 0.18), rgba(20, 184, 166, 0.18));
+}
+
+.ai-fab {
+  position: fixed;
+  right: 28px;
+  bottom: 28px;
+  z-index: 1500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  padding: 0;
+  border: none;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #14b8a6, #0f9f92);
+  color: #ffffff;
+  cursor: pointer;
+  box-shadow:
+    0 12px 32px rgba(20, 184, 166, 0.35),
+    0 4px 12px rgba(15, 23, 42, 0.12);
+  transition:
+    transform 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.ai-fab:hover {
+  transform: translateY(-2px) scale(1.04);
+  box-shadow:
+    0 16px 40px rgba(20, 184, 166, 0.45),
+    0 6px 16px rgba(15, 23, 42, 0.16);
+}
+
+.ai-fab:active {
+  transform: translateY(0) scale(0.98);
+}
+
+.ai-fab__badge {
+  position: absolute;
+  bottom: -4px;
+  right: -4px;
+  padding: 2px 6px;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #0f766e;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  border: 1px solid rgba(20, 184, 166, 0.3);
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.1);
 }
 </style>

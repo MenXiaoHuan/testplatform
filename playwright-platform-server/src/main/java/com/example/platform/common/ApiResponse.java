@@ -4,4 +4,8 @@ public record ApiResponse<T>(String code, T data, String msg) {
     public static <T> ApiResponse<T> ok(T data) {
         return new ApiResponse<>("OK", data, "success");
     }
+
+    public static <T> ApiResponse<T> error(String code, String msg) {
+        return new ApiResponse<>(code, null, msg);
+    }
 }

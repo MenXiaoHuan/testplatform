@@ -1,0 +1,130 @@
+package com.example.platform.ai;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
+
+import java.time.Duration;
+import java.time.Instant;
+import java.util.concurrent.*;
+import java.util.function.Supplier;
+
+@Component
+public class AgentCallManager {
+
+    private static final Logger log = LoggerFactory.getLogger(AgentCallManager.class);
+
+    private final ExecutorService executorService;
+
+    @Value("${platform.ai.call.timeout-seconds:60}")
+    private int timeoutSeconds;
+
+    @Value("${platform.ai.call.max-retries:2}")
+    private int maxRetries;
+
+    @Value("${platform.ai.call.retry-delay-ms:1000}")
+    private long retryDelayMs;
+
+    public AgentCallManager() {
+        this.executorService = new ThreadPoolExecutor(
+                4,
+                8,
+                60L, TimeUnit.SECONDS,
+                new SynchronousQueue<>(),
+                new ThreadPoolExecutor.CallerRunsPolicy()
+        );
+    }
+
+    public <T> CallResult<T> executeWithTimeout(Supplier<T> action) {
+        return executeWithTimeout(action, timeoutSeconds);
+    }
+
+    public <T> CallResult<T> executeWithTimeout(Supplier<T> action, int timeoutSec) {
+        CompletableFuture<T> future = CompletableFuture.supplyAsync(action, executorService);
+
+        try {
+            T result = future.get(timeoutSec, TimeUnit.SECONDS);
+            return CallResult.success(result);
+        } catch (TimeoutException e) {
+            future.cancel(true);
+            log.error("Agent call timed out after {} seconds", timeoutSec);
+            return CallResult.failure("Agent响应超时(" + timeoutSec + "秒)，请稍后重试");
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.error("Agent call interrupted", e);
+            return CallResult.failure("请求被中断，请重试");
+        } catch (ExecutionException e) {
+            Throwable cause = e.getCause();
+            log.error("Agent call failed with exception", cause);
+            return CallResult.failure("Agent调用失败: " + cause.getMessage());
+        }
+    }
+
+    public <T> CallResult<T> executeWithRetry(Supplier<T> action) {
+        return executeWithRetry(action, maxRetries);
+    }
+
+    public <T> CallResult<T> executeWithRetry(Supplier<T> action, int retries) {
+        Exception lastException = null;
+
+        for (int attempt = 0; attempt <= retries; attempt++) {
+            if (attempt > 0) {
+                long delay = retryDelayMs * (long) Math.pow(2, attempt - 1);
+                log.info("Retrying agent call: attempt={}, delay={}ms", attempt + 1, delay);
+                try {
+                    Thread.sleep(delay);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return CallResult.failure("请求被中断");
+                }
+            }
+
+            Instant startTime = Instant.now();
+
+            try {
+                CallResult<T> result = executeWithTimeout(action);
+                if (result.success()) {
+                    Duration elapsed = Duration.between(startTime, Instant.now());
+                    log.debug("Agent call succeeded: attempt={}, time={}ms",
+                            attempt + 1, elapsed.toMillis());
+                    return result;
+                }
+                lastException = new RuntimeException(result.errorMessage());
+                log.warn("Agent call attempt {} failed: {}", attempt + 1, result.errorMessage());
+            } catch (Exception e) {
+                lastException = e;
+                log.warn("Agent call attempt {} threw exception: {}", attempt + 1, e.getMessage());
+            }
+        }
+
+        log.error("Agent call failed after {} attempts", retries + 1, lastException);
+        return CallResult.failure("经过" + (retries + 1) + "次尝试后仍然失败: " + lastException.getMessage());
+    }
+
+    public void shutdown() {
+        executorService.shutdown();
+        try {
+            if (!executorService.awaitTermination(5, TimeUnit.SECONDS)) {
+                executorService.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            executorService.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    public record CallResult<T>(
+            T data,
+            boolean success,
+            String errorMessage
+    ) {
+        public static <T> CallResult<T> success(T data) {
+            return new CallResult<>(data, true, null);
+        }
+
+        public static <T> CallResult<T> failure(String errorMessage) {
+            return new CallResult<>(null, false, errorMessage);
+        }
+    }
+}
