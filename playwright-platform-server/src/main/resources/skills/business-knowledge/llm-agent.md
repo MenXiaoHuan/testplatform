@@ -7,6 +7,7 @@
         → 最多 20 次模型调用（ModelCallLimitHook）
     → OutputFormatFallbackService（四层输出解析兜底）
     → ChatAssistantResult（response + usedTools + confidence）
+    → AgentTraceLogService（写入 Redis 全链路日志）
 ```
 
 ## 核心组件

@@ -12,6 +12,7 @@ import com.example.platform.ai.tools.LogPreprocessingTool;
 import com.example.platform.ai.tools.RepositoryTool;
 import com.example.platform.ai.tools.SceneTool;
 import com.example.platform.ai.tools.TaskTool;
+import com.example.platform.ai.tools.TraceQueryTool;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.model.ChatModel;
@@ -46,6 +47,7 @@ public class ReactAgentConfig {
             SceneTool sceneTool,
             TaskTool taskTool,
             LogPreprocessingTool logPreprocessingTool,
+            TraceQueryTool traceQueryTool,
             ResourceLoader resourceLoader,
             SystemPromptConfig systemPromptConfig) {
 
@@ -62,7 +64,7 @@ public class ReactAgentConfig {
                 .name("intelligent-assistant")
                 .description("智能测试平台助手，可以回答项目相关业务问题，也可以根据任务ID排查错误根因")
                 .model(model)
-                .methodTools(repositoryTool, sceneTool, taskTool, logPreprocessingTool)
+                .methodTools(repositoryTool, sceneTool, taskTool, logPreprocessingTool, traceQueryTool)
                 .outputType(ChatAssistantResult.class)
                 .hooks(SystemPromptHook.builder().systemText(systemPrompt).build())
                 .hooks(SkillsAgentHook.builder().skillRegistry(agentRegistry).build())

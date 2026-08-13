@@ -77,7 +77,7 @@ description: 平台业务知识技能。覆盖技术架构、数据结构、业�
 - AI 助手使用指南：右下角浮动按钮 → SSE 流式对话 → 自动工具调用
 - API 端点速查表：/api/ai/chat、/api/ai/chat/stream 等
 
-### 4. AI Agent 评测知识
+### 4. AI Agent 知识
 **文档**：[llm-agent.md](./llm-agent.md)
 
 **核心内容**：

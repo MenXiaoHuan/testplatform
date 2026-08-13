@@ -30,6 +30,7 @@ public class AgentService {
     private final AgentCallManager callManager;
     private final InputSanitizer inputSanitizer;
     private final AgentObservability observability;
+    private final AgentTraceLogService traceLogService;
 
     public AgentService(
             @Qualifier("intelligent-assistant") ReactAgent intelligentAssistantAgent,
@@ -39,7 +40,8 @@ public class AgentService {
             ToolErrorFallback toolErrorFallback,
             AgentCallManager callManager,
             InputSanitizer inputSanitizer,
-            AgentObservability observability) {
+            AgentObservability observability,
+            AgentTraceLogService traceLogService) {
         this.intelligentAssistantAgent = intelligentAssistantAgent;
         this.sessionManager = sessionManager;
         this.compressionService = compressionService;
@@ -48,6 +50,7 @@ public class AgentService {
         this.callManager = callManager;
         this.inputSanitizer = inputSanitizer;
         this.observability = observability;
+        this.traceLogService = traceLogService;
     }
 
     public ChatResponse chat(ChatRequest request) {
@@ -59,6 +62,14 @@ public class AgentService {
                 traceId, sessionId, request.spaceId(), request.taskId(),
                 request.message() != null ? request.message().length() : 0);
 
+        traceLogService.log(traceId, "INFO", "REQUEST_RECEIVED",
+                "Chat request received", Map.of(
+                        "sessionId", sessionId != null ? sessionId : "new",
+                        "spaceId", request.spaceId() != null ? request.spaceId() : 0,
+                        "taskId", request.taskId() != null ? request.taskId() : "none",
+                        "messageLength", request.message() != null ? request.message().length() : 0
+                ));
+
         observability.recordCall(traceId, sessionId);
         observability.recordConversationStart(traceId, sessionId, request.message());
 
@@ -67,6 +78,9 @@ public class AgentService {
             if (!sanitizeResult.valid()) {
                 log.warn("[TRACE:{}] Input sanitization failed: sessionId={}, reason={}",
                         traceId, sessionId, sanitizeResult.rejectionReason());
+                traceLogService.log(traceId, "ERROR", "SANITIZATION_FAILED",
+                        "Input sanitization failed: " + sanitizeResult.rejectionReason(),
+                        Map.of("sessionId", sessionId != null ? sessionId : "new"));
                 observability.recordError(traceId, "SANITIZATION", sanitizeResult.rejectionReason());
                 return buildErrorResponse(
                         traceId,
@@ -84,6 +98,15 @@ public class AgentService {
                 sessionManager.updateMessages(sessionId, session.messages());
                 log.info("Session context compressed: sessionId={}, tokens={}->{}",
                         sessionId, compressionResult.originalTokens(), compressionResult.compressedTokens());
+                traceLogService.log(traceId, "INFO", "CONTEXT_COMPRESSED",
+                        "Session context compressed",
+                        Map.of("originalTokens", compressionResult.originalTokens(),
+                                "compressedTokens", compressionResult.compressedTokens()));
+            } else {
+                traceLogService.log(traceId, "INFO", "CONTEXT_READY",
+                        "Session context ready",
+                        Map.of("messageCount", session.messageCount(),
+                                "estimatedTokens", session.estimatedTokens()));
             }
 
             ChatMessage userMessage = ChatMessage.user(sanitizeResult.sanitizedInput());
@@ -103,6 +126,8 @@ public class AgentService {
 
             if (!callResult.success()) {
                 log.error("[TRACE:{}] Agent call failed: sessionId={}, error={}", traceId, sessionId, callResult.errorMessage());
+                traceLogService.log(traceId, "ERROR", "AGENT_CALL_FAILED",
+                        "Agent call failed: " + callResult.errorMessage());
                 observability.recordError(traceId, "AGENT_CALL", callResult.errorMessage());
                 return buildErrorResponse(
                         traceId,
@@ -114,6 +139,10 @@ public class AgentService {
 
             String responseText = callResult.data();
 
+            traceLogService.log(traceId, "INFO", "AGENT_CALL_SUCCESS",
+                    "Agent call completed successfully",
+                    Map.of("responseLength", responseText != null ? responseText.length() : 0));
+
             OutputFormatFallbackService.ParseResult parseResult =
                     outputFallbackService.parseAgentOutput(responseText);
 
@@ -122,7 +151,16 @@ public class AgentService {
             if (!parseResult.success()) {
                 log.warn("[TRACE:{}] Output parsing used fallback: sessionId={}, strategy={}",
                         traceId, sessionId, parseResult.strategy());
+                traceLogService.log(traceId, "WARN", "OUTPUT_PARSE_FALLBACK",
+                        "Output parsing used fallback: " + parseResult.strategy());
             }
+
+            traceLogService.log(traceId, "INFO", "OUTPUT_PARSED",
+                    "Agent output parsed",
+                    Map.of("parsingStrategy", parseResult.strategy(),
+                            "responseType", result.responseType() != null ? result.responseType() : "UNKNOWN",
+                            "usedTools", result.usedTools() != null ? String.join(",", result.usedTools()) : "",
+                            "confidence", result.confidence() != null ? result.confidence() : "UNKNOWN"));
 
             if (result.response() == null || result.response().isBlank()) {
                 result = new ChatAssistantResult(traceId, responseText, result.usedTools(), result.confidence(), null, null);
@@ -152,6 +190,15 @@ public class AgentService {
                     parseResult.strategy(),
                     result.responseType(),
                     compressionResult.compressed());
+
+            traceLogService.log(traceId, "INFO", "REQUEST_COMPLETED",
+                    "Chat request completed",
+                    Map.of("responseLength", result.response() != null ? result.response().length() : 0,
+                            "processingTime", processingTime,
+                            "parsingStrategy", parseResult.strategy(),
+                            "responseType", result.responseType() != null ? result.responseType() : "UNKNOWN",
+                            "compressed", compressionResult.compressed(),
+                            "usedTools", result.usedTools() != null ? String.join(",", result.usedTools()) : ""));
 
             observability.recordConversationEnd(traceId, sessionId, elapsed,
                     session.messageCount(), false);
@@ -190,9 +237,18 @@ public class AgentService {
 
         log.info("[TRACE:{}] Processing streaming chat request: sessionId={}, spaceId={}", traceId, request.spaceId());
 
+        traceLogService.log(traceId, "INFO", "REQUEST_RECEIVED",
+                "Streaming chat request received", Map.of(
+                        "sessionId", sessionId != null ? sessionId : "new",
+                        "spaceId", request.spaceId() != null ? request.spaceId() : 0,
+                        "taskId", request.taskId() != null ? request.taskId() : "none"
+                ));
+
         try {
             InputSanitizer.SanitizeResult sanitizeResult = inputSanitizer.sanitize(request.message());
             if (!sanitizeResult.valid()) {
+                traceLogService.log(traceId, "ERROR", "SANITIZATION_FAILED",
+                        "Input sanitization failed: " + sanitizeResult.rejectionReason());
                 callback.onError(sanitizeResult.rejectionReason());
                 return buildErrorResponse(
                         traceId,
@@ -204,6 +260,12 @@ public class AgentService {
             ChatSession session = sessionManager.getOrCreateSession(sessionId);
             ContextCompressionService.CompressionResult compressionResult =
                     compressionService.compressIfNeeded(session);
+
+            traceLogService.log(traceId, "INFO", "CONTEXT_READY",
+                    "Session context ready",
+                    Map.of("messageCount", session.messageCount(),
+                            "estimatedTokens", session.estimatedTokens(),
+                            "compressed", compressionResult.compressed()));
 
             ChatMessage userMessage = ChatMessage.user(sanitizeResult.sanitizedInput());
             session = sessionManager.appendMessage(sessionId, userMessage);
@@ -221,6 +283,8 @@ public class AgentService {
             );
 
             if (!callResult.success()) {
+                traceLogService.log(traceId, "ERROR", "AGENT_CALL_FAILED",
+                        "Agent call failed: " + callResult.errorMessage());
                 callback.onError(callResult.errorMessage());
                 return buildErrorResponse(
                         traceId,
@@ -230,11 +294,27 @@ public class AgentService {
             }
 
             String responseText = callResult.data();
+
+            traceLogService.log(traceId, "INFO", "AGENT_CALL_SUCCESS",
+                    "Agent call completed successfully",
+                    Map.of("responseLength", responseText != null ? responseText.length() : 0));
+
             OutputFormatFallbackService.ParseResult parseResult =
                     outputFallbackService.parseAgentOutput(responseText);
             ChatAssistantResult result = parseResult.result();
             if (result.response() == null || result.response().isBlank()) {
                 result = new ChatAssistantResult(traceId, responseText, result.usedTools(), result.confidence(), null, null);
+            }
+
+            traceLogService.log(traceId, "INFO", "OUTPUT_PARSED",
+                    "Agent output parsed",
+                    Map.of("parsingStrategy", parseResult.strategy(),
+                            "responseType", result.responseType() != null ? result.responseType() : "UNKNOWN",
+                            "usedTools", result.usedTools() != null ? String.join(",", result.usedTools()) : ""));
+
+            if (!parseResult.success()) {
+                traceLogService.log(traceId, "WARN", "OUTPUT_PARSE_FALLBACK",
+                        "Output parsing used fallback: " + parseResult.strategy());
             }
 
             String fullResponse = result.response();
@@ -271,6 +351,16 @@ public class AgentService {
 
             callback.onComplete(traceId, processingTime, sessionId);
 
+            traceLogService.log(traceId, "INFO", "REQUEST_COMPLETED",
+                    "Streaming chat request completed",
+                    Map.of("responseLength", fullResponse.length(),
+                            "processingTime", processingTime,
+                            "parsingStrategy", parseResult.strategy(),
+                            "responseType", result.responseType() != null ? result.responseType() : "UNKNOWN",
+                            "compressed", compressionResult.compressed(),
+                            "usedTools", result.usedTools() != null ? String.join(",", result.usedTools()) : "",
+                            "streamMode", "stream"));
+
             return new ChatResponse(
                     traceId,
                     fullResponse,
@@ -288,6 +378,8 @@ public class AgentService {
         } catch (Exception e) {
             Duration elapsed = Duration.between(startTime, Instant.now());
             log.error("[TRACE:{}] Unexpected error in streaming chat: sessionId={}, time={}", traceId, sessionId, elapsed.toMillis(), e);
+            traceLogService.log(traceId, "ERROR", "UNEXPECTED_ERROR",
+                    "Unexpected error in streaming chat: " + e.getMessage());
             callback.onError(e.getMessage());
             return buildErrorResponse(traceId, e, sessionId, false);
         }

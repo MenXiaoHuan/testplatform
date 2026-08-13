@@ -88,6 +88,56 @@ Space (空间/租户)
 ## 数据隔离规则
 所有实体均包含 `spaceId` 字段，实现多租户数据隔离。AI Agent 的所有工具调用必须携带 spaceId 进行查询范围限制。
 
+### UserEntity（用户）
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | Long | 用户主键 |
+| username | String | 登录用户名 |
+| nickname | String | 显示昵称 |
+| avatarUrl | String | 头像 URL（可为空） |
+
+### SpaceAccessRequestEntity（空间访问申请）
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | Long | 主键 |
+| spaceId | Long | 目标空间 |
+| userId | Long | 申请人 |
+| status | String | PENDING / APPROVED / REJECTED |
+| createdAt | LocalDateTime | 申请时间 |
+| processedAt | LocalDateTime | 审批时间 |
+| processedBy | Long | 审批人 |
+
+## AI Trace 数据结构（Redis）
+
+### Agent Trace Log Entry（Redis List）
+```redis
+Key: agent:trace:{traceId}
+TTL: 90 days
+Type: List<JSON>
+```
+每个日志条目：
+```json
+{
+  "id": "uuid",
+  "traceId": "5f847f51-...",
+  "timestamp": "2026-08-13T11:00:00Z",
+  "level": "INFO|WARN|ERROR",
+  "stage": "REQUEST_RECEIVED|CONTEXT_READY|AGENT_CALL_SUCCESS|OUTPUT_PARSED|REQUEST_COMPLETED",
+  "message": "Chat request received",
+  "metadata": { "sessionId": "xxx", "spaceId": 1, "taskId": 123 }
+}
+```
+
+### Trace Index（Redis ZSet）
+```redis
+Key: agent:trace:index
+TTL: 90 days
+Type: ZSet
+Score: timestamp (epoch millis)
+Member: traceId
+```
+用于按时间范围查询最近的 trace 记录。
+
 ## 缓存策略
 - 任务详情：5min TTL + 随机抖动（±60s）
 - 空值缓存：1min TTL（防穿透）

@@ -19,6 +19,9 @@
 | RepositoryTool | searchRepository(keyword, spaceId) | 按关键字搜索测试仓库 |
 | RepositoryTool | getRepository(repositoryId, spaceId) | 获取仓库详情：URL、默认分支、测试目录、运行命令 |
 | LogPreprocessingTool | analyzeLogs(taskId, spaceId) | 分析任务执行日志，提取错误摘要、失败用例详情 |
+| TraceQueryTool | queryTrace(traceId) | 按traceId查询Agent完整调用链路（90天内可查） |
+| TraceQueryTool | listRecentTraces(limit) | 列出最近的Agent调用记录，获取traceId |
+| TraceQueryTool | getTraceStats() | 查询trace存储统计信息 |
 
 **调用规则**：
 - 所有工具必须传 spaceId（数据隔离）
@@ -40,7 +43,7 @@
 
 ### 字段规则
 1. **response**：直接用自然语言或Markdown书写回答内容，不需要转义。故障分析时书写诊断结论，业务问答时书写直接回答
-2. **usedTools**：本次实际调用的**具体方法名**数组。合法值：`getTask`、`listTasks`、`getSceneDetail`、`listScenes`、`searchRepository`、`getRepository`、`analyzeLogs`。未调用则为空数组 `[]`
+2. **usedTools**：本次实际调用的**具体方法名**数组。合法值：`getTask`、`listTasks`、`getSceneDetail`、`listScenes`、`searchRepository`、`getRepository`、`analyzeLogs`、`queryTrace`、`listRecentTraces`、`getTraceStats`。未调用则为空数组 `[]`
 3. **confidence**：置信度三选一
    - `HIGH`：信息完整，根因可100%确定
    - `MEDIUM`：信息部分缺失，存在合理推测

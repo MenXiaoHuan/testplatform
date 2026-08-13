@@ -12,13 +12,17 @@
 
 ### 1.2 简短介绍
 
-这是一个 Playwright 自动化测试执行平台。前端使用 Vue 3、TypeScript、Pinia 和 Element Plus，负责仓库配置、场景配置、任务列表、任务详情、日志和产物展示。后端使用 Spring Boot、MyBatis、Flyway、Redis 和 MinIO，负责仓库和场景管理、任务异步执行、定时调度、结果解析和产物归档。MySQL 存结构化业务数据，Redis 做详情缓存，MinIO 存截图、视频、Trace 和阶段日志。任务执行不会阻塞 Web 请求线程，而是创建任务后交给专用线程池和 Runner 执行，这是项目区别于普通 CRUD 后台的核心点。
+这是一个 Playwright 自动化测试执行平台。前端使用 Vue 3、TypeScript、Pinia 和 Element Plus，负责仓库配置、场景配置、任务列表、任务详情、日志和产物展示，以及 AI 智能助手对话。后端使用 Spring Boot、MyBatis、Flyway、Redis 和 MinIO，负责仓库和场景管理、任务异步执行、定时调度、结果解析和产物归档，并集成 Spring AI Alibaba Agent 提供 AI 智能问答、故障分析和全链路追踪能力。MySQL 存结构化业务数据，Redis 做详情缓存和 Agent trace 存储，MinIO 存截图、视频、Trace 和阶段日志。任务执行不会阻塞 Web 请求线程，而是创建任务后交给专用线程池和 Runner 执行，这是项目区别于普通 CRUD 后台的核心点。同时平台具备完整的 RBAC 权限体系、空间协作审批流程、用户头像昵称管理，以及基于 traceId 的 Agent 调用全链路可观测性。
 
 ### 1.3 完整介绍
 
 这个项目的核心对象是仓库、场景和任务。用户先配置测试仓库，包括 Git 地址、默认分支、安装命令、测试命令和结果文件路径；然后创建测试场景，选择分支、浏览器、测试选择器、环境变量和定时规则；最后通过手动或定时方式触发任务。
 
 后端收到触发请求后，会先在 MySQL 中创建任务记录，状态进入 `QUEUED`，然后把任务提交给自定义线程池。任务执行器会准备 workspace、拉取代码、执行安装命令、执行 Playwright 测试命令、解析结果文件，把用例结果写入 MySQL，并把截图、视频、Trace、报告和日志上传到 MinIO。任务执行过程中的状态变更会拆成短事务独立提交，避免一个大事务包住外部命令和文件上传。
+
+在协作层面，平台通过空间（Space）实现多租户数据隔离，支持管理员/开发者/观察者三种 RBAC 角色，加入空间需要经过审批流程。用户可以设置昵称和上传头像，个性化展示在对话框、侧边栏等位置。
+
+在 AI 能力层面，平台集成 Spring AI Alibaba Agent 框架，提供智能助手对话框。Agent 可以调用 TaskTool、SceneTool、LogPreprocessingTool 等工具查询任务、场景和日志。每次 Agent 调用都会生成 traceId 并通过 AgentTraceLogService 存入 Redis（90 天 TTL），用户可以通过 TraceQueryTool 在对话中直接查询完整调用链路，实现故障排查和 Agent 评测。
 
 工程上，项目使用 Docker Compose 编排 MySQL、Redis、MinIO、后端和前端；开发环境使用 `Dockerfile.dev` 挂载源码，生产环境使用多阶段 `Dockerfile` 构建稳定镜像；CI 使用 GitHub Actions 分别跑后端测试、前端测试、覆盖率和前端构建。
 
@@ -65,6 +69,7 @@ erDiagram
 flowchart LR
     User[用户浏览器] --> Web[Vue 3 + Vite 前端]
     Web -->|Axios /api| Server[Spring Boot 后端]
+    Web -->|SSE /api/ai/chat| Server
     Server -->|MyBatis| MySQL[(MySQL)]
     Server -->|RedisTemplate| Redis[(Redis)]
     Server -->|MinIO SDK| MinIO[(MinIO)]
@@ -73,6 +78,10 @@ flowchart LR
     Runner --> Docker[Docker Runner]
     Docker --> PW[Playwright Runner 容器]
     PW --> Repo[测试代码仓库]
+    Server -->|Spring AI| Agent[AI Agent 层]
+    Agent -->|ReAct 循环| LLM[deepseek-chat]
+    Agent -->|Tools| Tools[TaskTool / SceneTool / TraceQueryTool]
+    Agent -->|Trace 日志| Redis
 ```
 
 ### 3.2 分层架构
@@ -81,8 +90,9 @@ flowchart LR
 |---|---|---|---|
 | 接入层 | Vue 页面、Axios、Spring Controller | 接收用户操作和 HTTP 请求 | Controller 保持薄，页面不直接写复杂业务 |
 | 业务层 | Auth、Space、Repository、Scene、Task Service | 业务规则、状态流转、权限、任务编排 | 核心复杂度在 Service 和 Orchestrator |
+| AI Agent 层 | ReactAgent、AgentService、TraceQueryTool | 智能问答、故障分析、全链路追踪 | Spring AI Alibaba Agent，ReAct 循环 + Skills |
 | 数据层 | MyBatis Mapper、Flyway、MySQL | 数据读写和 schema 版本管理 | 纯 MyBatis 注解式 Mapper，Flyway 自动建表 |
-| 缓存层 | Redis、DetailCacheService | 热点详情缓存和缓存保护 | 空值缓存、TTL 抖动、互斥锁 |
+| 缓存层 | Redis、DetailCacheService、AgentTraceLogService | 热点详情缓存、Agent trace 存储 | 详情缓存 + 90 天 TTL trace 日志 |
 | 存储层 | MinIO、ObjectStorageService | 日志、截图、视频、Trace 存储 | 结构化数据和文件产物分离 |
 | 执行层 | Runner、Docker Runner、Workspace | 执行外部测试仓库命令 | 隔离执行环境，避免污染后端服务 |
 | 工程化层 | Docker Compose、Dockerfile、CI | 本地启动、生产部署、自动验证 | 开发/生产镜像分离，CI 前后端独立验证 |
@@ -98,6 +108,9 @@ flowchart LR
 | Redis 详情缓存 | 热点详情读压力和缓存风险 | 降低热点读取压力并保护数据库 |
 | Flyway 迁移 | 环境手动建表容易不一致 | 保证多环境 schema 一致 |
 | Docker Compose | 本地环境依赖多、搭建成本高 | 降低本地启动和部署复杂度 |
+| AI Agent 集成 | 测试故障排查依赖人工经验 | ReAct 循环 + Skills + Tools 实现智能问答 |
+| 全链路追踪 | Agent 调用链路不可观测 | traceId + Redis 存储 + TraceQueryTool 实现可观测性 |
+| RBAC 权限体系 | 多用户协作缺乏权限边界 | 空间级管理员/开发者/观察者角色控制 |
 
 ---
 
@@ -111,9 +124,11 @@ flowchart LR
 | TypeScript | 类型约束 | 减少接口字段不一致和状态错误 | 前后端 DTO 有类型约束，维护更稳 |
 | Vite | 开发和构建工具 | 启动快、配置轻 | 开发阶段通过 Vite proxy 代理 `/api` |
 | Vue Router | 页面路由 | 管理登录、仓库、场景、任务等页面 | 路由层负责页面边界 |
-| Pinia | 状态管理 | 轻量、适配 Vue 3 | 把列表、详情、分页、loading 等状态从页面抽离 |
+| Pinia | 状态管理 | 轻量、适配 Vue 3 | 把列表、详情、分页、loading、AI 对话状态从页面抽离 |
 | Element Plus | UI 组件库 | 后台组件齐全 | 表格、表单、弹窗、分页效率高 |
 | Axios | HTTP 客户端 | 请求/响应拦截方便 | 统一封装后端 `ApiResponse` |
+| marked + DOMPurify | Markdown 渲染 | AI 回复需要 Markdown 渲染 | 安全解析 AI 回复中的 Markdown 内容 |
+| SSE (EventSource) | AI 流式响应 | 打字机效果 | 原生 fetch + ReadableStream 解析 SSE 协议 |
 | Vitest | 单元测试 | 和 Vite 生态一致 | 覆盖 store、工具函数、页面逻辑 |
 
 ### 4.2 后端技术选型
@@ -125,8 +140,10 @@ flowchart LR
 | MyBatis 注解 Mapper | 数据访问 | SQL 可控，适合任务状态和分页查询 | 项目不使用 JPA，也不使用 XML Mapper |
 | Flyway | schema 迁移 | 自动建表和升级 | 保证多环境数据库结构一致 |
 | MySQL 8 | 主业务数据库 | 适合结构化关系数据 | 保存用户、空间、仓库、场景、任务和结果 |
-| Redis | 详情缓存 | 降低热点详情读取压力 | 不是主存储，而是缓存层 |
+| Redis | 详情缓存 + Agent Trace | 降低热点详情读取压力 + trace 存储 | 双重用途：详情缓存和 90 天 TTL trace 日志 |
 | MinIO | 对象存储 | 适合保存大文件产物 | 保存截图、视频、Trace 和日志 |
+| Spring AI Alibaba Agent 1.1.2.2 | AI Agent 框架 | ReActAgent + Skills + Tools | AI 智能助手、故障分析、全链路追踪 |
+| SseEmitter | AI 流式响应 | 服务端推送 | 打字机效果流式输出 Agent 回复 |
 | Maven + JaCoCo | 构建和覆盖率 | Java 标准工程化工具 | CI 中自动跑测试并产出覆盖率 |
 
 ### 4.3 工程化选型
@@ -167,6 +184,7 @@ flowchart LR
 | `src/api/scene.ts` | 场景管理 | 场景 CRUD |
 | `src/api/schedule-event.ts` | 调度事件 | 异常调度事件查看和重试 |
 | `src/api/task.ts` | 任务管理 | 执行、取消、列表、详情、日志、产物、用例 |
+| `src/api/ai.ts` | AI 助手 | SSE 流式对话、会话管理、traceId 查询 |
 
 说明：
 
@@ -176,12 +194,13 @@ flowchart LR
 
 | 文件 | 管理状态 | 说明 |
 |---|---|---|
-| `src/stores/auth.ts` | 当前用户、登录态、公钥、头像 | 登录态恢复和用户资料状态集中管理 |
+| `src/stores/auth.ts` | 当前用户、登录态、公钥、头像、昵称 | 登录态恢复和用户资料状态集中管理 |
 | `src/stores/space.ts` | 空间列表、当前空间、申请审批 | 支撑空间隔离和协作 |
 | `src/stores/repository.ts` | 仓库列表、分页、保存删除 | 页面只关心展示和交互 |
 | `src/stores/scene.ts` | 场景列表、详情、保存删除 | 场景配置状态集中管理 |
 | `src/stores/schedule-event.ts` | 调度事件列表和重试 | 支撑调度问题排查页 |
 | `src/stores/task.ts` | 任务列表、详情、日志、用例、产物 | 任务模块最复杂，承载详情页数据聚合 |
+| `src/stores/ai.ts` | AI 对话、消息、流式状态、会话 | AI 智能助手对话状态管理 |
 
 ### 5.4 页面层
 
@@ -203,10 +222,12 @@ flowchart LR
 
 | 类型 | 文件 | 职责 |
 |---|---|---|
-| 布局组件 | `SidebarUserPanel.vue`、`SpaceSwitcher.vue` | 用户区、空间切换 |
+| 布局组件 | `SidebarUserPanel.vue`、`SpaceSwitcher.vue` | 用户区、空间切换、头像/昵称展示 |
+| AI 组件 | `ai/AiAssistantDialog.vue` | AI 智能助手对话框，气泡布局、Markdown 渲染、SSE 流式 |
 | 列表组件 | `ListPageShell.vue` | 复用列表页壳层 |
 | 类型定义 | `src/types/*.ts` | DTO 和页面模型类型 |
 | 工具函数 | `artifact.ts`、`stage-log.ts`、`task-display.ts` | 产物、日志、任务状态展示 |
+| AI 工具 | `src/utils/render-markdown.ts` | Markdown 渲染（代码块保护、段落预处理） |
 | 错误与提示 | `error.ts`、`ui-feedback.ts` | 错误解析和 UI 提示 |
 | 权限工具 | `space-permissions.ts`、`space-access-requests.ts` | 空间权限和申请状态判断 |
 
@@ -245,7 +266,7 @@ flowchart LR
 | 模块 | 核心文件 | 主要职责 | 说明 |
 |---|---|---|---|
 | `common` | `ApiResponse`、`GlobalExceptionHandler`、`RequestCorrelationFilter` | 统一响应、异常处理、请求链路 ID | 平台基础能力 |
-| `auth` | `AuthController`、`AuthServiceImpl`、`AuthSessionFilter` | 登录、注册、会话、当前用户 | 不是无认证后台 |
+| `auth` | `AuthController`、`AuthServiceImpl`、`AuthSessionFilter` | 登录、注册、会话、当前用户、头像、昵称 | 不是无认证后台 |
 | `space` | `SpaceServiceImpl`、`SpaceAuthorizationServiceImpl` | 空间、成员、审批、权限 | 多用户协作边界 |
 | `repository` | `RepositoryController`、`RepositoryServiceImpl`、`TestRepositoryMapper` | 仓库 CRUD 和级联删除 | 测试执行基础配置 |
 | `scene` | `SceneServiceImpl`、`SceneSchedulerServiceImpl`、`ScheduleEventServiceImpl` | 场景配置、定时调度、调度事件 | 定时任务和幂等控制 |
@@ -253,6 +274,7 @@ flowchart LR
 | `runner` | `DockerRunnerCommandExecutor`、`RunnerExecutionServiceImpl` | 命令执行环境抽象 | local/docker 策略 |
 | `storage` | `MinioObjectStorageService`、`MinioConfig` | 对象存储 | 产物归档 |
 | `cache` | `DetailCacheService`、`CacheProperties` | Redis 详情缓存 | 缓存保护设计 |
+| `ai` | `AgentService`、`ReactAgentConfig`、`AgentTraceLogService`、`TraceQueryTool` | AI 对话、Agent 配置、全链路追踪、trace 查询 | Spring AI Alibaba Agent 集成 |
 | `audit` | `PlatformAuditLogMapper` | 审计日志 | 操作可追溯 |
 
 ### 6.4 Task 模块展开
@@ -271,6 +293,24 @@ flowchart LR
 | `TaskStageLogServiceImpl.java` | 阶段日志管理 | 支撑任务可观测性 |
 | `TaskQueryViewService.java` | 组装详情视图 | 给前端返回聚合后的展示数据 |
 | `TaskRecoveryService.java` | 异常恢复 | 处理异常退出或卡住任务 |
+
+### 6.5 AI Agent 模块展开
+
+| 文件 | 职责 | 为什么重要 |
+|---|---|---|
+| `AgentController.java` | AI 对话 HTTP 接口（同步/流式/SSE） | AI 能力入口，支持 traceId 返回 |
+| `AgentService.java` | AI 对话服务主入口 | 串联输入清洗、会话管理、上下文压缩、Agent 调用、trace 记录 |
+| `ReactAgentConfig.java` | ReactAgent Bean 配置 | 注册 Skills、Tools、Hooks |
+| `AgentTraceLogService.java` | 全链路 trace 日志存储 | Redis List + ZSet，90 天 TTL，每阶段记录 |
+| `TraceQueryTool.java` | Agent 可调用的 trace 查询工具 | 按 traceId 查询调用链路，支持对话内查询 |
+| `ChatSessionManager.java` | 会话管理（Caffeine 缓存，30min TTL） | 会话持久化和上下文维护 |
+| `ContextCompressionService.java` | 上下文压缩 | token 超 80% 阈值时自动压缩历史对话 |
+| `AgentCallManager.java` | Agent 调用可靠性封装 | 超时（60s）+ 重试（2 次，指数退避） |
+| `InputSanitizer.java` | 输入清洗 + Prompt 注入检测 | 安全防护，最大长度 10000 字符 |
+| `OutputFormatFallbackService.java` | 四层输出解析兜底 | BeanConverter → JSON 提取 → 字段正则 → 纯文本 |
+| `AgentObservability.java` | 调用量/错误率/token 监控 | Agent 可观测性 |
+| `AGENT.md` | 系统提示词（Tools + 输出格式 + 安全约束） | Agent 行为定义 |
+| `skills/` | Skills 技能文档（业务知识、错误分析） | Agent 领域知识注入 |
 
 ---
 
@@ -361,6 +401,66 @@ stateDiagram-v2
 | 清理资源 | Docker Runner 尝试停止并移除容器 |
 | 状态落库 | 更新任务状态并清理 Redis 任务详情缓存 |
 
+### 7.6 AI Agent 对话链路图
+
+```mermaid
+sequenceDiagram
+    participant U as 用户
+    participant W as 前端 AiAssistantDialog
+    participant C as AgentController
+    participant S as AgentService
+    participant T as AgentTraceLogService
+    participant R as ReactAgent
+    participant L as LLM (deepseek-chat)
+    participant Tool as TaskTool / TraceQueryTool
+    participant Redis as Redis
+
+    U->>W: 输入问题并发送
+    W->>C: POST /api/ai/chat/stream (SSE)
+    C->>S: chatStream(spaceId, message)
+    S->>T: log(traceId, REQUEST_RECEIVED, ...)
+    S->>S: InputSanitizer.sanitize(message)
+    S->>S: ChatSessionManager.getOrCreateSession()
+    S->>S: ContextCompressionService.compressIfNeeded()
+    S->>T: log(traceId, CONTEXT_READY, ...)
+    S->>R: ReactAgent.call(prompt)
+    R->>L: 发送请求（含 Skills + Tools 定义）
+    L-->>R: 返回工具调用指令
+    R->>Tool: 调用 getTask / queryTrace 等
+    Tool->>Redis: 查询缓存或 trace 日志
+    Redis-->>Tool: 返回数据
+    Tool-->>R: 返回工具结果
+    R->>L: 再次调用（含工具结果）
+    L-->>R: 返回最终回复
+    R-->>S: AgentResponse (response + usedTools + traceId)
+    S->>T: log(traceId, AGENT_CALL_SUCCESS, ...)
+    S->>S: OutputFormatFallbackService.parseAgentOutput()
+    S->>T: log(traceId, OUTPUT_PARSED, ...)
+    S->>T: log(traceId, REQUEST_COMPLETED, ...)
+    S-->>C: SseEmitter (流式分片)
+    C-->>W: SSE 事件: meta → chunk × N → complete
+    W->>W: renderContent(marked.parse(content))
+    W-->>U: 打字机效果展示
+```
+
+### 7.7 AI Agent 步骤说明
+
+| 步骤 | 发生位置 | 做什么 | 设计意义 |
+|---|---|---|---|
+| 1 | 前端 | 用户在对话框输入问题 | AI 交互入口 |
+| 2 | Controller | 接收 `POST /api/ai/chat/stream` | SSE 流式接口，支持 traceId 返回 |
+| 3 | Service | 生成 traceId，记录 REQUEST_RECEIVED | 全链路追踪起点 |
+| 4 | Sanitizer | 输入清洗 + Prompt 注入检测 | 安全防护 |
+| 5 | Session | 获取或创建会话 | 多轮对话上下文维护 |
+| 6 | Compression | 上下文压缩（超 80% token 阈值） | 控制 token 总量，防止超限 |
+| 7 | Trace Log | 记录 CONTEXT_READY | 链路可观测性 |
+| 8 | Agent | ReAct 循环（思考→调用工具→观察→输出） | 核心推理循环，最多 20 次模型调用 |
+| 9 | Tools | 调用 TaskTool/SceneTool/TraceQueryTool 等 | Agent 与业务系统交互的桥梁 |
+| 10 | LLM | deepseek-chat 推理 | 生成回复和工具调用决策 |
+| 11 | Fallback | 四层输出解析兜底 | 保证输出格式正确 |
+| 12 | SSE | 流式返回给前端 | 打字机效果，提升用户体验 |
+| 13 | Trace Log | 记录全链路各阶段日志 | 90 天内可通过 traceId 查询完整链路 |
+
 ---
 
 ## 8. 数据库设计
@@ -380,6 +480,11 @@ stateDiagram-v2
 
 | 表 | 核心字段 | 说明 |
 |---|---|---|
+| `platform_user` | `username`、`nickname`、`avatar_url`、`password_hash` | 用户账号、昵称、头像、密码 |
+| `user_session` | `user_id`、`session_token`、`expires_at` | 登录会话管理 |
+| `space` | `name`、`description`、`owner_id` | 空间（租户），数据隔离边界 |
+| `space_member` | `space_id`、`user_id`、`role` | 空间成员和角色（ADMIN/DEVELOPER/OBSERVER） |
+| `space_access_request` | `space_id`、`user_id`、`status`、`processed_by` | 空间加入审批（PENDING/APPROVED/REJECTED） |
 | `test_repository` | `git_url`、`default_branch`、`install_command`、`run_command_template` | 平台知道去哪拉代码、怎么安装、怎么跑测试 |
 | `scene` | `repo_id`、`branch`、`browser`、`env_json`、`cron_expression` | 场景是一次测试执行配置模板 |
 | `task` | `status`、`current_stage`、`started_at`、`finished_at`、`result_code` | 任务是一条真实执行记录，带状态机 |
@@ -388,7 +493,18 @@ stateDiagram-v2
 | `task_stage_log` | `stage`、`stream_type`、`object_key`、`preview_text` | 保存阶段日志索引和预览 |
 | `schedule_event` | `scene_id`、`planned_fire_at`、`status` | 让调度可追踪、可重试、可幂等 |
 
-### 8.3 为什么 MyBatis + Flyway
+### 8.3 AI Trace 数据结构（Redis）
+
+Agent 全链路追踪数据存储在 Redis 中，90 天自动过期：
+
+| Redis Key | 类型 | TTL | 用途 |
+|---|---|---|---|
+| `agent:trace:{traceId}` | List<JSON> | 90 天 | 存储单个 traceId 的全链路日志条目 |
+| `agent:trace:index` | ZSet | 90 天 | 按时间排序的 traceId 索引，支持最近查询 |
+
+每个 trace 日志条目包含：`traceId`、`timestamp`、`level`（INFO/WARN/ERROR）、`stage`（REQUEST_RECEIVED/CONTEXT_READY/AGENT_CALL_SUCCESS 等）、`message`、`metadata`。
+
+### 8.4 为什么 MyBatis + Flyway
 
 | 选择 | 原因 | 说明 |
 |---|---|---|
@@ -415,17 +531,18 @@ flowchart TD
     Write --> Return[返回结果]
 ```
 
-### 9.2 当前缓存范围
+### 9.2 Redis 键总览
 
-| 接口 | Redis key | 是否先查 Redis |
-|---|---|---|
-| `GET /api/spaces/{spaceId}/repos/{id}` | `detail:repository:{id}` | 是 |
-| `GET /api/spaces/{spaceId}/scenes/{id}` | `detail:scene:{id}` | 是 |
-| `GET /api/spaces/{spaceId}/tasks/{taskId}` | `detail:task:{taskId}` | 是 |
-| `GET /api/spaces/{spaceId}/repos` | 无 | 否，直接分页查 MySQL |
-| `GET /api/spaces/{spaceId}/scenes` | 无 | 否，直接分页查 MySQL |
-| `GET /api/spaces/{spaceId}/tasks` | 无 | 否，直接分页查 MySQL |
-| 日志/产物/用例接口 | 无 | 否，直接查 MySQL 或 MinIO 相关服务 |
+| 用途 | Redis key | 类型 | TTL | 是否先查 Redis |
+|---|---|---|---|---|
+| 仓库详情缓存 | `detail:repository:{id}` | String (JSON) | 5min ± 60s | 是 |
+| 场景详情缓存 | `detail:scene:{id}` | String (JSON) | 5min ± 60s | 是 |
+| 任务详情缓存 | `detail:task:{taskId}` | String (JSON) | 5min ± 60s | 是 |
+| 详情空值缓存 | `detail:{type}:{id}:null` | String | 1min | 是 |
+| 详情互斥锁 | `detail:{type}:{id}:lock` | String | 5s | 是（锁） |
+| Agent Trace 日志 | `agent:trace:{traceId}` | List<JSON> | 90 天 | 否（按 traceId 查询） |
+| Agent Trace 索引 | `agent:trace:index` | ZSet | 90 天 | 否（按时间查询） |
+| 日志/产物/用例接口 | 无 | - | - | 否，直接查 MySQL 或 MinIO |
 
 ### 9.3 缓存保护策略
 
@@ -438,7 +555,7 @@ flowchart TD
 
 说明：
 
-> Redis 在这里不是主存储，而是用于读多写少的详情接口。缓存设计不是简单 get/set，而是考虑了穿透、击穿、雪崩和写后失效。
+> Redis 在项目中有双重用途：一是用于读多写少的详情接口缓存，设计考虑了穿透、击穿、雪崩和写后失效；二是用于存储 Agent 全链路 trace 日志（90 天 TTL），支持按 traceId 查询完整调用链路，方便故障排查和 Agent 评测。
 
 ---
 
@@ -466,7 +583,7 @@ flowchart LR
 | 产物元数据 | MySQL | 保存 bucket、objectKey、类型、大小 |
 | 截图/视频/Trace | MinIO | 大文件适合对象存储 |
 | 阶段日志文件 | MinIO | 日志可能较大，适合对象存储 |
-| 头像 | MinIO | 图片文件适合对象存储 |
+| 用户头像 | MinIO | 图片文件适合对象存储，通过 `avatar_url` 关联用户 |
 
 ### 10.3 bucket 初始化
 
@@ -698,6 +815,9 @@ flowchart TD
 | Redis 缓存保护 | `DetailCacheService` | 考虑穿透、击穿、雪崩 |
 | Flyway 迁移 | `db/migration` | 自动建表和 schema 演进 |
 | 调度幂等 | `schedule_event`、租约 | 避免定时任务重复触发 |
+| AI Agent 集成 | `ai` 模块 | Spring AI Alibaba Agent，ReAct 循环 + Skills + Tools |
+| 全链路追踪 | `AgentTraceLogService`、`TraceQueryTool` | traceId + Redis 存储 + 对话内查询 |
+| RBAC 权限体系 | `space`、`auth` 模块 | 空间级角色控制 + 审批流程 |
 | 工程化完整 | Compose、Dockerfile、CI | 能开发、部署、测试闭环 |
 
 ### 18.2 当前不足和优化方向
@@ -722,8 +842,11 @@ flowchart TD
 | 架构设计 | 前后端怎么分工？ | Vue 展示和状态，Spring Boot 业务和编排 |
 | 任务执行 | 为什么异步？ | 防超时、防阻塞、线程池 |
 | 数据库 | 为什么 MyBatis + Flyway？ | SQL 可控、schema 可演进 |
-| 缓存 | Redis 用在哪里？ | 详情缓存、穿透击穿雪崩 |
-| 存储 | 为什么 MinIO？ | 大文件对象存储 |
+| 缓存 | Redis 用在哪里？ | 详情缓存 + Agent trace 存储 |
+| 存储 | 为什么 MinIO？ | 大文件对象存储 + 头像存储 |
+| AI Agent | Agent 能做什么？ | 故障分析、业务问答、trace 查询 |
+| AI Agent | traceId 怎么用？ | 90 天内可通过 TraceQueryTool 查询完整链路 |
+| 权限 | 有哪些角色？ | 管理员/开发者/观察者，空间级 RBAC |
 | Docker | Compose 做什么？ | 本地依赖编排、单机部署 |
 | CI | CI 做了什么？ | 测试、覆盖率、构建 |
 | 风险 | 项目有什么不足？ | Docker socket、CD、监控 |
@@ -800,6 +923,47 @@ CI 分后端和前端两个 job。后端安装 Java 21 并执行 `mvn test`，�
 
 优先优化两件事：第一，把 Runner 从后端服务中进一步拆出来，降低 Docker socket 权限风险；第二，完善 CI/CD，增加 Docker 镜像构建、镜像扫描和自动部署。
 
+### Q13：AI Agent 能做什么？
+
+答：
+
+AI Agent 基于 Spring AI Alibaba Agent 框架实现，核心能力包括：
+- **故障分析**：分析任务失败原因，给出根因和解决方案
+- **业务问答**：回答平台使用、业务流程等问题
+- **信息查询**：查询任务、场景、仓库等信息
+- **链路追踪**：通过 TraceQueryTool 查询 Agent 调用全链路
+
+Agent 通过 ReAct 循环（思考→调用工具→观察→输出）工作，可以调用 TaskTool、SceneTool、LogPreprocessingTool、TraceQueryTool 等工具。
+
+### Q14：traceId 是什么？怎么用？
+
+答：
+
+traceId 是每次 Agent 对话生成的唯一 UUID，用于全链路追踪。每次对话的各个阶段（请求接收、上下文准备、Agent 调用、输出解析、请求完成）都会通过 AgentTraceLogService 记录到 Redis 中，TTL 为 90 天。
+
+使用方式：
+1. 在 AI 对话回答底部复制 traceId
+2. 告诉 AI 助手「查询 traceId: {traceId}」
+3. Agent 调用 TraceQueryTool.queryTrace(traceId) 返回完整链路
+4. 包含所有阶段日志、耗时、工具调用信息、metadata
+
+### Q15：平台的权限体系是怎样的？
+
+答：
+
+平台采用空间级 RBAC 权限体系：
+- **管理员（ADMIN）**：完整控制权，包括成员管理、配置删除、审批处理
+- **开发者（DEVELOPER）**：创建/编辑场景、触发执行、查看日志
+- **观察者（OBSERVER）**：只读权限，仅可查看结果
+
+加入空间需要经过审批流程（用户申请 → 管理员审批 → 通过/拒绝），审批状态包括 PENDING（待审批）、APPROVED（已通过）、REJECTED（已拒绝）。
+
+### Q16：用户头像和昵称怎么管理？
+
+答：
+
+用户可以通过个人资料功能修改昵称和上传头像。头像存储在 MinIO 对象存储中，通过 `avatar_url` 字段关联用户。未设置头像时，系统显示昵称首字母作为默认头像。昵称和头像会展示在对话框标题栏、侧边栏用户区等位置。
+
 ---
 
 ## 20. 讲解模板
@@ -814,7 +978,7 @@ CI 分后端和前端两个 job。后端安装 Java 21 并执行 `mvn test`，�
 
 说明：
 
-> 架构上是前后端分离。前端 Vue 3 + TypeScript + Pinia，负责配置和结果展示；后端 Spring Boot + MyBatis + Flyway，负责业务规则、任务编排和数据持久化。MySQL 存结构化数据，Redis 做详情缓存，MinIO 存测试产物，Docker Runner 负责隔离执行测试命令。
+> 架构上是前后端分离。前端 Vue 3 + TypeScript + Pinia，负责配置和结果展示，以及 AI 智能助手对话；后端 Spring Boot + MyBatis + Flyway，负责业务规则、任务编排和数据持久化，并集成 Spring AI Alibaba Agent 提供 AI 能力。MySQL 存结构化数据，Redis 做详情缓存和 Agent trace 存储，MinIO 存测试产物和用户头像，Docker Runner 负责隔离执行测试命令。
 
 ### 20.3 核心链路
 
@@ -822,11 +986,13 @@ CI 分后端和前端两个 job。后端安装 Java 21 并执行 `mvn test`，�
 
 > 用户在前端触发场景后，后端先创建任务记录，然后提交到专用线程池。任务执行器准备 workspace，拉取测试仓库，执行安装命令和测试命令，解析 Playwright 结果文件，把用例结果写入 MySQL，把截图、视频、Trace 和日志上传到 MinIO，最后更新任务状态。前端通过任务详情接口展示完整结果。
 
+> AI 对话链路：用户在对话框发送消息 → AgentService 生成 traceId → 输入清洗 + 会话管理 + 上下文压缩 → ReactAgent ReAct 循环调用 LLM 和 Tools → 输出解析兜底 → SSE 流式返回 → 全链路 trace 日志记录到 Redis（90 天 TTL）。
+
 ### 20.4 设计理解
 
 说明：
 
-> 这个项目的关键不只是页面和接口，而是任务执行的可靠性和可观测性。比如长任务不能阻塞请求线程，外部 IO 不能包在大事务里，测试产物不能直接塞进数据库，缓存也要考虑穿透、击穿和雪崩。这些设计覆盖了后端工程和部署运维中的关键边界。
+> 这个项目的关键不只是页面和接口，而是任务执行的可靠性和可观测性。比如长任务不能阻塞请求线程，外部 IO 不能包在大事务里，测试产物不能直接塞进数据库，缓存也要考虑穿透、击穿和雪崩。同时 AI Agent 的集成让平台具备了智能问答和故障分析能力，traceId 全链路追踪则让 Agent 的行为可观测、可评测。RBAC 权限体系和审批流程支撑了多用户协作的安全边界。
 
 ---
 
@@ -850,6 +1016,11 @@ CI 分后端和前端两个 job。后端安装 Java 21 并执行 `mvn test`，�
 | `DockerRunnerCommandExecutor.java` | Docker Runner 执行 |
 | `DetailCacheService.java` | Redis 缓存保护 |
 | `MinioObjectStorageService.java` | 对象存储上传和预签名 |
+| `AgentService.java` | AI 对话服务主入口，全链路 trace 记录 |
+| `AgentTraceLogService.java` | Agent trace 日志存储（Redis，90 天 TTL） |
+| `TraceQueryTool.java` | Agent 可调用的 trace 查询工具 |
+| `ReactAgentConfig.java` | ReactAgent Bean 配置，注册 Skills/Tools |
+| `AGENT.md` | 系统提示词，定义 Agent 行为 |
 
 ### 21.2 前端
 
@@ -859,13 +1030,16 @@ CI 分后端和前端两个 job。后端安装 Java 21 并执行 `mvn test`，�
 | `src/App.vue` | 全局布局 |
 | `src/router/index.ts` | 页面路由 |
 | `src/api/http.ts` | Axios 封装 |
+| `src/api/ai.ts` | AI 助手 SSE 流式对话 API |
 | `src/stores/task.ts` | 任务状态管理 |
 | `src/stores/repository.ts` | 仓库状态管理 |
 | `src/stores/scene.ts` | 场景状态管理 |
+| `src/stores/ai.ts` | AI 对话状态管理 |
 | `RepositoryListView.vue` | 仓库页面 |
 | `SceneListView.vue` | 场景页面 |
 | `TaskListView.vue` | 任务列表 |
 | `TaskDetailView.vue` | 任务详情 |
+| `AiAssistantDialog.vue` | AI 智能助手对话框 |
 | `useTaskDetailLoader.ts` | 任务详情加载逻辑 |
 | `vite.config.ts` | Vite 代理、构建和测试配置 |
 | `nginx.conf` | 生产前端代理和 SPA fallback |
@@ -889,4 +1063,4 @@ CI 分后端和前端两个 job。后端安装 Java 21 并执行 `mvn test`，�
 
 总结：
 
-> 这个项目是一个 Playwright 自动化测试执行平台，以仓库、场景和任务为核心对象。前端负责配置管理和结果展示，后端负责异步任务编排、定时调度、Runner 执行、结果解析和产物归档。MySQL 存结构化业务数据，Redis 做详情缓存，MinIO 存截图、视频、Trace 和日志。工程上使用 Docker Compose 统一开发和单机生产部署，用 GitHub Actions 做前后端测试、覆盖率和构建验证。它相比普通 CRUD 项目，覆盖了异步任务、缓存、对象存储、容器化和 CI 的综合理解。
+> 这个项目是一个 Playwright 自动化测试执行平台，以仓库、场景和任务为核心对象。前端负责配置管理、结果展示和 AI 智能助手对话，后端负责异步任务编排、定时调度、Runner 执行、结果解析、产物归档，以及 Spring AI Alibaba Agent 驱动的 AI 能力。MySQL 存结构化业务数据（含用户、空间、审批等），Redis 做详情缓存和 Agent 全链路 trace 存储（90 天 TTL），MinIO 存截图、视频、Trace、日志和用户头像。工程上使用 Docker Compose 统一开发和单机生产部署，用 GitHub Actions 做前后端测试、覆盖率和构建验证。它相比普通 CRUD 项目，覆盖了异步任务、缓存、对象存储、容器化、AI Agent 集成、全链路追踪和 RBAC 权限体系的综合理解。

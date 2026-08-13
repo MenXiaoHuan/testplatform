@@ -133,13 +133,19 @@ function renderContent(content: string) {
       return placeholder
     })
 
+    protectedContent = protectedContent
+      .replace(/\n{3,}/g, '\n\n')
+      .replace(/\n(?=\d+[.、)）])/g, '\n\n')
+      .replace(/\n(?=[-*•])/g, '\n\n')
+      .replace(/\n(?=(?:步骤|说明|注意|总结|原因|方案|方法|首先|其次|最后|然后|接着|核心|关键|重要|提示|要点))/g, '\n\n')
+
     let processed = protectedContent
       .replace(/([a-zA-Z_][a-zA-Z0-9_.]*(?:\.ts|\.js|\.java|\.sql|\.json|\.yml|\.yaml|\.xml))/g, '`$1`')
       .replace(/([A-Z][a-zA-Z]+(?:Exception|Error|Timeout))/g, '`$1`')
       .replace(/\b(locator\.click|locator\.fill|locator|assert|expect|page|browser|context)\b/g, '`$1`')
       .replace(/\b(getTask|getSceneDetail|getRepository|getTestCase|analyzeLogs|getSystemConfig)\b/g, '`$1`')
       .replace(/\b(envCount)=\d+\b/g, '`$1`')
-      .replace(/\b(status:\s*(?:\d{3}|"[A-Z_]+")\b/g, '`$1`')
+      .replace(/\bstatus:\s*\S+/g, '`$&`')
       .replace(/\b(PASS|FAIL|ERROR|SKIP|TIMEOUT)\b/g, '`$1`')
 
     processed = processed.replace(/\u0000CB(\d+)\u0000/g, (_, idx) => codeBlocks[Number(idx)])
@@ -588,10 +594,11 @@ function copyTraceId(traceId?: string) {
 
 .ai-message {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   max-width: 100%;
   min-width: 0;
   overflow: visible;
+  align-items: flex-start;
 }
 
 .ai-message--user {
@@ -644,23 +651,27 @@ function copyTraceId(traceId?: string) {
 
 .ai-message__content {
   min-width: 0;
-  flex: 1 1 auto;
   overflow: visible;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
+  flex: 0 1 auto;
+  max-width: calc(100% - 48px);
 }
 
 .ai-message--user .ai-message__content {
   align-items: flex-end;
-  display: grid;
+}
+
+.ai-message--assistant .ai-message__content {
+  align-items: flex-start;
 }
 
 .ai-message__header {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 4px;
+  margin-bottom: 2px;
 }
 
 .ai-message--user .ai-message__header {
@@ -679,14 +690,16 @@ function copyTraceId(traceId?: string) {
 }
 
 .ai-message__body {
-  padding: 12px 14px;
+  padding: 8px 12px;
   border-radius: 14px;
   font-size: 13px;
-  line-height: 1.7;
+  line-height: 1.65;
   word-break: break-word;
   overflow-wrap: anywhere;
-  max-width: 100%;
+  max-width: 340px;
+  width: fit-content;
   box-sizing: border-box;
+  white-space: pre-wrap;
 }
 
 .ai-message__body :deep(h1),
@@ -858,29 +871,27 @@ function copyTraceId(traceId?: string) {
 .ai-message--user .ai-message__body {
   background: linear-gradient(135deg, #14b8a6, #0f9f92);
   color: #ffffff;
-  border-bottom-right-radius: 4px;
+  border-radius: 14px;
 }
 
 .ai-message--assistant .ai-message__body {
   background: #f8fafc;
   color: #0f172a;
   border: 1px solid #e2e8f0;
-  border-bottom-left-radius: 4px;
+  border-radius: 14px;
 }
 
 .ai-message--error .ai-message__body {
   background: #fef2f2;
   color: #991b1b;
   border: 1px solid #fecaca;
-  border-bottom-left-radius: 4px;
 }
 
 .ai-message__tools {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 8px;
-  width: 100%;
+  margin-top: 6px;
   overflow: visible;
   flex-shrink: 0;
 }
@@ -1012,10 +1023,10 @@ function copyTraceId(traceId?: string) {
 }
 
 .ai-message--loading .ai-message__body {
-  padding: 16px;
+  padding: 10px 12px;
   display: flex;
   align-items: center;
-  min-height: 32px;
+  min-height: 28px;
 }
 
 .ai-message__body--streaming {
@@ -1023,10 +1034,10 @@ function copyTraceId(traceId?: string) {
 }
 
 .ai-message__body--empty {
-  padding: 16px;
+  padding: 10px 12px;
   display: flex;
   align-items: center;
-  min-height: 32px;
+  min-height: 28px;
 }
 
 .ai-cursor {
