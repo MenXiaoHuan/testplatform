@@ -23,7 +23,7 @@ public record ChatSession(
             lastAccessedAt = Instant.now();
         }
         if (estimatedTokens <= 0) {
-            estimatedTokens = 0;
+            estimatedTokens = estimateTotalTokens(messages, systemPrompt);
         }
     }
 
@@ -36,7 +36,7 @@ public record ChatSession(
                 this.systemPrompt,
                 this.createdAt,
                 Instant.now(),
-                this.estimatedTokens + estimateTokens(message.content())
+                estimateTotalTokens(newMessages, this.systemPrompt)
         );
     }
 
@@ -47,7 +47,18 @@ public record ChatSession(
                 this.systemPrompt,
                 this.createdAt,
                 Instant.now(),
-                estimateTotalTokens(newMessages)
+                estimateTotalTokens(newMessages, this.systemPrompt)
+        );
+    }
+
+    public ChatSession withSystemPrompt(String systemPrompt) {
+        return new ChatSession(
+                this.sessionId,
+                this.messages,
+                systemPrompt,
+                this.createdAt,
+                Instant.now(),
+                estimateTotalTokens(this.messages, systemPrompt)
         );
     }
 
@@ -66,17 +77,41 @@ public record ChatSession(
         return messages.size();
     }
 
-    private static int estimateTokens(String text) {
+    public int systemPromptTokens() {
+        return estimateTextTokens(systemPrompt);
+    }
+
+    public int messageTokens() {
+        int total = 0;
+        for (ChatMessage msg : messages) {
+            total += estimateTextTokens(msg.content());
+        }
+        return total;
+    }
+
+    public static int estimateTextTokens(String text) {
         if (text == null || text.isEmpty()) {
             return 0;
         }
-        return Math.max(1, text.length() / 4);
+        int chineseChars = 0;
+        int otherChars = 0;
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (c >= 0x4e00 && c <= 0x9fff) {
+                chineseChars++;
+            } else {
+                otherChars++;
+            }
+        }
+        return Math.max(1, (int) (chineseChars * 1.5 + otherChars * 0.25));
     }
 
-    private static int estimateTotalTokens(List<ChatMessage> msgs) {
-        int total = 0;
-        for (ChatMessage msg : msgs) {
-            total += estimateTokens(msg.content());
+    public static int estimateTotalTokens(List<ChatMessage> messages, String systemPrompt) {
+        int total = estimateTextTokens(systemPrompt);
+        if (messages != null) {
+            for (ChatMessage msg : messages) {
+                total += estimateTextTokens(msg.content());
+            }
         }
         return total;
     }

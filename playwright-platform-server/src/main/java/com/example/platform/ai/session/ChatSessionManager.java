@@ -88,11 +88,16 @@ public class ChatSessionManager {
         return updated;
     }
 
-    public ChatSession updateMessages(String sessionId, List<ChatMessage> messages) {
+    public void updateMessages(String sessionId, List<ChatMessage> messages) {
         ChatSession session = getOrCreateSession(sessionId);
         ChatSession updated = session.withMessages(messages);
         sessionCache.put(sessionId, updated);
-        return updated;
+    }
+
+    public void updateSystemPrompt(String sessionId, String systemPrompt) {
+        ChatSession session = getOrCreateSession(sessionId);
+        ChatSession updated = session.withSystemPrompt(systemPrompt);
+        sessionCache.put(sessionId, updated);
     }
 
     public void clearSession(String sessionId) {

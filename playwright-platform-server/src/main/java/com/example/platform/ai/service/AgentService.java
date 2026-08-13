@@ -2,6 +2,7 @@ package com.example.platform.ai.service;
 
 import com.alibaba.cloud.ai.graph.agent.ReactAgent;
 import com.example.platform.ai.*;
+import com.example.platform.ai.config.SystemPromptConfig;
 import com.example.platform.ai.dto.ChatRequest;
 import com.example.platform.ai.dto.ChatResponse;
 import com.example.platform.ai.output.ChatAssistantResult;
@@ -10,7 +11,10 @@ import com.example.platform.ai.session.*;
 import com.example.platform.ai.tools.ToolErrorFallback;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.ResourceLoader;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -31,6 +35,7 @@ public class AgentService {
     private final InputSanitizer inputSanitizer;
     private final AgentObservability observability;
     private final AgentTraceLogService traceLogService;
+    private final String systemPrompt;
 
     public AgentService(
             @Qualifier("intelligent-assistant") ReactAgent intelligentAssistantAgent,
@@ -41,7 +46,10 @@ public class AgentService {
             AgentCallManager callManager,
             InputSanitizer inputSanitizer,
             AgentObservability observability,
-            AgentTraceLogService traceLogService) {
+            AgentTraceLogService traceLogService,
+            SystemPromptConfig systemPromptConfig,
+            ResourceLoader resourceLoader,
+            @Value("${platform.ai.system-prompt-path:classpath:AGENT.md}") String systemPromptPath) {
         this.intelligentAssistantAgent = intelligentAssistantAgent;
         this.sessionManager = sessionManager;
         this.compressionService = compressionService;
@@ -51,6 +59,18 @@ public class AgentService {
         this.inputSanitizer = inputSanitizer;
         this.observability = observability;
         this.traceLogService = traceLogService;
+        this.systemPrompt = systemPromptConfig.loadSystemPrompt(resourceLoader, systemPromptPath);
+    }
+
+    @PostConstruct
+    public void validateSystemPrompt() {
+        if (systemPrompt == null || systemPrompt.isBlank()) {
+            log.error("CRITICAL: System prompt is null or blank! Agent will operate without system prompt.");
+        } else {
+            int tokens = ChatSession.estimateTextTokens(systemPrompt);
+            log.info("System prompt validated: length={} chars, estimatedTokens={}, preview={}",
+                    systemPrompt.length(), tokens, truncate(systemPrompt, 200));
+        }
     }
 
     public ChatResponse chat(ChatRequest request) {
@@ -94,13 +114,22 @@ public class AgentService {
             }
 
             ChatSession session = sessionManager.getOrCreateSession(sessionId);
+            session = ensureSystemPrompt(session, sessionId);
+
+            log.info("System prompt check: sessionId={}, hasPrompt={}, promptLength={}, systemPromptTokens={}, estimatedTokens={}",
+                    sessionId,
+                    session.systemPrompt() != null && !session.systemPrompt().isBlank(),
+                    session.systemPrompt() != null ? session.systemPrompt().length() : 0,
+                    session.systemPromptTokens(),
+                    session.estimatedTokens());
 
             traceLogService.log(traceId, "INFO", "SESSION_READY",
                     "Chat session loaded", Map.of(
                             "sessionId", session.sessionId(),
                             "messageCount", session.messageCount(),
                             "estimatedTokens", session.estimatedTokens(),
-                            "hasSystemPrompt", session.systemPrompt() != null && !session.systemPrompt().isBlank()
+                            "hasSystemPrompt", session.systemPrompt() != null && !session.systemPrompt().isBlank(),
+                            "systemPromptTokens", session.systemPromptTokens()
                     ));
 
             ContextCompressionService.CompressionResult compressionResult =
@@ -114,13 +143,15 @@ public class AgentService {
                         "Session context compressed",
                         Map.of("originalTokens", compressionResult.originalTokens(),
                                 "compressedTokens", compressionResult.compressedTokens(),
-                                "messageCount", session.messageCount()));
+                                "messageCount", session.messageCount(),
+                                "systemPromptTokens", session.systemPromptTokens()));
             } else {
                 traceLogService.log(traceId, "INFO", "CONTEXT_READY",
                         "Session context ready (not compressed)",
                         Map.of("messageCount", session.messageCount(),
                                 "estimatedTokens", session.estimatedTokens(),
-                                "compressed", false));
+                                "compressed", false,
+                                "systemPromptTokens", session.systemPromptTokens()));
             }
 
             traceLogService.log(traceId, "INFO", "SYSTEM_PROMPT_LOADED",
@@ -128,12 +159,50 @@ public class AgentService {
                     Map.of(
                             "systemPromptLength", session.systemPrompt() != null ? session.systemPrompt().length() : 0,
                             "systemPromptPreview", truncate(session.systemPrompt(), 300),
+                            "systemPromptTokens", session.systemPromptTokens(),
                             "contextMessageCount", session.messageCount(),
-                            "sessionId", session.sessionId()
+                            "sessionId", session.sessionId(),
+                            "totalEstimatedTokens", session.estimatedTokens(),
+                            "messageTokens", session.messageTokens()
                     ));
 
             ChatMessage chatUserMessage = ChatMessage.user(sanitizeResult.sanitizedInput());
             session = sessionManager.appendMessage(sessionId, chatUserMessage);
+
+            int promptTokens = ChatSession.estimateTotalTokens(session.messages(), session.systemPrompt());
+            int maxAllowedTokens = compressionService.getMaxTokens();
+
+            traceLogService.log(traceId, "INFO", "PROMPT_TOKEN_BUDGET",
+                    "Token budget check before Agent call",
+                    Map.of(
+                            "promptTokens", promptTokens,
+                            "maxAllowedTokens", maxAllowedTokens,
+                            "headroomTokens", Math.max(0, maxAllowedTokens - promptTokens),
+                            "budgetUsagePercent", promptTokens > 0 ? Math.round(promptTokens * 100.0 / maxAllowedTokens) : 0
+                    ));
+
+            if (promptTokens > maxAllowedTokens) {
+                log.warn("[TRACE:{}] Prompt tokens {} exceed max {}, applying aggressive truncation",
+                        traceId, promptTokens, maxAllowedTokens);
+                session = compressionService.compressIfNeeded(session).session();
+                session = compressionService.truncateLongMessages(session);
+                sessionManager.updateMessages(sessionId, session.messages());
+
+                promptTokens = ChatSession.estimateTotalTokens(session.messages(), session.systemPrompt());
+                traceLogService.log(traceId, "WARN", "PROMPT_TRUNCATED",
+                        "Prompt truncated to fit token budget",
+                        Map.of("truncatedTokens", promptTokens, "maxTokens", maxAllowedTokens));
+
+                if (promptTokens > maxAllowedTokens) {
+                    log.error("[TRACE:{}] Even after truncation, prompt tokens {} still exceed max {}",
+                            traceId, promptTokens, maxAllowedTokens);
+                    return buildErrorResponse(
+                            traceId,
+                            new RuntimeException("上下文过长，无法在 token 限制内处理。请开启新对话或简化问题。"),
+                            sessionId, true
+                    );
+                }
+            }
 
             String prompt = buildPrompt(session, request);
 
@@ -143,27 +212,42 @@ public class AgentService {
                             "promptLength", prompt.length(),
                             "promptPreview", truncate(prompt, 500),
                             "historyMessageCount", session.messageCount(),
-                            "currentUserMessage", truncate(sanitizeResult.sanitizedInput(), 200)
+                            "currentUserMessage", truncate(sanitizeResult.sanitizedInput(), 200),
+                            "sessionId", session.sessionId(),
+                            "estimatedTokens", session.estimatedTokens(),
+                            "systemPromptTokens", session.systemPromptTokens(),
+                            "messageTokens", session.messageTokens(),
+                            "hasSummary", hasStructuredSummary(session)
                     ));
 
             traceLogService.log(traceId, "INFO", "AGENT_CALL_STARTING",
-                    "Starting Agent call",
+                    "Starting Agent call with ReAct loop",
                     Map.of(
                             "model", "deepseek-chat",
                             "maxRetries", callManager.getMaxRetries(),
                             "timeoutSeconds", callManager.getTimeoutSeconds(),
-                            "toolCount", 5
+                            "toolCount", 5,
+                            "loopLimit", 20,
+                            "spaceId", request.spaceId() != null ? request.spaceId() : 0,
+                            "taskId", request.taskId() != null ? request.taskId() : "none",
+                            "sceneId", request.sceneId() != null ? request.sceneId() : "none"
                     ));
 
-            AgentCallManager.CallResult<String> callResult = callManager.executeWithRetry(
-                    () -> {
-                        try {
-                            return intelligentAssistantAgent.call(prompt).getText();
-                        } catch (Exception e) {
-                            throw new RuntimeException("Agent调用失败: " + e.getMessage(), e);
+            AgentTraceContext.setTraceId(traceId);
+            AgentCallManager.CallResult<String> callResult;
+            try {
+                callResult = callManager.executeWithRetry(
+                        () -> {
+                            try {
+                                return intelligentAssistantAgent.call(prompt).getText();
+                            } catch (Exception e) {
+                                throw new RuntimeException("Agent调用失败: " + e.getMessage(), e);
+                            }
                         }
-                    }
-            );
+                );
+            } finally {
+                AgentTraceContext.clear();
+            }
 
             if (!callResult.success()) {
                 log.error("[TRACE:{}] Agent call failed: sessionId={}, error={}", traceId, sessionId, callResult.errorMessage());
@@ -285,20 +369,34 @@ public class AgentService {
         String sessionId = request.sessionId();
         String traceId = UUID.randomUUID().toString();
 
-        log.info("[TRACE:{}] Processing streaming chat request: sessionId={}, spaceId={}", traceId, request.spaceId());
+        String userMessage = request.message() != null ? request.message() : "";
+
+        log.info("[TRACE:{}] Processing streaming chat request: sessionId={}, spaceId={}, taskId={}, messageLength={}",
+                traceId, sessionId, request.spaceId(), request.taskId(), userMessage.length());
 
         traceLogService.log(traceId, "INFO", "REQUEST_RECEIVED",
                 "Streaming chat request received", Map.of(
                         "sessionId", sessionId != null ? sessionId : "new",
                         "spaceId", request.spaceId() != null ? request.spaceId() : 0,
-                        "taskId", request.taskId() != null ? request.taskId() : "none"
+                        "taskId", request.taskId() != null ? request.taskId() : "none",
+                        "sceneId", request.sceneId() != null ? request.sceneId() : "none",
+                        "messageLength", userMessage.length(),
+                        "userMessage", truncate(userMessage, 500),
+                        "saveHistory", request.saveHistory()
                 ));
+
+        observability.recordCall(traceId, sessionId);
+        observability.recordConversationStart(traceId, sessionId, request.message());
 
         try {
             InputSanitizer.SanitizeResult sanitizeResult = inputSanitizer.sanitize(request.message());
             if (!sanitizeResult.valid()) {
+                log.warn("[TRACE:{}] Input sanitization failed: sessionId={}, reason={}",
+                        traceId, sessionId, sanitizeResult.rejectionReason());
                 traceLogService.log(traceId, "ERROR", "SANITIZATION_FAILED",
-                        "Input sanitization failed: " + sanitizeResult.rejectionReason());
+                        "Input sanitization failed: " + sanitizeResult.rejectionReason(),
+                        Map.of("sessionId", sessionId != null ? sessionId : "new"));
+                observability.recordError(traceId, "SANITIZATION", sanitizeResult.rejectionReason());
                 callback.onError(sanitizeResult.rejectionReason());
                 return buildErrorResponse(
                         traceId,
@@ -308,33 +406,149 @@ public class AgentService {
             }
 
             ChatSession session = sessionManager.getOrCreateSession(sessionId);
+            session = ensureSystemPrompt(session, sessionId);
+
+            log.info("System prompt check (stream): sessionId={}, hasPrompt={}, promptLength={}, systemPromptTokens={}, estimatedTokens={}",
+                    sessionId,
+                    session.systemPrompt() != null && !session.systemPrompt().isBlank(),
+                    session.systemPrompt() != null ? session.systemPrompt().length() : 0,
+                    session.systemPromptTokens(),
+                    session.estimatedTokens());
+
+            traceLogService.log(traceId, "INFO", "SESSION_READY",
+                    "Chat session loaded (stream)", Map.of(
+                            "sessionId", session.sessionId(),
+                            "messageCount", session.messageCount(),
+                            "estimatedTokens", session.estimatedTokens(),
+                            "hasSystemPrompt", session.systemPrompt() != null && !session.systemPrompt().isBlank(),
+                            "systemPromptTokens", session.systemPromptTokens()
+                    ));
+
             ContextCompressionService.CompressionResult compressionResult =
                     compressionService.compressIfNeeded(session);
 
-            traceLogService.log(traceId, "INFO", "CONTEXT_READY",
-                    "Session context ready",
-                    Map.of("messageCount", session.messageCount(),
-                            "estimatedTokens", session.estimatedTokens(),
-                            "compressed", compressionResult.compressed()));
+            if (compressionResult.compressed()) {
+                session = compressionResult.session();
+                sessionManager.updateMessages(sessionId, session.messages());
+                log.info("Session context compressed (stream): sessionId={}, tokens={}->{}",
+                        sessionId, compressionResult.originalTokens(), compressionResult.compressedTokens());
+                traceLogService.log(traceId, "INFO", "CONTEXT_COMPRESSED",
+                        "Session context compressed (stream)",
+                        Map.of("originalTokens", compressionResult.originalTokens(),
+                                "compressedTokens", compressionResult.compressedTokens(),
+                                "messageCount", session.messageCount(),
+                                "systemPromptTokens", session.systemPromptTokens()));
+            } else {
+                traceLogService.log(traceId, "INFO", "CONTEXT_READY",
+                        "Session context ready (stream, not compressed)",
+                        Map.of("messageCount", session.messageCount(),
+                                "estimatedTokens", session.estimatedTokens(),
+                                "compressed", false,
+                                "systemPromptTokens", session.systemPromptTokens(),
+                                "sessionId", session.sessionId()));
+            }
+
+            traceLogService.log(traceId, "INFO", "SYSTEM_PROMPT_LOADED",
+                    "System prompt and context prepared (stream)",
+                    Map.of(
+                            "systemPromptLength", session.systemPrompt() != null ? session.systemPrompt().length() : 0,
+                            "systemPromptPreview", truncate(session.systemPrompt(), 300),
+                            "systemPromptTokens", session.systemPromptTokens(),
+                            "contextMessageCount", session.messageCount(),
+                            "sessionId", session.sessionId(),
+                            "totalEstimatedTokens", session.estimatedTokens(),
+                            "messageTokens", session.messageTokens()
+                    ));
 
             ChatMessage chatUserMsg = ChatMessage.user(sanitizeResult.sanitizedInput());
             session = sessionManager.appendMessage(sessionId, chatUserMsg);
 
+            int promptTokens = ChatSession.estimateTotalTokens(session.messages(), session.systemPrompt());
+            int maxAllowedTokens = compressionService.getMaxTokens();
+
+            traceLogService.log(traceId, "INFO", "PROMPT_TOKEN_BUDGET",
+                    "Token budget check before Agent call (stream)",
+                    Map.of(
+                            "promptTokens", promptTokens,
+                            "maxAllowedTokens", maxAllowedTokens,
+                            "headroomTokens", Math.max(0, maxAllowedTokens - promptTokens),
+                            "budgetUsagePercent", promptTokens > 0 ? Math.round(promptTokens * 100.0 / maxAllowedTokens) : 0
+                    ));
+
+            if (promptTokens > maxAllowedTokens) {
+                log.warn("[TRACE:{}] Prompt tokens {} exceed max {}, applying aggressive truncation (stream)",
+                        traceId, promptTokens, maxAllowedTokens);
+                session = compressionService.compressIfNeeded(session).session();
+                session = compressionService.truncateLongMessages(session);
+                sessionManager.updateMessages(sessionId, session.messages());
+                promptTokens = ChatSession.estimateTotalTokens(session.messages(), session.systemPrompt());
+
+                traceLogService.log(traceId, "WARN", "PROMPT_TRUNCATED",
+                        "Prompt truncated to fit token budget (stream)",
+                        Map.of("truncatedTokens", promptTokens, "maxTokens", maxAllowedTokens));
+
+                if (promptTokens > maxAllowedTokens) {
+                    log.error("[TRACE:{}] Even after truncation, prompt tokens {} still exceed max {} (stream)",
+                            traceId, promptTokens, maxAllowedTokens);
+                    callback.onError("上下文过长，无法在 token 限制内处理。请开启新对话或简化问题。");
+                    return buildErrorResponse(
+                            traceId,
+                            new RuntimeException("上下文过长，无法在 token 限制内处理"),
+                            sessionId, true
+                    );
+                }
+            }
+
             String prompt = buildPrompt(session, request);
 
-            AgentCallManager.CallResult<String> callResult = callManager.executeWithRetry(
-                    () -> {
-                        try {
-                            return intelligentAssistantAgent.call(prompt).getText();
-                        } catch (Exception e) {
-                            throw new RuntimeException("Agent调用失败: " + e.getMessage(), e);
+            traceLogService.log(traceId, "INFO", "PROMPT_BUILT",
+                    "Full prompt constructed for Agent call (stream)",
+                    Map.of(
+                            "promptLength", prompt.length(),
+                            "promptPreview", truncate(prompt, 500),
+                            "historyMessageCount", session.messageCount(),
+                            "currentUserMessage", truncate(sanitizeResult.sanitizedInput(), 200),
+                            "sessionId", session.sessionId(),
+                            "estimatedTokens", session.estimatedTokens(),
+                            "systemPromptTokens", session.systemPromptTokens(),
+                            "messageTokens", session.messageTokens(),
+                            "hasSummary", hasStructuredSummary(session)
+                    ));
+
+            traceLogService.log(traceId, "INFO", "AGENT_CALL_STARTING",
+                    "Starting Agent call with ReAct loop (stream)",
+                    Map.of(
+                            "model", "deepseek-chat",
+                            "maxRetries", callManager.getMaxRetries(),
+                            "timeoutSeconds", callManager.getTimeoutSeconds(),
+                            "toolCount", 5,
+                            "loopLimit", 20,
+                            "spaceId", request.spaceId() != null ? request.spaceId() : 0,
+                            "taskId", request.taskId() != null ? request.taskId() : "none",
+                            "sceneId", request.sceneId() != null ? request.sceneId() : "none"
+                    ));
+
+            AgentTraceContext.setTraceId(traceId);
+            AgentCallManager.CallResult<String> callResult;
+            try {
+                callResult = callManager.executeWithRetry(
+                        () -> {
+                            try {
+                                return intelligentAssistantAgent.call(prompt).getText();
+                            } catch (Exception e) {
+                                throw new RuntimeException("Agent调用失败: " + e.getMessage(), e);
+                            }
                         }
-                    }
-            );
+                );
+            } finally {
+                AgentTraceContext.clear();
+            }
 
             if (!callResult.success()) {
+                log.error("[TRACE:{}] Agent call failed (stream): sessionId={}, error={}", traceId, sessionId, callResult.errorMessage());
                 traceLogService.log(traceId, "ERROR", "AGENT_CALL_FAILED",
-                        "Agent call failed: " + callResult.errorMessage());
+                        "Agent call failed (stream): " + callResult.errorMessage());
+                observability.recordError(traceId, "AGENT_CALL", callResult.errorMessage());
                 callback.onError(callResult.errorMessage());
                 return buildErrorResponse(
                         traceId,
@@ -346,7 +560,7 @@ public class AgentService {
             String responseText = callResult.data();
 
             traceLogService.log(traceId, "INFO", "AGENT_CALL_SUCCESS",
-                    "Agent call completed successfully",
+                    "Agent call completed successfully (stream)",
                     Map.of(
                             "responseLength", responseText != null ? responseText.length() : 0,
                             "responsePreview", truncate(responseText, 500),
@@ -360,16 +574,24 @@ public class AgentService {
                 result = new ChatAssistantResult(traceId, responseText, result.usedTools(), result.confidence(), null, null);
             }
 
-            traceLogService.log(traceId, "INFO", "OUTPUT_PARSED",
-                    "Agent output parsed",
-                    Map.of("parsingStrategy", parseResult.strategy(),
-                            "responseType", result.responseType() != null ? result.responseType() : "UNKNOWN",
-                            "usedTools", result.usedTools() != null ? String.join(",", result.usedTools()) : ""));
-
             if (!parseResult.success()) {
+                log.warn("[TRACE:{}] Output parsing used fallback (stream): sessionId={}, strategy={}",
+                        traceId, sessionId, parseResult.strategy());
                 traceLogService.log(traceId, "WARN", "OUTPUT_PARSE_FALLBACK",
-                        "Output parsing used fallback: " + parseResult.strategy());
+                        "Output parsing used fallback (stream): " + parseResult.strategy());
             }
+
+            traceLogService.log(traceId, "INFO", "OUTPUT_PARSED",
+                    "Agent output parsed (stream)",
+                    Map.of(
+                            "parsingStrategy", parseResult.strategy(),
+                            "responseType", result.responseType() != null ? result.responseType() : "UNKNOWN",
+                            "usedTools", result.usedTools() != null ? String.join(",", result.usedTools()) : "",
+                            "usedToolsCount", result.usedTools() != null ? result.usedTools().size() : 0,
+                            "confidence", result.confidence() != null ? result.confidence() : "UNKNOWN",
+                            "responseLength", result.response() != null ? result.response().length() : 0,
+                            "responsePreview", truncate(result.response(), 300)
+                    ));
 
             String fullResponse = result.response();
             int totalChars = fullResponse.length();
@@ -397,23 +619,40 @@ public class AgentService {
             ToolErrorFallback.ToolCallAnalysis toolAnalysis =
                     toolErrorFallback.analyzeToolUsage(traceId, sessionId, result.usedTools());
             if (toolAnalysis.hasIssues()) {
-                log.warn("[TRACE:{}] Tool usage issues: sessionId={}, guidance={}", traceId, sessionId, toolAnalysis.guidance());
+                log.warn("[TRACE:{}] Tool usage issues (stream): sessionId={}, guidance={}", traceId, sessionId, toolAnalysis.guidance());
             }
 
             Duration elapsed = Duration.between(startTime, Instant.now());
             String processingTime = elapsed.toMillis() + "ms";
 
+            log.info("[TRACE:{}] Streaming chat processed: sessionId={}, responseLength={}, time={}, parsingStrategy={}, responseType={}, compressed={}",
+                    traceId,
+                    sessionId,
+                    fullResponse.length(),
+                    processingTime,
+                    parseResult.strategy(),
+                    result.responseType(),
+                    compressionResult.compressed());
+
             callback.onComplete(traceId, processingTime, sessionId);
 
             traceLogService.log(traceId, "INFO", "REQUEST_COMPLETED",
                     "Streaming chat request completed",
-                    Map.of("responseLength", fullResponse.length(),
+                    Map.of(
+                            "responseLength", fullResponse.length(),
                             "processingTime", processingTime,
                             "parsingStrategy", parseResult.strategy(),
                             "responseType", result.responseType() != null ? result.responseType() : "UNKNOWN",
                             "compressed", compressionResult.compressed(),
                             "usedTools", result.usedTools() != null ? String.join(",", result.usedTools()) : "",
-                            "streamMode", "stream"));
+                            "streamMode", "stream",
+                            "sessionId", sessionId != null ? sessionId : "new",
+                            "messageCount", session.messageCount(),
+                            "hasSummary", hasStructuredSummary(session)
+                    ));
+
+            observability.recordConversationEnd(traceId, sessionId, elapsed,
+                    session.messageCount(), false);
 
             return new ChatResponse(
                     traceId,
@@ -434,6 +673,7 @@ public class AgentService {
             log.error("[TRACE:{}] Unexpected error in streaming chat: sessionId={}, time={}", traceId, sessionId, elapsed.toMillis(), e);
             traceLogService.log(traceId, "ERROR", "UNEXPECTED_ERROR",
                     "Unexpected error in streaming chat: " + e.getMessage());
+            observability.recordError(traceId, "UNEXPECTED", e.getMessage());
             callback.onError(e.getMessage());
             return buildErrorResponse(traceId, e, sessionId, false);
         }
@@ -453,23 +693,43 @@ public class AgentService {
     private String buildPrompt(ChatSession session, ChatRequest request) {
         StringBuilder promptBuilder = new StringBuilder();
 
-        if (session.systemPrompt() != null && !session.systemPrompt().isBlank()) {
-            promptBuilder.append("System: ").append(session.systemPrompt()).append("\n\n");
-        }
-
         appendContextInfo(promptBuilder, request);
 
         if (!session.messages().isEmpty()) {
-            promptBuilder.append("\n\n--- 对话历史 ---\n");
-            for (ChatMessage msg : session.messages()) {
-                switch (msg.role()) {
-                    case "user" -> promptBuilder.append("用户: ").append(msg.content()).append("\n");
-                    case "assistant" -> promptBuilder.append("助手: ").append(msg.content()).append("\n");
-                    case "tool" -> promptBuilder.append("[").append(msg.toolName()).append("]: ")
-                            .append(msg.content() != null ? truncate(msg.content(), 200) : "")
-                            .append("\n");
+            List<ChatMessage> messages = session.messages();
+            boolean hasSummary = false;
+            int firstRecentIdx = 0;
+
+            for (int i = 0; i < messages.size(); i++) {
+                ChatMessage msg = messages.get(i);
+                if (msg.isAssistant() && msg.content() != null
+                        && (msg.content().startsWith("[历史对话摘要]") || msg.content().startsWith("[历史对话摘要·精简]"))) {
+                    if (!hasSummary) {
+                        promptBuilder.append("\n--- 历史对话摘要 ---\n");
+                        hasSummary = true;
+                    }
+                    String summaryContent = msg.content()
+                            .replace("[历史对话摘要]\n", "")
+                            .replace("[历史对话摘要·精简]\n", "");
+                    promptBuilder.append(summaryContent).append("\n");
+                    firstRecentIdx = i + 1;
                 }
             }
+
+            if (firstRecentIdx < messages.size()) {
+                promptBuilder.append("\n--- 最近对话 ---\n");
+                for (int i = firstRecentIdx; i < messages.size(); i++) {
+                    ChatMessage msg = messages.get(i);
+                    switch (msg.role()) {
+                        case "user" -> promptBuilder.append("用户: ").append(msg.content()).append("\n");
+                        case "assistant" -> promptBuilder.append("助手: ").append(msg.content()).append("\n");
+                        case "tool" -> promptBuilder.append("[").append(msg.toolName()).append("]: ")
+                                .append(msg.content() != null ? truncate(msg.content(), 200) : "")
+                                .append("\n");
+                    }
+                }
+            }
+
             promptBuilder.append("--- 对话历史结束 ---\n\n");
         }
 
@@ -565,5 +825,51 @@ public class AgentService {
         map.put("test_risk", faultDetail.test_risk());
         map.put("reproduce_steps", faultDetail.reproduce_steps());
         return map;
+    }
+
+    private ChatSession ensureSystemPrompt(ChatSession session, String sessionId) {
+        if (session.systemPrompt() == null || session.systemPrompt().isBlank()) {
+            if (systemPrompt != null && !systemPrompt.isBlank()) {
+                ChatSession updated = session.withSystemPrompt(systemPrompt);
+                sessionManager.updateSystemPrompt(sessionId, systemPrompt);
+                log.info("System prompt set on session: sessionId={}, promptLength={}", sessionId, systemPrompt.length());
+                return updated;
+            }
+        }
+        return session;
+    }
+
+    private boolean hasStructuredSummary(ChatSession session) {
+        if (session == null || session.messages() == null) {
+            return false;
+        }
+        for (ChatMessage msg : session.messages()) {
+            if (msg.isAssistant() && msg.content() != null
+                    && (msg.content().startsWith("[历史对话摘要]")
+                        || msg.content().startsWith("[历史对话摘要·精简]"))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private int countRecentMessages(ChatSession session) {
+        if (session == null || session.messages() == null) {
+            return 0;
+        }
+        int count = 0;
+        boolean foundSummary = false;
+        for (ChatMessage msg : session.messages()) {
+            if (msg.isAssistant() && msg.content() != null
+                    && (msg.content().startsWith("[历史对话摘要]")
+                        || msg.content().startsWith("[历史对话摘要·精简]"))) {
+                foundSummary = true;
+                continue;
+            }
+            if (foundSummary) {
+                count++;
+            }
+        }
+        return count;
     }
 }

@@ -79,6 +79,13 @@ export interface TaskStageLogRecord {
   previewText?: string | null
   lineCount: number
   downloadUrl?: string | null
+  durationMs?: number | null
+  exitCode?: number | null
+  stageStatus?: string | null
+  command?: string | null
+  startedAt?: string | null
+  endedAt?: string | null
+  errorMessage?: string | null
 }
 
 export interface TaskTraceShareRecord {

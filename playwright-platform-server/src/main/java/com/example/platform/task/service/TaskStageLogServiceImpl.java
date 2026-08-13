@@ -6,6 +6,7 @@ import com.example.platform.task.mapper.TaskStageLogMapper;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Locale;
 import org.springframework.beans.factory.annotation.Value;
@@ -14,6 +15,8 @@ import org.springframework.stereotype.Service;
 @Service
 public class TaskStageLogServiceImpl implements TaskStageLogService {
     private static final int PREVIEW_TEXT_MAX_LENGTH = 512;
+    private static final int COMMAND_MAX_LENGTH = 1024;
+    private static final int ERROR_MESSAGE_MAX_LENGTH = 2000;
 
     private final TaskStageLogMapper repository;
     private final ObjectStorageService objectStorageService;
@@ -30,6 +33,22 @@ public class TaskStageLogServiceImpl implements TaskStageLogService {
 
     @Override
     public TaskStageLogEntity archiveStageLog(Long taskId, String stage, Path logFile, int lineCount) {
+        return archiveStageLog(taskId, stage, logFile, lineCount, null, null, null, null, null, null, null);
+    }
+
+    @Override
+    public TaskStageLogEntity archiveStageLog(
+            Long taskId,
+            String stage,
+            Path logFile,
+            int lineCount,
+            Long durationMs,
+            Integer exitCode,
+            String stageStatus,
+            String command,
+            LocalDateTime startedAt,
+            LocalDateTime endedAt,
+            String errorMessage) {
         String normalizedStage = stage == null || stage.isBlank()
                 ? "unknown"
                 : stage.toLowerCase(Locale.ROOT);
@@ -45,6 +64,13 @@ public class TaskStageLogServiceImpl implements TaskStageLogService {
         entity.setSize(resolveSize(logFile));
         entity.setLineCount(lineCount);
         entity.setPreviewText(readPreview(logFile));
+        entity.setDurationMs(durationMs != null ? durationMs : 0L);
+        entity.setExitCode(exitCode);
+        entity.setStageStatus(stageStatus != null ? stageStatus : "SUCCESS");
+        entity.setCommand(truncate(command, COMMAND_MAX_LENGTH));
+        entity.setStartedAt(startedAt);
+        entity.setEndedAt(endedAt);
+        entity.setErrorMessage(truncate(errorMessage, ERROR_MESSAGE_MAX_LENGTH));
         repository.insert(entity);
         return entity;
     }
@@ -72,5 +98,12 @@ public class TaskStageLogServiceImpl implements TaskStageLogService {
         } catch (IOException exception) {
             return null;
         }
+    }
+
+    private String truncate(String text, int maxLength) {
+        if (text == null || text.length() <= maxLength) {
+            return text;
+        }
+        return text.substring(0, maxLength) + "...";
     }
 }

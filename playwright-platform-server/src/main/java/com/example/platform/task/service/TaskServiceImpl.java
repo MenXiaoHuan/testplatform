@@ -946,6 +946,22 @@ public class TaskServiceImpl implements TaskService {
         }
 
         @Override
+        public TaskStageLogEntity archiveStageLog(
+                Long taskId,
+                String stage,
+                Path logFile,
+                int lineCount,
+                Long durationMs,
+                Integer exitCode,
+                String stageStatus,
+                String command,
+                LocalDateTime startedAt,
+                LocalDateTime endedAt,
+                String errorMessage) {
+            return null;
+        }
+
+        @Override
         public List<TaskStageLogEntity> listByTaskId(Long taskId) {
             return List.of();
         }

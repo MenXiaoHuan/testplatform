@@ -1,6 +1,7 @@
 package com.example.platform.task.dto;
 
 import com.example.platform.task.model.TaskStageLogEntity;
+import java.time.LocalDateTime;
 
 public record TaskStageLogResponse(
         Long id,
@@ -8,7 +9,14 @@ public record TaskStageLogResponse(
         String streamType,
         String previewText,
         int lineCount,
-        String downloadUrl) {
+        String downloadUrl,
+        Long durationMs,
+        Integer exitCode,
+        String stageStatus,
+        String command,
+        LocalDateTime startedAt,
+        LocalDateTime endedAt,
+        String errorMessage) {
 
     public static TaskStageLogResponse from(TaskStageLogEntity entity, String downloadUrl) {
         return new TaskStageLogResponse(
@@ -17,6 +25,13 @@ public record TaskStageLogResponse(
                 entity.getStreamType(),
                 entity.getPreviewText(),
                 entity.getLineCount() == null ? 0 : entity.getLineCount(),
-                downloadUrl);
+                downloadUrl,
+                entity.getDurationMs(),
+                entity.getExitCode(),
+                entity.getStageStatus(),
+                entity.getCommand(),
+                entity.getStartedAt(),
+                entity.getEndedAt(),
+                entity.getErrorMessage());
     }
 }

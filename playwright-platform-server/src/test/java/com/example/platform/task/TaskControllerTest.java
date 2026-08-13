@@ -197,7 +197,8 @@ class TaskControllerTest {
                 "COMBINED",
                 "line1",
                 2,
-                "http://minio/presigned/testing-log");
+                "http://minio/presigned/testing-log",
+                null, null, null, null, null, null, null);
 
         Mockito.when(taskService.listStageLogs(7L, 101L)).thenReturn(List.of(stageLog));
 

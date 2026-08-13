@@ -459,7 +459,10 @@ function copyTraceId(traceId?: string) {
 <style scoped>
 .ai-dialog-overlay {
   position: fixed;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   z-index: 2000;
   background: rgba(15, 23, 42, 0.35);
   backdrop-filter: blur(2px);
@@ -592,31 +595,28 @@ function copyTraceId(traceId?: string) {
   margin-top: 8px;
 }
 
+/* 使用 CSS Grid 保证用户消息和 AI 消息高度计算完全一致 */
 .ai-message {
-  display: flex;
+  display: grid;
+  grid-template-columns: 32px 1fr;
+  grid-template-areas: "avatar content";
   gap: 8px;
   max-width: 100%;
   min-width: 0;
   overflow: visible;
-  align-items: flex-start;
+  align-items: start;
   margin-bottom: 2px;
 }
 
 .ai-message--user {
-  flex-direction: row-reverse;
-}
-
-.ai-message--error {
-  opacity: 0.95;
-}
-
-.ai-message__avatar {
-  flex-shrink: 0;
+  grid-template-columns: 1fr 32px;
+  grid-template-areas: "content avatar";
 }
 
 .ai-message__avatar-user,
 .ai-message__avatar-ai,
 .ai-message__avatar-error {
+  grid-area: avatar;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -651,20 +651,28 @@ function copyTraceId(traceId?: string) {
 }
 
 .ai-message__content {
+  grid-area: content;
+  width: 100%;
   min-width: 0;
   overflow: visible;
-  display: inline-flex;
+  display: flex;
   flex-direction: column;
   gap: 2px;
-  max-width: calc(100% - 48px);
+  max-width: 100%;
+  align-items: flex-start !important;
 }
 
 .ai-message--user .ai-message__content {
-  align-items: flex-end;
+  align-items: flex-end !important;
 }
 
-.ai-message--assistant .ai-message__content {
-  align-items: flex-start;
+.ai-message--user .ai-message__body {
+  text-align: right;
+}
+
+.ai-message--user .ai-message__body :deep(p),
+.ai-message--user .ai-message__body :deep(li) {
+  text-align: right;
 }
 
 .ai-message__header {
@@ -874,6 +882,7 @@ function copyTraceId(traceId?: string) {
 .ai-message--user .ai-message__body {
   background: linear-gradient(135deg, #14b8a6, #0f9f92);
   color: #ffffff;
+  border: 1px solid rgba(15, 159, 146, 0.6);
   border-radius: 14px;
 }
 
@@ -897,6 +906,10 @@ function copyTraceId(traceId?: string) {
   margin-top: 4px;
   overflow: visible;
   flex-shrink: 0;
+}
+
+.ai-message--user .ai-message__tools {
+  justify-content: flex-end;
 }
 
 .ai-message__type-tag {
@@ -1086,30 +1099,6 @@ function copyTraceId(traceId?: string) {
     transform: translateY(-4px);
     opacity: 1;
   }
-}
-
-.ai-code-block {
-  margin: 8px 0;
-  padding: 12px 14px;
-  border-radius: 12px;
-  background: #1e293b;
-  color: #e2e8f0;
-  font-size: 12px;
-  line-height: 1.6;
-  overflow-x: auto;
-}
-
-.ai-code-block code {
-  font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
-}
-
-.ai-inline-code {
-  padding: 2px 6px;
-  border-radius: 6px;
-  background: rgba(20, 184, 166, 0.1);
-  color: #0f766e;
-  font-size: 12px;
-  font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
 }
 
 .ai-dialog__input-area {

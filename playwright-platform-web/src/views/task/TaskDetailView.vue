@@ -84,10 +84,16 @@ function findCaseArtifactUrl(
 }
 
 function formatDuration(durationMs: number | null | undefined) {
-  const totalSeconds = Math.max(0, Math.floor((durationMs ?? 0) / 1000))
-  const minutes = Math.floor(totalSeconds / 60)
-  const seconds = totalSeconds % 60
-  return `${String(minutes).padStart(2, '0')}min${String(seconds).padStart(2, '0')}s`
+  const ms = Math.max(0, durationMs ?? 0)
+  if (ms < 1000) return `${ms}ms`
+  const seconds = Math.floor(ms / 1000)
+  if (seconds < 60) return `${seconds}s`
+  const minutes = Math.floor(seconds / 60)
+  const remainingSeconds = seconds % 60
+  if (minutes < 60) return `${minutes}m ${remainingSeconds}s`
+  const hours = Math.floor(minutes / 60)
+  const remainingMinutes = minutes % 60
+  return `${hours}h ${remainingMinutes}m`
 }
 
 function caseDisplayTitle(item: CaseResultRecord) {
@@ -176,6 +182,27 @@ async function openTraceViewer(item: CaseResultRecord) {
 
 function stageLogText(item: TaskStageLogRecord) {
   return stageLogContentMap.value[item.id] ?? item.previewText ?? '暂无日志内容'
+}
+
+function stageStatusText(status?: string | null) {
+  if (!status) return ''
+  const map: Record<string, string> = {
+    SUCCESS: '成功',
+    FAILED: '失败',
+    TIMEOUT: '超时',
+    CANCELED: '已取消',
+    RUNNING: '运行中',
+  }
+  return map[status.toUpperCase()] ?? status
+}
+
+function formatTime(isoString: string) {
+  try {
+    const date = new Date(isoString)
+    return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  } catch {
+    return isoString
+  }
 }
 
 async function loadStageLogContent(item: TaskStageLogRecord) {
@@ -497,11 +524,26 @@ useTaskDetailLoader({
             <div v-if="stageLogs.length" class="task-stage-log-list">
               <article v-for="item in stageLogs" :key="item.id" class="task-stage-log-card">
                 <div class="task-stage-log-card__header">
-                  <div>
-                    <h3>{{ taskStageText(item.stage) }}</h3>
-                    <p>{{ item.streamType }} · {{ item.lineCount }} 行</p>
+                  <div class="task-stage-log-card__title">
+                    <h3>
+                      {{ taskStageText(item.stage) }}
+                      <span v-if="item.stageStatus" class="task-stage-log-card__status" :class="'status-' + (item.stageStatus?.toLowerCase() ?? 'info')">
+                        {{ stageStatusText(item.stageStatus) }}
+                      </span>
+                    </h3>
+                    <div class="task-stage-log-card__meta">
+                      <span>{{ item.streamType }} · {{ item.lineCount }} 行</span>
+                      <span v-if="item.durationMs != null" class="task-stage-log-card__meta-item">
+                        {{ formatDuration(item.durationMs) }}
+                      </span>
+                      <span v-if="item.exitCode != null" class="task-stage-log-card__meta-item">
+                        退出码: {{ item.exitCode }}
+                      </span>
+                      <span v-if="item.startedAt" class="task-stage-log-card__meta-item">
+                        {{ formatTime(item.startedAt) }}
+                      </span>
+                    </div>
                   </div>
-                </div>
                   <div class="task-stage-log-card__actions">
                     <el-button
                       link
@@ -521,8 +563,17 @@ useTaskDetailLoader({
                       下载日志
                     </el-button>
                   </div>
-                  <div v-if="stageLogLoadingMap[item.id]" class="page-empty-text task-stage-log-card__empty">日志加载中...</div>
-                  <pre class="task-stage-log-card__preview">{{ stageLogText(item) }}</pre>
+                </div>
+                <div v-if="item.command" class="task-stage-log-card__command">
+                  <span class="task-stage-log-card__command-label">Command:</span>
+                  <code>{{ item.command }}</code>
+                </div>
+                <div v-if="item.errorMessage" class="task-stage-log-card__error">
+                  <span class="task-stage-log-card__error-label">Error:</span>
+                  <span>{{ item.errorMessage }}</span>
+                </div>
+                <div v-if="stageLogLoadingMap[item.id]" class="page-empty-text task-stage-log-card__empty">日志加载中...</div>
+                <pre class="task-stage-log-card__preview">{{ stageLogText(item) }}</pre>
               </article>
             </div>
             <div v-else class="page-empty-text task-detail-empty">暂无阶段日志</div>
@@ -830,6 +881,113 @@ useTaskDetailLoader({
 
 .task-stage-log-card__header h3 {
   margin: 0;
+}
+
+.task-stage-log-card__title {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.task-stage-log-card__status {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  vertical-align: middle;
+}
+
+.task-stage-log-card__status.status-success {
+  background: #ecfdf5;
+  color: #059669;
+}
+
+.task-stage-log-card__status.status-failed {
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.task-stage-log-card__status.status-timeout {
+  background: #fffbeb;
+  color: #d97706;
+}
+
+.task-stage-log-card__status.status-canceled {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+
+.task-stage-log-card__status.status-running {
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+.task-stage-log-card__status.status-info {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+
+.task-stage-log-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--app-text-secondary);
+}
+
+.task-stage-log-card__meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  background: var(--app-surface-muted);
+  border-radius: 8px;
+}
+
+.task-stage-log-card__command {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 8px 12px;
+  background: #1e293b;
+  color: #e2e8f0;
+  border-radius: 8px;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-x: auto;
+}
+
+.task-stage-log-card__command code {
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.task-stage-log-card__command-label {
+  color: #94a3b8;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.task-stage-log-card__error {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 8px 12px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #991b1b;
+}
+
+.task-stage-log-card__error-label {
+  font-weight: 600;
+  flex-shrink: 0;
 }
 
 .task-stage-log-card__header p {

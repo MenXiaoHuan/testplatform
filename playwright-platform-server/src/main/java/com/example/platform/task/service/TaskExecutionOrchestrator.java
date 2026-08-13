@@ -82,6 +82,7 @@ final class TaskExecutionOrchestrator {
           int runStatus = 1;
           Path workspace = null;
           PreparationStageLog preparationStageLog = PreparationStageLog.create();
+          StageExecutionContext currentStage = null;
           try {
               try (TaskLogContext taskLogContext = TaskLogContext.open(task, scene)) {
             if (task.getStartedAt() == null) {
@@ -94,7 +95,9 @@ final class TaskExecutionOrchestrator {
             preparationStageLog.write("Task accepted for execution");
             preparationStageLog.write("Preparing workspace. branch=" + task.getResolvedBranch());
             taskExecutionMutationService.saveTask(task);
-                  workspace = runnerWorkspaceService.prepareWorkspace(
+
+            currentStage = StageExecutionContext.start("PREPARING");
+            workspace = runnerWorkspaceService.prepareWorkspace(
                     repository.getGitUrl(),
                     task.getResolvedBranch(),
                     task.getId());
@@ -105,21 +108,42 @@ final class TaskExecutionOrchestrator {
             ResolvedExecutionPaths executionPaths = resolveExecutionPaths(executionDirectory, repository);
             preparationStageLog.write("Results index path: " + executionPaths.resultsIndex());
             preparationStageLog.write("Artifact root path: " + executionPaths.artifactDirectory());
-            archiveStageLog(task.getId(), "PREPARING", preparationStageLog.logFile(), preparationStageLog.lineCount());
+            archiveStageLog(task.getId(), "PREPARING", preparationStageLog.logFile(),
+                    preparationStageLog.lineCount(), currentStage,
+                    "Workspace preparation: clone=" + task.getResolvedBranch() + ", dir=" + executionDirectory,
+                    null, null, "SUCCESS");
+
             task.setCurrentStage("INSTALLING");
             taskLogContext.setStage("INSTALLING");
             log.info("Preparation completed, entering install stage");
             taskExecutionMutationService.saveTask(task);
+
+            String installCommand = repository.getInstallCommand();
+            currentStage = StageExecutionContext.start("INSTALLING");
             RunnerCommandResult installResult = runStageWithFallback(
                     task,
                     workspace,
                     executionDirectory,
-                    repository.getInstallCommand(),
+                    installCommand,
                     platformEnv,
                     Duration.ofSeconds(taskExecutionProperties.getInstallTimeoutSeconds()),
                     StageCommandType.INSTALL);
             installStatus = installResult.exitCode();
-            archiveStageLog(task.getId(), "INSTALLING", installResult);
+            String installError = null;
+            String installStatusStr = "SUCCESS";
+            if (installResult.canceled()) {
+                installStatusStr = "CANCELED";
+                installError = "任务已取消";
+            } else if (installResult.timedOut()) {
+                installStatusStr = "TIMEOUT";
+                installError = "INSTALLING 阶段超时";
+            } else if (installStatus != 0) {
+                installStatusStr = "FAILED";
+                installError = "安装依赖失败，退出码=" + installStatus;
+            }
+            archiveStageLog(task.getId(), "INSTALLING", installResult, currentStage,
+                    installCommand, installError, installStatusStr);
+
             if (installResult.canceled()) {
                 return finalizeTask(task, scene, "CANCELED", "CANCELED", "任务已取消");
             }
@@ -132,16 +156,33 @@ final class TaskExecutionOrchestrator {
                 taskLogContext.setStage("TESTING");
                 log.info("Install stage completed successfully, entering test stage");
                 taskExecutionMutationService.saveTask(task);
+
+                String testCommand = task.getResolvedRunCommand();
+                currentStage = StageExecutionContext.start("TESTING");
                 RunnerCommandResult testResult = runStageWithFallback(
                         task,
                         workspace,
                         executionDirectory,
-                        task.getResolvedRunCommand(),
+                        testCommand,
                         platformEnv,
                         Duration.ofSeconds(taskExecutionProperties.getTestTimeoutSeconds()),
                         StageCommandType.TEST);
                 runStatus = testResult.exitCode();
-                archiveStageLog(task.getId(), "TESTING", testResult);
+                String testError = null;
+                String testStatusStr = "SUCCESS";
+                if (testResult.canceled()) {
+                    testStatusStr = "CANCELED";
+                    testError = "任务已取消";
+                } else if (testResult.timedOut()) {
+                    testStatusStr = "TIMEOUT";
+                    testError = "TESTING 阶段超时";
+                } else if (runStatus != 0) {
+                    testStatusStr = "FAILED";
+                    testError = "测试执行失败，退出码=" + runStatus;
+                }
+                archiveStageLog(task.getId(), "TESTING", testResult, currentStage,
+                        testCommand, testError, testStatusStr);
+
                 if (testResult.canceled()) {
                     return finalizeTask(task, scene, "CANCELED", "CANCELED", "任务已取消");
                 }
@@ -153,7 +194,17 @@ final class TaskExecutionOrchestrator {
                 taskLogContext.setStage("ARCHIVING");
                 log.info("Test stage completed, entering archive stage");
                 taskExecutionMutationService.saveTask(task);
-                continuePostProcessing(task, executionDirectory, executionPaths, runStatus == 0);
+
+                StageExecutionContext archiveStage = StageExecutionContext.start("ARCHIVING");
+                try {
+                    continuePostProcessing(task, executionDirectory, executionPaths, runStatus == 0);
+                    archiveStageLog(task.getId(), "ARCHIVING", null, 0, archiveStage,
+                            "Artifact archive and case result parsing", null, null, "SUCCESS");
+                } catch (Exception ex) {
+                    archiveStageLog(task.getId(), "ARCHIVING", null, 0, archiveStage,
+                            null, null, ex.getMessage(), "FAILED");
+                    throw ex;
+                }
             } else {
                 task.setResultCode("INSTALL_FAILED");
                 task.setResultMessage("安装依赖失败");
@@ -162,7 +213,9 @@ final class TaskExecutionOrchestrator {
                   runStatus = 1;
                   if ("PREPARING".equalsIgnoreCase(task.getCurrentStage())) {
                       preparationStageLog.write("Preparing stage failed: " + exception.getClass().getSimpleName() + ": " + exception.getMessage());
-                      archiveStageLog(task.getId(), "PREPARING", preparationStageLog.logFile(), preparationStageLog.lineCount());
+                      archiveStageLog(task.getId(), "PREPARING", preparationStageLog.logFile(),
+                              preparationStageLog.lineCount(), currentStage,
+                              exception.getMessage(), "FAILED");
                   }
                   log.error("Task execution failed", exception);
                   if (applicationErrorSummaryService != null) {
@@ -361,19 +414,35 @@ final class TaskExecutionOrchestrator {
                 .orElse(false);
     }
 
-    private void archiveStageLog(Long taskId, String stage, RunnerCommandResult stageResult) {
+    private void archiveStageLog(Long taskId, String stage, RunnerCommandResult stageResult,
+                                StageExecutionContext context, String command, String errorMessage, String stageStatus) {
         if (stageResult == null || stageResult.combinedLogFile() == null) {
+            archiveStageLog(taskId, stage, null, 0, context, errorMessage, stageStatus);
             return;
         }
-        archiveStageLog(taskId, stage, stageResult.combinedLogFile(), stageResult.lineCount());
+        archiveStageLog(taskId, stage, stageResult.combinedLogFile(), stageResult.lineCount(),
+                context, command, stageResult.exitCode(), errorMessage, stageStatus);
     }
 
-    private void archiveStageLog(Long taskId, String stage, Path logFile, int lineCount) {
+    private void archiveStageLog(Long taskId, String stage, Path logFile, int lineCount,
+                                StageExecutionContext context, String errorMessage, String stageStatus) {
+        archiveStageLog(taskId, stage, logFile, lineCount, context, null, null, errorMessage, stageStatus);
+    }
+
+    private void archiveStageLog(Long taskId, String stage, Path logFile, int lineCount,
+                                StageExecutionContext context, String command, Integer exitCode,
+                                String errorMessage, String stageStatus) {
         if (logFile == null) {
             return;
         }
         try {
-            taskStageLogService.archiveStageLog(taskId, stage, logFile, lineCount);
+            LocalDateTime startedAt = context != null ? context.startedAt() : null;
+            LocalDateTime endedAt = LocalDateTime.now();
+            long durationMs = context != null ? context.durationMs(endedAt) : 0L;
+            taskStageLogService.archiveStageLog(
+                    taskId, stage, logFile, lineCount,
+                    durationMs, exitCode, stageStatus, command,
+                    startedAt, endedAt, errorMessage);
         } catch (Exception exception) {
             recordApplicationError(taskRepository.findById(taskId).orElse(null), null, stage, "Failed to archive stage log: " + exception.getMessage(), exception);
             log.warn(
@@ -382,6 +451,10 @@ final class TaskExecutionOrchestrator {
                     stage,
                     exception.getMessage());
         }
+    }
+
+    private void archiveStageLog(Long taskId, String stage, Path logFile, int lineCount) {
+        archiveStageLog(taskId, stage, logFile, lineCount, null, null, null, null, null);
     }
 
     private TaskEntity finalizeTask(
@@ -445,6 +518,32 @@ final class TaskExecutionOrchestrator {
             Path resultsIndex,
             Path artifactDirectory,
             String artifactRootRelativePath) {
+    }
+
+    private static final class StageExecutionContext {
+        private final String stage;
+        private final LocalDateTime startedAt;
+
+        private StageExecutionContext(String stage, LocalDateTime startedAt) {
+            this.stage = stage;
+            this.startedAt = startedAt;
+        }
+
+        static StageExecutionContext start(String stage) {
+            return new StageExecutionContext(stage, LocalDateTime.now());
+        }
+
+        String stage() {
+            return stage;
+        }
+
+        LocalDateTime startedAt() {
+            return startedAt;
+        }
+
+        long durationMs(LocalDateTime endedAt) {
+            return Duration.between(startedAt, endedAt).toMillis();
+        }
     }
 
     private enum StageCommandType {

@@ -16,16 +16,19 @@ import org.apache.ibatis.annotations.Select;
 public interface TaskStageLogMapper {
     String STAGE_LOG_COLUMNS = """
             id, task_id, stage, stream_type, object_key, content_type,
-            size, line_count, preview_text, created_at
+            size, line_count, duration_ms, exit_code, stage_status, command,
+            started_at, ended_at, error_message, preview_text, created_at
             """;
 
     @Insert("""
             insert into task_stage_log (
                 task_id, stage, stream_type, object_key, content_type,
-                size, line_count, preview_text
+                size, line_count, duration_ms, exit_code, stage_status, command,
+                started_at, ended_at, error_message, preview_text
             ) values (
                 #{taskId}, #{stage}, #{streamType}, #{objectKey}, #{contentType},
-                #{size}, #{lineCount}, #{previewText}
+                #{size}, #{lineCount}, #{durationMs}, #{exitCode}, #{stageStatus}, #{command},
+                #{startedAt}, #{endedAt}, #{errorMessage}, #{previewText}
             )
             """)
     @Options(useGeneratedKeys = true, keyProperty = "id")
@@ -47,6 +50,13 @@ public interface TaskStageLogMapper {
             @Result(property = "contentType", column = "content_type"),
             @Result(property = "size", column = "size"),
             @Result(property = "lineCount", column = "line_count"),
+            @Result(property = "durationMs", column = "duration_ms"),
+            @Result(property = "exitCode", column = "exit_code"),
+            @Result(property = "stageStatus", column = "stage_status"),
+            @Result(property = "command", column = "command"),
+            @Result(property = "startedAt", column = "started_at"),
+            @Result(property = "endedAt", column = "ended_at"),
+            @Result(property = "errorMessage", column = "error_message"),
             @Result(property = "previewText", column = "preview_text"),
             @Result(property = "createdAt", column = "created_at")
     })

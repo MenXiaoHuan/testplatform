@@ -299,16 +299,20 @@ flowchart LR
 | 文件 | 职责 | 为什么重要 |
 |---|---|---|
 | `AgentController.java` | AI 对话 HTTP 接口（同步/流式/SSE） | AI 能力入口，支持 traceId 返回 |
-| `AgentService.java` | AI 对话服务主入口 | 串联输入清洗、会话管理、上下文压缩、Agent 调用、trace 记录 |
-| `ReactAgentConfig.java` | ReactAgent Bean 配置 | 注册 Skills、Tools、Hooks |
-| `AgentTraceLogService.java` | 全链路 trace 日志存储 | Redis List + ZSet，90 天 TTL，每阶段记录 |
+| `AgentService.java` | AI 对话服务主入口 | 串联输入清洗、会话管理、token 预算检查、上下文压缩、Agent 调用、trace 记录、输出兜底 |
+| `ReactAgentConfig.java` | ReactAgent Bean 配置 | 注册 Skills、Tools、Hooks（含 ModelCallLimitHook 限制最多 20 次模型调用） |
+| `AgentTraceLogService.java` | 全链路 trace 日志存储 | Redis List + ZSet，90 天 TTL，每阶段记录（含 PROMPT_TOKEN_BUDGET、CONTEXT_COMPRESSED 等） |
 | `TraceQueryTool.java` | Agent 可调用的 trace 查询工具 | 按 traceId 查询调用链路，支持对话内查询 |
-| `ChatSessionManager.java` | 会话管理（Caffeine 缓存，30min TTL） | 会话持久化和上下文维护 |
-| `ContextCompressionService.java` | 上下文压缩 | token 超 80% 阈值时自动压缩历史对话 |
+| `ChatSessionManager.java` | 会话管理（Caffeine 缓存，30min TTL，最大 10K 会话） | 会话持久化和上下文维护，touch() 更新访问时间 |
+| `ChatSession.java` | 会话数据模型（record） | 包含 sessionId、messages、systemPrompt、estimatedTokens，统一 token 估算（中文×1.5 + 英文×0.25） |
+| `ContextCompressionService.java` | 上下文压缩（结构化摘要 + 滑动窗口） | keepRecentMessages=3 保留最近 3 条原始消息，历史消息生成结构化轮次摘要，两级压缩（Smart/Aggressive），硬 token 上限熔断 |
 | `AgentCallManager.java` | Agent 调用可靠性封装 | 超时（60s）+ 重试（2 次，指数退避） |
 | `InputSanitizer.java` | 输入清洗 + Prompt 注入检测 | 安全防护，最大长度 10000 字符 |
 | `OutputFormatFallbackService.java` | 四层输出解析兜底 | BeanConverter → JSON 提取 → 字段正则 → 纯文本 |
 | `AgentObservability.java` | 调用量/错误率/token 监控 | Agent 可观测性 |
+| `AgentTraceLogService.java` | Trace 日志写入服务 | 每个对话阶段（REQUEST_RECEIVED→SESSION_READY→PROMPT_TOKEN_BUDGET→AGENT_CALL_STARTING→AGENT_CALL_SUCCESS→OUTPUT_PARSED→REQUEST_COMPLETED）记录结构化日志 |
+| `ToolErrorFallback.java` | 工具调用异常分析 | 检测工具使用问题并生成改进建议 |
+| `AgentPromptBuilder.java` | Prompt 构建服务 | 组装 System Prompt + 上下文信息 + 对话历史（区分摘要区和最近对话区） |
 | `AGENT.md` | 系统提示词（Tools + 输出格式 + 安全约束） | Agent 行为定义 |
 | `skills/` | Skills 技能文档（业务知识、错误分析） | Agent 领域知识注入 |
 
@@ -409,6 +413,8 @@ sequenceDiagram
     participant W as 前端 AiAssistantDialog
     participant C as AgentController
     participant S as AgentService
+    participant CS as ChatSessionManager
+    participant CC as ContextCompressionService
     participant T as AgentTraceLogService
     participant R as ReactAgent
     participant L as LLM (deepseek-chat)
@@ -420,11 +426,28 @@ sequenceDiagram
     C->>S: chatStream(spaceId, message)
     S->>T: log(traceId, REQUEST_RECEIVED, ...)
     S->>S: InputSanitizer.sanitize(message)
-    S->>S: ChatSessionManager.getOrCreateSession()
-    S->>S: ContextCompressionService.compressIfNeeded()
-    S->>T: log(traceId, CONTEXT_READY, ...)
+    S->>CS: getOrCreateSession(sessionId)
+    CS-->>S: ChatSession (含历史消息)
+    S->>T: log(traceId, SESSION_READY, ...)
+    S->>CC: compressIfNeeded(session)
+    alt token > 80% maxTokens
+        CC->>CC: applySmartCompression(结构化摘要)
+        CC->>CC: keepRecentMessages=3 保留最近3条
+        CC-->>S: 压缩后 session
+        S->>T: log(traceId, CONTEXT_COMPRESSED, ...)
+    else token <= threshold
+        CC-->>S: 不压缩
+    end
+    S->>S: 计算 promptTokens
+    S->>T: log(traceId, PROMPT_TOKEN_BUDGET, ...)
+    alt promptTokens > maxTokens
+        S->>CC: 再次压缩 + truncateLongMessages
+        alt 仍然超限
+            S-->>W: 返回错误"上下文过长"
+        end
+    end
     S->>R: ReactAgent.call(prompt)
-    R->>L: 发送请求（含 Skills + Tools 定义）
+    R->>L: 发送请求（含 Skills + Tools 定义 + 摘要 + 最近3条消息）
     L-->>R: 返回工具调用指令
     R->>Tool: 调用 getTask / queryTrace 等
     Tool->>Redis: 查询缓存或 trace 日志
@@ -451,15 +474,16 @@ sequenceDiagram
 | 2 | Controller | 接收 `POST /api/ai/chat/stream` | SSE 流式接口，支持 traceId 返回 |
 | 3 | Service | 生成 traceId，记录 REQUEST_RECEIVED | 全链路追踪起点 |
 | 4 | Sanitizer | 输入清洗 + Prompt 注入检测 | 安全防护 |
-| 5 | Session | 获取或创建会话 | 多轮对话上下文维护 |
-| 6 | Compression | 上下文压缩（超 80% token 阈值） | 控制 token 总量，防止超限 |
-| 7 | Trace Log | 记录 CONTEXT_READY | 链路可观测性 |
-| 8 | Agent | ReAct 循环（思考→调用工具→观察→输出） | 核心推理循环，最多 20 次模型调用 |
-| 9 | Tools | 调用 TaskTool/SceneTool/TraceQueryTool 等 | Agent 与业务系统交互的桥梁 |
-| 10 | LLM | deepseek-chat 推理 | 生成回复和工具调用决策 |
-| 11 | Fallback | 四层输出解析兜底 | 保证输出格式正确 |
-| 12 | SSE | 流式返回给前端 | 打字机效果，提升用户体验 |
-| 13 | Trace Log | 记录全链路各阶段日志 | 90 天内可通过 traceId 查询完整链路 |
+| 5 | Session | 获取或创建会话（Caffeine 30min TTL） | 多轮对话上下文维护 |
+| 6 | Compression | 结构化摘要压缩：保留最近 3 条消息，历史消息按轮次生成结构化摘要 | 滑动窗口 + 结构化压缩，控制 token 总量 |
+| 7 | Token Budget | 计算 promptTokens 与 maxTokens (8000) 对比 | 硬 token 上限检查，超限则熔断 |
+| 8 | Trace Log | 记录 SESSION_READY / PROMPT_TOKEN_BUDGET / CONTEXT_COMPRESSED | 链路可观测性 |
+| 9 | Agent | ReAct 循环（思考→调用工具→观察→输出，最多 20 次模型调用） | 核心推理循环 |
+| 10 | Tools | 调用 TaskTool/SceneTool/TraceQueryTool 等 | Agent 与业务系统交互的桥梁 |
+| 11 | LLM | deepseek-chat 推理 | 生成回复和工具调用决策 |
+| 12 | Fallback | 四层输出解析兜底 | 保证输出格式正确 |
+| 13 | SSE | 流式返回给前端 | 打字机效果，提升用户体验 |
+| 14 | Trace Log | 记录全链路各阶段日志 | 90 天内可通过 traceId 查询完整链路 |
 
 ---
 
@@ -815,8 +839,9 @@ flowchart TD
 | Redis 缓存保护 | `DetailCacheService` | 考虑穿透、击穿、雪崩 |
 | Flyway 迁移 | `db/migration` | 自动建表和 schema 演进 |
 | 调度幂等 | `schedule_event`、租约 | 避免定时任务重复触发 |
-| AI Agent 集成 | `ai` 模块 | Spring AI Alibaba Agent，ReAct 循环 + Skills + Tools |
-| 全链路追踪 | `AgentTraceLogService`、`TraceQueryTool` | traceId + Redis 存储 + 对话内查询 |
+| AI Agent 集成 | `ai` 模块 | Spring AI Alibaba Agent，ReAct 循环 + Skills + Tools + 结构化摘要上下文管理 |
+| 全链路追踪 | `AgentTraceLogService`、`TraceQueryTool` | traceId + Redis 存储 + 对话内查询 + PROMPT_TOKEN_BUDGET 日志 |
+| 上下文爆炸防护 | `ContextCompressionService`、`ChatSession` | 结构化摘要 + 滑动窗口(keepRecentMessages=3) + 硬 token 上限熔断 |
 | RBAC 权限体系 | `space`、`auth` 模块 | 空间级角色控制 + 审批流程 |
 | 工程化完整 | Compose、Dockerfile、CI | 能开发、部署、测试闭环 |
 
@@ -932,8 +957,9 @@ AI Agent 基于 Spring AI Alibaba Agent 框架实现，核心能力包括：
 - **业务问答**：回答平台使用、业务流程等问题
 - **信息查询**：查询任务、场景、仓库等信息
 - **链路追踪**：通过 TraceQueryTool 查询 Agent 调用全链路
+- **上下文管理**：自动维护多轮对话历史，结构化摘要压缩历史对话，滑动窗口保留最近 3 条消息，硬 token 上限熔断防止上下文爆炸
 
-Agent 通过 ReAct 循环（思考→调用工具→观察→输出）工作，可以调用 TaskTool、SceneTool、LogPreprocessingTool、TraceQueryTool 等工具。
+Agent 通过 ReAct 循环（思考→调用工具→观察→输出）工作，可以调用 TaskTool、SceneTool、LogPreprocessingTool、TraceQueryTool 等工具。上下文管理采用结构化摘要（按轮次组织用户消息、工具调用、助手结论）+ 滑动窗口（keepRecentMessages=3）的组合策略，在 token 超过 80% 阈值时触发 Smart 压缩，超过 maxTokens(8000) 时触发 Aggressive 压缩，极端情况下硬截断熔断。
 
 ### Q14：traceId 是什么？怎么用？
 

@@ -23,6 +23,20 @@ public class TaskStageLogEntity {
 
     private LocalDateTime createdAt;
 
+    private Long durationMs;
+
+    private Integer exitCode;
+
+    private String stageStatus;
+
+    private String command;
+
+    private LocalDateTime startedAt;
+
+    private LocalDateTime endedAt;
+
+    private String errorMessage;
+
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
     public Long getTaskId() { return taskId; }
@@ -42,4 +56,18 @@ public class TaskStageLogEntity {
     public String getPreviewText() { return previewText; }
     public void setPreviewText(String previewText) { this.previewText = previewText; }
     public LocalDateTime getCreatedAt() { return createdAt; }
+    public Long getDurationMs() { return durationMs; }
+    public void setDurationMs(Long durationMs) { this.durationMs = durationMs; }
+    public Integer getExitCode() { return exitCode; }
+    public void setExitCode(Integer exitCode) { this.exitCode = exitCode; }
+    public String getStageStatus() { return stageStatus; }
+    public void setStageStatus(String stageStatus) { this.stageStatus = stageStatus; }
+    public String getCommand() { return command; }
+    public void setCommand(String command) { this.command = command; }
+    public LocalDateTime getStartedAt() { return startedAt; }
+    public void setStartedAt(LocalDateTime startedAt) { this.startedAt = startedAt; }
+    public LocalDateTime getEndedAt() { return endedAt; }
+    public void setEndedAt(LocalDateTime endedAt) { this.endedAt = endedAt; }
+    public String getErrorMessage() { return errorMessage; }
+    public void setErrorMessage(String errorMessage) { this.errorMessage = errorMessage; }
 }
