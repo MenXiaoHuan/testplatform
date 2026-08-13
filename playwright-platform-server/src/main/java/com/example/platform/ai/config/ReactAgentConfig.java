@@ -5,6 +5,7 @@ import com.alibaba.cloud.ai.graph.agent.hook.modelcalllimit.ModelCallLimitHook;
 import com.alibaba.cloud.ai.graph.agent.hook.skills.SkillsAgentHook;
 import com.alibaba.cloud.ai.graph.skills.registry.SkillRegistry;
 import com.alibaba.cloud.ai.graph.skills.registry.classpath.ClasspathSkillRegistry;
+import com.example.platform.ai.hook.SystemPromptHook;
 import com.example.platform.ai.output.ChatAssistantResult;
 import com.example.platform.ai.skill.NamedSkillsRegistry;
 import com.example.platform.ai.tools.LogPreprocessingTool;
@@ -14,8 +15,10 @@ import com.example.platform.ai.tools.TaskTool;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.io.ResourceLoader;
 
 import java.util.List;
 
@@ -23,6 +26,9 @@ import java.util.List;
 public class ReactAgentConfig {
 
     private static final Logger log = LoggerFactory.getLogger(ReactAgentConfig.class);
+
+    @Value("${platform.ai.system-prompt-path:classpath:AGENT.md}")
+    private String systemPromptPath;
 
     @Bean
     public SkillRegistry rootSkillRegistry() {
@@ -39,9 +45,13 @@ public class ReactAgentConfig {
             RepositoryTool repositoryTool,
             SceneTool sceneTool,
             TaskTool taskTool,
-            LogPreprocessingTool logPreprocessingTool) {
+            LogPreprocessingTool logPreprocessingTool,
+            ResourceLoader resourceLoader,
+            SystemPromptConfig systemPromptConfig) {
 
         log.info("Building intelligent-assistant ReactAgent");
+
+        String systemPrompt = systemPromptConfig.loadSystemPrompt(resourceLoader, systemPromptPath);
 
         SkillRegistry agentRegistry = new NamedSkillsRegistry(
                 rootSkillRegistry,
@@ -54,6 +64,7 @@ public class ReactAgentConfig {
                 .model(model)
                 .methodTools(repositoryTool, sceneTool, taskTool, logPreprocessingTool)
                 .outputType(ChatAssistantResult.class)
+                .hooks(SystemPromptHook.builder().systemText(systemPrompt).build())
                 .hooks(SkillsAgentHook.builder().skillRegistry(agentRegistry).build())
                 .hooks(ModelCallLimitHook.builder().runLimit(20).build())
                 .build();

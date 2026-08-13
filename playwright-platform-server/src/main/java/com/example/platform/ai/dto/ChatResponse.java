@@ -1,11 +1,15 @@
 package com.example.platform.ai.dto;
 
 import java.util.List;
+import java.util.Map;
 
 public record ChatResponse(
+        String traceId,
         String response,
         List<String> usedTools,
         String confidence,
+        String responseType,
+        Map<String, Object> faultDetail,
         Long taskId,
         Long sceneId,
         String processingTime,
@@ -22,10 +26,15 @@ public record ChatResponse(
         if (sessionId == null) {
             sessionId = "";
         }
+        if (responseType == null) {
+            responseType = "UNKNOWN";
+        }
     }
 
-    public ChatResponse(String response, List<String> usedTools, String confidence,
-                        Long taskId, Long sceneId, String processingTime) {
-        this(response, usedTools, confidence, taskId, sceneId, processingTime, "", false);
+    public ChatResponse(String traceId, String response, List<String> usedTools, String confidence,
+                        String responseType, Long taskId, Long sceneId, String processingTime,
+                        String sessionId, boolean contextCompressed) {
+        this(traceId, response, usedTools, confidence, responseType, null,
+                taskId, sceneId, processingTime, sessionId, contextCompressed);
     }
 }

@@ -23,6 +23,10 @@ public class ToolErrorFallback {
     private final Map<String, String> toolErrorPatterns = new ConcurrentHashMap<>();
 
     public ToolCallAnalysis analyzeToolUsage(String sessionId, List<String> usedTools) {
+        return analyzeToolUsage(null, sessionId, usedTools);
+    }
+
+    public ToolCallAnalysis analyzeToolUsage(String traceId, String sessionId, List<String> usedTools) {
         if (usedTools == null || usedTools.isEmpty()) {
             return ToolCallAnalysis.noTools();
         }
@@ -53,8 +57,8 @@ public class ToolErrorFallback {
         boolean hasIssues = !unknownTools.isEmpty() || !overusedTools.isEmpty();
 
         if (hasIssues) {
-            log.warn("Tool usage issues detected: sessionId={}, unknownTools={}, overusedTools={}",
-                    sessionId, unknownTools, overusedTools);
+            log.warn("[TRACE:{}] Tool usage issues detected: sessionId={}, unknownTools={}, overusedTools={}",
+                    traceId, sessionId, unknownTools, overusedTools);
         }
 
         return new ToolCallAnalysis(

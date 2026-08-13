@@ -50,13 +50,18 @@ public class AgentController {
             try {
                 agentService.chatStream(request, new AgentService.StreamCallback() {
                     @Override
-                    public void onMeta(java.util.List<String> usedTools, String confidence) {
+                    public void onMeta(String traceId, java.util.List<String> usedTools, String confidence, String responseType) {
                         try {
                             emitter.send(SseEmitter.event()
                                     .name("meta")
-                                    .data(Map.of("usedTools", usedTools, "confidence", confidence)));
+                                    .data(Map.of(
+                                            "traceId", traceId != null ? traceId : "",
+                                            "usedTools", usedTools,
+                                            "confidence", confidence != null ? confidence : "",
+                                            "responseType", responseType != null ? responseType : "UNKNOWN"
+                                    )));
                         } catch (Exception e) {
-                            log.error("Failed to send meta event", e);
+                            log.error("[TRACE:{}] Failed to send meta event", traceId, e);
                         }
                     }
 
@@ -72,13 +77,17 @@ public class AgentController {
                     }
 
                     @Override
-                    public void onComplete(String processingTime, String sessionId) {
+                    public void onComplete(String traceId, String processingTime, String sessionId) {
                         try {
                             emitter.send(SseEmitter.event()
                                     .name("complete")
-                                    .data(Map.of("processingTime", processingTime, "sessionId", sessionId)));
+                                    .data(Map.of(
+                                            "traceId", traceId != null ? traceId : "",
+                                            "processingTime", processingTime,
+                                            "sessionId", sessionId
+                                    )));
                         } catch (Exception e) {
-                            log.warn("Failed to send complete event", e);
+                            log.warn("[TRACE:{}] Failed to send complete event", traceId, e);
                         }
                         emitter.complete();
                     }

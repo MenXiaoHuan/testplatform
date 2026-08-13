@@ -24,10 +24,6 @@ public class OutputFormatFallbackService {
     private static final Pattern JSON_OBJECT_PATTERN = Pattern.compile(
             "\\{[\\s\\S]*\\}");
 
-    private static final String[] FIELD_PATTERNS = {
-            "response", "usedTools", "confidence", "response_text", "used_tools"
-    };
-
     public ParseResult parseAgentOutput(String rawText) {
         if (rawText == null || rawText.isBlank()) {
             return ParseResult.failure("Empty response from agent");
@@ -124,11 +120,27 @@ public class OutputFormatFallbackService {
         String response = getTextValue(node, "response", "response_text");
         List<String> usedTools = getArrayValue(node, "usedTools", "used_tools");
         String confidence = getTextValue(node, "confidence");
+        String responseType = getTextValue(node, "responseType", "response_type");
+
+        ChatAssistantResult.FaultDetail faultDetail = null;
+        JsonNode fdNode = node.get("faultDetail");
+        if (fdNode != null && !fdNode.isNull() && fdNode.isObject()) {
+            faultDetail = new ChatAssistantResult.FaultDetail(
+                    getTextValue(fdNode, "fault_type", "faultType"),
+                    getTextValue(fdNode, "root_cause", "rootCause"),
+                    getTextValue(fdNode, "immediate_solution", "immediateSolution"),
+                    getTextValue(fdNode, "long_term_optimize", "longTermOptimize"),
+                    getTextValue(fdNode, "test_risk", "testRisk"),
+                    getTextValue(fdNode, "reproduce_steps", "reproduceSteps")
+            );
+        }
 
         return new ChatAssistantResult(
                 response != null ? response : "",
                 usedTools != null ? usedTools : List.of(),
-                confidence != null ? confidence : "MEDIUM"
+                confidence != null ? confidence : "MEDIUM",
+                responseType != null ? responseType : "UNKNOWN",
+                faultDetail
         );
     }
 
@@ -167,6 +179,7 @@ public class OutputFormatFallbackService {
         String response = null;
         List<String> usedTools = new ArrayList<>();
         String confidence = null;
+        String responseType = null;
 
         Pattern responsePattern = Pattern.compile(
                 "(?:\"response\"|\"response_text\")\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"");
@@ -195,10 +208,18 @@ public class OutputFormatFallbackService {
             confidence = cm.group(1);
         }
 
+        Pattern typePattern = Pattern.compile("\"(?:responseType|response_type)\"\\s*:\\s*\"([^\"]*)\"");
+        Matcher rpm = typePattern.matcher(text);
+        if (rpm.find()) {
+            responseType = rpm.group(1);
+        }
+
         return new ChatAssistantResult(
                 response != null ? response : text,
                 usedTools,
-                confidence != null ? confidence : "MEDIUM"
+                confidence != null ? confidence : "MEDIUM",
+                responseType != null ? responseType : "UNKNOWN",
+                null
         );
     }
 
@@ -207,7 +228,7 @@ public class OutputFormatFallbackService {
         if (responseText.length() > 2000) {
             responseText = responseText.substring(0, 2000) + "...";
         }
-        return new ChatAssistantResult(responseText, List.of(), "LOW");
+        return new ChatAssistantResult(responseText, List.of(), "LOW", "UNKNOWN", null);
     }
 
     private boolean isValidResult(ChatAssistantResult result) {
@@ -228,7 +249,7 @@ public class OutputFormatFallbackService {
 
         public static ParseResult failure(String errorMessage) {
             return new ParseResult(
-                    new ChatAssistantResult("", List.of(), "LOW"),
+                    new ChatAssistantResult("", List.of(), "LOW", "UNKNOWN", null),
                     false,
                     "none",
                     errorMessage

@@ -53,21 +53,23 @@ public class AgentService {
     public ChatResponse chat(ChatRequest request) {
         Instant startTime = Instant.now();
         String sessionId = request.sessionId();
+        String traceId = UUID.randomUUID().toString();
 
-        log.info("Processing chat request: sessionId={}, spaceId={}, taskId={}, messageLength={}",
-                sessionId, request.spaceId(), request.taskId(),
+        log.info("[TRACE:{}] Processing chat request: sessionId={}, spaceId={}, taskId={}, messageLength={}",
+                traceId, sessionId, request.spaceId(), request.taskId(),
                 request.message() != null ? request.message().length() : 0);
 
-        observability.recordCall(sessionId);
-        observability.recordConversationStart(sessionId, request.message());
+        observability.recordCall(traceId, sessionId);
+        observability.recordConversationStart(traceId, sessionId, request.message());
 
         try {
             InputSanitizer.SanitizeResult sanitizeResult = inputSanitizer.sanitize(request.message());
             if (!sanitizeResult.valid()) {
-                log.warn("Input sanitization failed: sessionId={}, reason={}",
-                        sessionId, sanitizeResult.rejectionReason());
-                observability.recordError(sessionId, "SANITIZATION", sanitizeResult.rejectionReason());
+                log.warn("[TRACE:{}] Input sanitization failed: sessionId={}, reason={}",
+                        traceId, sessionId, sanitizeResult.rejectionReason());
+                observability.recordError(traceId, "SANITIZATION", sanitizeResult.rejectionReason());
                 return buildErrorResponse(
+                        traceId,
                         new IllegalArgumentException(sanitizeResult.rejectionReason()),
                         sessionId, false
                 );
@@ -100,9 +102,10 @@ public class AgentService {
             );
 
             if (!callResult.success()) {
-                log.error("Agent call failed: sessionId={}, error={}", sessionId, callResult.errorMessage());
-                observability.recordError(sessionId, "AGENT_CALL", callResult.errorMessage());
+                log.error("[TRACE:{}] Agent call failed: sessionId={}, error={}", traceId, sessionId, callResult.errorMessage());
+                observability.recordError(traceId, "AGENT_CALL", callResult.errorMessage());
                 return buildErrorResponse(
+                        traceId,
                         new RuntimeException(callResult.errorMessage()),
                         sessionId,
                         compressionResult.compressed()
@@ -117,44 +120,49 @@ public class AgentService {
             ChatAssistantResult result = parseResult.result();
 
             if (!parseResult.success()) {
-                log.warn("Output parsing used fallback: sessionId={}, strategy={}",
-                        sessionId, parseResult.strategy());
+                log.warn("[TRACE:{}] Output parsing used fallback: sessionId={}, strategy={}",
+                        traceId, sessionId, parseResult.strategy());
             }
 
             if (result.response() == null || result.response().isBlank()) {
-                result = new ChatAssistantResult(responseText, result.usedTools(), result.confidence());
+                result = new ChatAssistantResult(traceId, responseText, result.usedTools(), result.confidence(), null, null);
             }
 
             ChatMessage assistantMessage = ChatMessage.assistant(result.response());
             session = sessionManager.appendMessage(sessionId, assistantMessage);
 
             if (!request.saveHistory()) {
-                log.debug("History not saved per request: sessionId={}", sessionId);
+                log.debug("[TRACE:{}] History not saved per request: sessionId={}", traceId, sessionId);
             }
 
             ToolErrorFallback.ToolCallAnalysis toolAnalysis =
-                    toolErrorFallback.analyzeToolUsage(sessionId, result.usedTools());
+                    toolErrorFallback.analyzeToolUsage(traceId, sessionId, result.usedTools());
             if (toolAnalysis.hasIssues()) {
-                log.warn("Tool usage issues: sessionId={}, guidance={}", sessionId, toolAnalysis.guidance());
+                log.warn("[TRACE:{}] Tool usage issues: sessionId={}, guidance={}", traceId, sessionId, toolAnalysis.guidance());
             }
 
             Duration elapsed = Duration.between(startTime, Instant.now());
             String processingTime = elapsed.toMillis() + "ms";
 
-            log.info("Chat processed: sessionId={}, responseLength={}, time={}, parsingStrategy={}, compressed={}",
+            log.info("[TRACE:{}] Chat processed: sessionId={}, responseLength={}, time={}, parsingStrategy={}, responseType={}, compressed={}",
+                    traceId,
                     sessionId,
                     result.response() != null ? result.response().length() : 0,
                     processingTime,
                     parseResult.strategy(),
+                    result.responseType(),
                     compressionResult.compressed());
 
-            observability.recordConversationEnd(sessionId, elapsed,
+            observability.recordConversationEnd(traceId, sessionId, elapsed,
                     session.messageCount(), false);
 
             return new ChatResponse(
+                    traceId,
                     result.response(),
                     result.usedTools(),
                     result.confidence(),
+                    result.responseType(),
+                    faultDetailToMap(result.faultDetail()),
                     request.taskId(),
                     request.sceneId(),
                     processingTime,
@@ -164,9 +172,9 @@ public class AgentService {
 
         } catch (Exception e) {
             Duration elapsed = Duration.between(startTime, Instant.now());
-            log.error("Unexpected error in chat: sessionId={}, time={}", sessionId, elapsed.toMillis(), e);
-            observability.recordError(sessionId, "UNEXPECTED", e.getMessage());
-            return buildErrorResponse(e, sessionId, false);
+            log.error("[TRACE:{}] Unexpected error in chat: sessionId={}, time={}", traceId, sessionId, elapsed.toMillis(), e);
+            observability.recordError(traceId, "UNEXPECTED", e.getMessage());
+            return buildErrorResponse(traceId, e, sessionId, false);
         }
     }
 
@@ -178,14 +186,16 @@ public class AgentService {
     public ChatResponse chatStream(ChatRequest request, StreamCallback callback) {
         Instant startTime = Instant.now();
         String sessionId = request.sessionId();
+        String traceId = UUID.randomUUID().toString();
 
-        log.info("Processing streaming chat request: sessionId={}, spaceId={}", sessionId, request.spaceId());
+        log.info("[TRACE:{}] Processing streaming chat request: sessionId={}, spaceId={}", traceId, request.spaceId());
 
         try {
             InputSanitizer.SanitizeResult sanitizeResult = inputSanitizer.sanitize(request.message());
             if (!sanitizeResult.valid()) {
                 callback.onError(sanitizeResult.rejectionReason());
                 return buildErrorResponse(
+                        traceId,
                         new IllegalArgumentException(sanitizeResult.rejectionReason()),
                         sessionId, false
                 );
@@ -213,6 +223,7 @@ public class AgentService {
             if (!callResult.success()) {
                 callback.onError(callResult.errorMessage());
                 return buildErrorResponse(
+                        traceId,
                         new RuntimeException(callResult.errorMessage()),
                         sessionId, compressionResult.compressed()
                 );
@@ -223,7 +234,7 @@ public class AgentService {
                     outputFallbackService.parseAgentOutput(responseText);
             ChatAssistantResult result = parseResult.result();
             if (result.response() == null || result.response().isBlank()) {
-                result = new ChatAssistantResult(responseText, result.usedTools(), result.confidence());
+                result = new ChatAssistantResult(traceId, responseText, result.usedTools(), result.confidence(), null, null);
             }
 
             String fullResponse = result.response();
@@ -231,7 +242,7 @@ public class AgentService {
             int chunkSize = Math.max(1, totalChars / 80);
             int sent = 0;
 
-            callback.onMeta(result.usedTools(), result.confidence());
+            callback.onMeta(traceId, result.usedTools(), result.confidence(), result.responseType());
 
             while (sent < totalChars) {
                 int end = Math.min(sent + chunkSize, totalChars);
@@ -250,20 +261,23 @@ public class AgentService {
             session = sessionManager.appendMessage(sessionId, assistantMessage);
 
             ToolErrorFallback.ToolCallAnalysis toolAnalysis =
-                    toolErrorFallback.analyzeToolUsage(sessionId, result.usedTools());
+                    toolErrorFallback.analyzeToolUsage(traceId, sessionId, result.usedTools());
             if (toolAnalysis.hasIssues()) {
-                log.warn("Tool usage issues: sessionId={}, guidance={}", sessionId, toolAnalysis.guidance());
+                log.warn("[TRACE:{}] Tool usage issues: sessionId={}, guidance={}", traceId, sessionId, toolAnalysis.guidance());
             }
 
             Duration elapsed = Duration.between(startTime, Instant.now());
             String processingTime = elapsed.toMillis() + "ms";
 
-            callback.onComplete(processingTime, sessionId);
+            callback.onComplete(traceId, processingTime, sessionId);
 
             return new ChatResponse(
+                    traceId,
                     fullResponse,
                     result.usedTools(),
                     result.confidence(),
+                    result.responseType(),
+                    faultDetailToMap(result.faultDetail()),
                     request.taskId(),
                     request.sceneId(),
                     processingTime,
@@ -273,16 +287,16 @@ public class AgentService {
 
         } catch (Exception e) {
             Duration elapsed = Duration.between(startTime, Instant.now());
-            log.error("Unexpected error in streaming chat: sessionId={}, time={}", sessionId, elapsed.toMillis(), e);
+            log.error("[TRACE:{}] Unexpected error in streaming chat: sessionId={}, time={}", traceId, sessionId, elapsed.toMillis(), e);
             callback.onError(e.getMessage());
-            return buildErrorResponse(e, sessionId, false);
+            return buildErrorResponse(traceId, e, sessionId, false);
         }
     }
 
     public interface StreamCallback {
-        void onMeta(List<String> usedTools, String confidence);
+        void onMeta(String traceId, List<String> usedTools, String confidence, String responseType);
         void onChunk(String chunk);
-        void onComplete(String processingTime, String sessionId);
+        void onComplete(String traceId, String processingTime, String sessionId);
         void onError(String error);
     }
 
@@ -325,8 +339,11 @@ public class AgentService {
         if (request.taskId() != null) {
             contextParts.add("关联任务ID: " + request.taskId());
         }
-        if (request.sceneId() != null) {
-            contextParts.add("关联场景ID: " + request.sceneId());
+        if (request.sceneId() != null && request.taskId() == null) {
+            builder.append("【提示】用户正在询问场景 ID=").append(request.sceneId())
+                    .append(" 的相关信息。如果需要分析该场景下的任务，请使用 listTasks(sceneId=").append(request.sceneId())
+                    .append(", spaceId=").append(request.spaceId())
+                    .append(")。\n");
         }
 
         if (!contextParts.isEmpty()) {
@@ -340,8 +357,14 @@ public class AgentService {
         }
 
         if (request.taskId() != null) {
-            builder.append("【提示】用户正在询问任务 ID=").append(request.taskId())
-                    .append(" 的相关信息。如果需要分析错误，请优先使用 analyzeLogs 工具并传入 taskId 和 spaceId。\n");
+            builder.append("【重要】用户正在询问一个具体任务，任务 ID=").append(request.taskId())
+                    .append("。你必须且只能分析这一个任务。")
+                    .append("请立即调用 TaskTool.getTask(taskId=").append(request.taskId())
+                    .append(", spaceId=").append(request.spaceId())
+                    .append(") 获取任务详情，然后调用 LogPreprocessingTool.analyzeLogs(taskId=").append(request.taskId())
+                    .append(", spaceId=").append(request.spaceId())
+                    .append(") 分析该任务的错误日志。")
+                    .append("禁止调用 listTasks 或 listScenes 来查询整个空间的数据。\n");
         }
     }
 
@@ -352,12 +375,15 @@ public class AgentService {
         return text.substring(0, maxLength) + "...";
     }
 
-    private ChatResponse buildErrorResponse(Exception e, String sessionId, boolean contextCompressed) {
+    private ChatResponse buildErrorResponse(String traceId, Exception e, String sessionId, boolean contextCompressed) {
         if (e instanceof IllegalArgumentException) {
             return new ChatResponse(
+                    traceId,
                     "请求参数错误: " + e.getMessage(),
                     List.of(),
                     "LOW",
+                    "UNKNOWN",
+                    null,
                     null,
                     null,
                     "0ms",
@@ -365,16 +391,33 @@ public class AgentService {
                     contextCompressed
             );
         }
-        log.error("Unexpected error in chat", e);
+        log.error("[TRACE:{}] Unexpected error in chat", traceId, e);
         return new ChatResponse(
+                traceId,
                 "抱歉，智能助手遇到了问题: " + e.getMessage() + "。请稍后重试。",
                 List.of(),
                 "LOW",
+                "UNKNOWN",
+                null,
                 null,
                 null,
                 "0ms",
                 sessionId,
                 contextCompressed
         );
+    }
+
+    private Map<String, Object> faultDetailToMap(ChatAssistantResult.FaultDetail faultDetail) {
+        if (faultDetail == null) {
+            return null;
+        }
+        Map<String, Object> map = new LinkedHashMap<>();
+        map.put("fault_type", faultDetail.fault_type());
+        map.put("root_cause", faultDetail.root_cause());
+        map.put("immediate_solution", faultDetail.immediate_solution());
+        map.put("long_term_optimize", faultDetail.long_term_optimize());
+        map.put("test_risk", faultDetail.test_risk());
+        map.put("reproduce_steps", faultDetail.reproduce_steps());
+        return map;
     }
 }

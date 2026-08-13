@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { createTraceShareUrl } from '../../api/task'
 import { useTaskStore } from '../../stores/task'
+import { useAiStore } from '../../stores/ai'
 import type { CaseArtifactLinkRecord, CaseResultRecord } from '../../types/report'
 import type { TaskStageLogRecord } from '../../types/task'
 import { toErrorMessage } from '../../utils/error'
@@ -21,6 +22,7 @@ import { useTaskDetailLoader } from './useTaskDetailLoader'
 const route = useRoute()
 const router = useRouter()
 const store = useTaskStore()
+const aiStore = useAiStore()
 const TRACE_VIEWER_BASE_URL = 'https://trace.playwright.dev/'
 
 const activeStatus = ref<'ALL' | 'FAILED' | 'PASSED' | 'SKIPPED'>('ALL')
@@ -232,6 +234,16 @@ async function cancelTaskRun() {
   }
 }
 
+function analyzeWithAI() {
+  const taskId = task.value?.id
+  if (typeof taskId !== 'number' || spaceId.value === null) {
+    showAppToast('任务信息不完整，无法分析', 'error')
+    return
+  }
+  const sceneId = task.value?.sceneId ?? undefined
+  aiStore.open(spaceId.value, { taskId, sceneId })
+}
+
 function backToPrevious() {
   const from = typeof route.query.from === 'string' ? route.query.from : ''
   const sceneId = typeof route.query.sceneId === 'string'
@@ -324,6 +336,14 @@ useTaskDetailLoader({
             @click="cancelTaskRun"
           >
             取消任务
+          </el-button>
+          <el-button plain type="success" @click="analyzeWithAI">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;">
+              <path d="M12 2a8 8 0 0 0-8 8v6a4 4 0 0 0 4 4h8a4 4 0 0 0 4-4v-6a8 8 0 0 0-8-8z"/>
+              <circle cx="9" cy="11" r="1" fill="currentColor"/>
+              <circle cx="15" cy="11" r="1" fill="currentColor"/>
+            </svg>
+            AI 分析
           </el-button>
           <el-button type="primary" @click="rerunTask">重新执行</el-button>
         </div>

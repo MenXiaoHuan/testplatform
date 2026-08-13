@@ -38,10 +38,31 @@ const showShell = computed(() => route.path !== '/login' && authStore.isAuthenti
 const hasActiveSpace = computed(() => typeof spaceStore.currentSpaceId === 'number')
 const showAssistantButton = computed(() => showShell.value && hasActiveSpace.value)
 
-function openAssistant() {
-  if (typeof spaceStore.currentSpaceId === 'number') {
-    aiStore.open(spaceStore.currentSpaceId)
+const assistantContext = computed(() => {
+  const spaceId = typeof spaceStore.currentSpaceId === 'number' ? spaceStore.currentSpaceId : null
+  if (spaceId === null) return null
+
+  const params = route.params
+  const taskId = typeof params.id === 'string' ? Number(params.id) : null
+  const sceneId = typeof params.sceneId === 'string' ? Number(params.sceneId) : null
+
+  if (taskId !== null && Number.isFinite(taskId)) {
+    return { taskId, sceneId: sceneId !== null && Number.isFinite(sceneId) ? sceneId : undefined }
   }
+
+  if (sceneId !== null && Number.isFinite(sceneId)) {
+    return { taskId: undefined, sceneId }
+  }
+
+  return null
+})
+
+function openAssistant() {
+  if (typeof spaceStore.currentSpaceId !== 'number') {
+    return
+  }
+  const context = assistantContext.value
+  aiStore.open(spaceStore.currentSpaceId, context ?? undefined)
 }
 
 const menuItems = computed(() => {
@@ -222,7 +243,7 @@ onBeforeUnmount(() => {
         <button
           v-if="showAssistantButton && !aiStore.visible"
           class="ai-fab"
-          title="智能助手"
+          :title="assistantContext?.taskId ? `分析任务 #${assistantContext.taskId}` : '智能助手'"
           @click="openAssistant"
         >
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -231,7 +252,6 @@ onBeforeUnmount(() => {
             <circle cx="15" cy="11" r="1" fill="currentColor"/>
             <path d="M9 15c1 1 2 1.5 3 1.5s2-.5 3-1.5"/>
           </svg>
-          <span class="ai-fab__badge">AI</span>
         </button>
       </Teleport>
 
@@ -550,20 +570,5 @@ onBeforeUnmount(() => {
 
 .ai-fab:active {
   transform: translateY(0) scale(0.98);
-}
-
-.ai-fab__badge {
-  position: absolute;
-  bottom: -4px;
-  right: -4px;
-  padding: 2px 6px;
-  border-radius: 8px;
-  background: #ffffff;
-  color: #0f766e;
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 1;
-  border: 1px solid rgba(20, 184, 166, 0.3);
-  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.1);
 }
 </style>

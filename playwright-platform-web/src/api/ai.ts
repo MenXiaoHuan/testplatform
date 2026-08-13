@@ -10,9 +10,12 @@ export interface ChatRequestPayload {
 }
 
 export interface ChatResponseData {
+  traceId: string
   response: string
   usedTools: string[]
   confidence: string | null
+  responseType: string
+  faultDetail: Record<string, unknown> | null
   taskId: number | null
   sceneId: number | null
   processingTime: string
@@ -23,9 +26,9 @@ export interface ChatResponseData {
 export type StreamEventHandler = (data: unknown) => void
 
 export interface StreamHandlers {
-  onMeta?: (data: { usedTools: string[]; confidence: string | null }) => void
+  onMeta?: (data: { traceId: string; usedTools: string[]; confidence: string | null; responseType: string }) => void
   onChunk: (chunk: string) => void
-  onComplete?: (data: { processingTime: string; sessionId: string }) => void
+  onComplete?: (data: { traceId: string; processingTime: string; sessionId: string }) => void
   onError?: (error: string) => void
 }
 
@@ -82,13 +85,13 @@ export const streamChatMessage = (payload: ChatRequestPayload, handlers: StreamH
               const parsed = JSON.parse(dataStr)
               switch (currentEvent) {
                 case 'meta':
-                  handlers.onMeta?.(parsed as { usedTools: string[]; confidence: string | null })
+                  handlers.onMeta?.(parsed as { traceId: string; usedTools: string[]; confidence: string | null; responseType: string })
                   break
                 case 'chunk':
                   handlers.onChunk(dataStr)
                   break
                 case 'complete':
-                  handlers.onComplete?.(parsed as { processingTime: string; sessionId: string })
+                  handlers.onComplete?.(parsed as { traceId: string; processingTime: string; sessionId: string })
                   break
                 case 'error':
                   handlers.onError?.((parsed as { error: string }).error)

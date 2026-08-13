@@ -3,20 +3,29 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { marked } from 'marked'
 import { useAiStore, type ChatMessage } from '../../stores/ai'
 import { useSpaceStore } from '../../stores/space'
+import { useAuthStore } from '../../stores/auth'
+import { showAppToast } from '../../utils/ui-feedback'
 
 marked.setOptions({
   breaks: true,
   gfm: true,
+  headerIds: false,
+  mangle: false,
 })
 
 const aiStore = useAiStore()
 const spaceStore = useSpaceStore()
+const authStore = useAuthStore()
 
 const inputText = ref('')
 const messagesContainerRef = ref<HTMLDivElement | null>(null)
 const sending = computed(() => aiStore.isLoading)
 const messages = computed(() => aiStore.messages)
 const currentSpaceName = computed(() => spaceStore.currentSpace?.name ?? '当前空间')
+const currentUserNickname = computed(() => authStore.user?.nickname ?? authStore.user?.username ?? '用户')
+const currentUserAvatar = computed(() => authStore.user?.avatarUrl ?? null)
+const avatarLoadError = ref(false)
+const showUserAvatar = computed(() => currentUserAvatar.value && !avatarLoadError.value)
 const lastMessage = computed(() => messages.value[messages.value.length - 1])
 const isStreaming = computed(() => {
   const last = lastMessage.value
@@ -24,11 +33,30 @@ const isStreaming = computed(() => {
 })
 
 const quickActions = computed(() => {
-  const actions: Array<{ label: string; prompt: string }> = [
-    { label: '列出最近任务', prompt: '请列出最近的测试任务' },
-    { label: '分析失败任务', prompt: '请分析当前空间最近失败的任务，并给出根因分析' },
-    { label: '查看场景列表', prompt: '请列出当前空间的所有测试场景' },
-  ]
+  const actions: Array<{ label: string; prompt: string }> = []
+
+  if (aiStore.hasTaskContext && aiStore.currentTaskId) {
+    const taskId = aiStore.currentTaskId
+    actions.push({
+      label: `分析当前任务 #${taskId}`,
+      prompt: aiStore.currentSceneId
+        ? `请帮我分析任务 #${taskId} 的错误根因，该任务属于场景 #${aiStore.currentSceneId}`
+        : `请帮我分析任务 #${taskId} 的错误根因`,
+    })
+    actions.push({
+      label: '查看最近失败用例',
+      prompt: `请列出任务 #${taskId} 中失败的用例，并分析每个用例的失败原因`,
+    })
+    actions.push({
+      label: '检查执行日志',
+      prompt: `请分析任务 #${taskId} 的执行阶段日志，提取关键错误信息`,
+    })
+  } else {
+    actions.push({ label: '列出最近任务', prompt: '请列出最近的测试任务' })
+    actions.push({ label: '分析失败任务', prompt: '请分析当前空间最近失败的任务，并给出根因分析' })
+    actions.push({ label: '查看场景列表', prompt: '请列出当前空间的所有测试场景' })
+  }
+
   return actions
 })
 
@@ -98,7 +126,25 @@ function formatTime(timestamp: number) {
 
 function renderContent(content: string) {
   try {
-    const raw = marked.parse(content) as string
+    const codeBlocks: string[] = []
+    let protectedContent = content.replace(/```[\s\S]*?```|`[^`\n]+`/g, (match) => {
+      const placeholder = `\u0000CB${codeBlocks.length}\u0000`
+      codeBlocks.push(match)
+      return placeholder
+    })
+
+    let processed = protectedContent
+      .replace(/([a-zA-Z_][a-zA-Z0-9_.]*(?:\.ts|\.js|\.java|\.sql|\.json|\.yml|\.yaml|\.xml))/g, '`$1`')
+      .replace(/([A-Z][a-zA-Z]+(?:Exception|Error|Timeout))/g, '`$1`')
+      .replace(/\b(locator\.click|locator\.fill|locator|assert|expect|page|browser|context)\b/g, '`$1`')
+      .replace(/\b(getTask|getSceneDetail|getRepository|getTestCase|analyzeLogs|getSystemConfig)\b/g, '`$1`')
+      .replace(/\b(envCount)=\d+\b/g, '`$1`')
+      .replace(/\b(status:\s*(?:\d{3}|"[A-Z_]+")\b/g, '`$1`')
+      .replace(/\b(PASS|FAIL|ERROR|SKIP|TIMEOUT)\b/g, '`$1`')
+
+    processed = processed.replace(/\u0000CB(\d+)\u0000/g, (_, idx) => codeBlocks[Number(idx)])
+
+    const raw = marked.parse(processed) as string
     return raw
   } catch {
     return content.replace(/\n/g, '<br>')
@@ -109,11 +155,35 @@ function isToolUsageMessage(msg: ChatMessage) {
   return msg.role === 'assistant' && msg.usedTools && msg.usedTools.length > 0
 }
 
-function getToolSummary(msg: ChatMessage) {
-  if (!msg.usedTools || msg.usedTools.length === 0) {
-    return ''
+function isFaultAnalysis(msg: ChatMessage) {
+  return msg.responseType === 'FAULT_ANALYSIS' && msg.faultDetail
+}
+
+function getResponseTypeLabel(type?: string) {
+  switch (type) {
+    case 'FAULT_ANALYSIS': return '故障分析'
+    case 'BUSINESS_QA': return '业务问答'
+    case 'INFORMATION_QUERY': return '信息查询'
+    default: return ''
   }
-  return msg.usedTools.join(', ')
+}
+
+function getResponseTypeTagType(type?: string) {
+  switch (type) {
+    case 'FAULT_ANALYSIS': return 'danger'
+    case 'BUSINESS_QA': return ''
+    case 'INFORMATION_QUERY': return 'info'
+    default: return 'info'
+  }
+}
+
+function copyTraceId(traceId?: string) {
+  if (!traceId) return
+  navigator.clipboard.writeText(traceId).then(() => {
+    showAppToast('traceId 已复制')
+  }).catch(() => {
+    showAppToast('复制失败', 'warning')
+  })
 }
 </script>
 
@@ -132,7 +202,12 @@ function getToolSummary(msg: ChatMessage) {
           </div>
           <div class="ai-dialog__title-group">
             <h3 class="ai-dialog__title">智能测试助手</h3>
-            <span class="ai-dialog__subtitle">{{ currentSpaceName }} · AI 驱动</span>
+            <span class="ai-dialog__subtitle">
+              {{ currentUserNickname }} · {{ currentSpaceName }} · AI 驱动
+              <template v-if="aiStore.hasTaskContext">
+                · 分析任务 #{{ aiStore.currentTaskId }}
+              </template>
+            </span>
           </div>
         </div>
         <div class="ai-dialog__header-actions">
@@ -192,10 +267,16 @@ function getToolSummary(msg: ChatMessage) {
           >
             <div class="ai-message__avatar">
               <div v-if="msg.role === 'user'" class="ai-message__avatar-user">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-                  <circle cx="12" cy="7" r="4"/>
-                </svg>
+                <img
+                  v-if="showUserAvatar"
+                  :src="currentUserAvatar"
+                  :alt="currentUserNickname"
+                  class="ai-avatar-img"
+                  @error="avatarLoadError = true"
+                />
+                <template v-else>
+                  {{ currentUserNickname.charAt(0).toUpperCase() }}
+                </template>
               </div>
               <div v-else-if="msg.role === 'error'" class="ai-message__avatar-error">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -217,6 +298,15 @@ function getToolSummary(msg: ChatMessage) {
                 <span class="ai-message__role">
                   {{ msg.role === 'user' ? '你' : msg.role === 'error' ? '错误' : '助手' }}
                 </span>
+                <el-tag
+                  v-if="msg.responseType"
+                  :type="getResponseTypeTagType(msg.responseType)"
+                  size="small"
+                  effect="plain"
+                  class="ai-message__type-tag"
+                >
+                  {{ getResponseTypeLabel(msg.responseType) }}
+                </el-tag>
                 <span class="ai-message__time">{{ formatTime(msg.timestamp) }}</span>
               </div>
               <div
@@ -232,13 +322,88 @@ function getToolSummary(msg: ChatMessage) {
                   <span></span><span></span><span></span>
                 </div>
               </div>
-              <div v-if="isToolUsageMessage(msg) && !msg.streaming" class="ai-message__tools">
-                <el-tag size="small" type="info" effect="plain">
-                  使用工具: {{ getToolSummary(msg) }}
+
+              <div v-if="isFaultAnalysis(msg) && !msg.streaming" class="ai-fault-card">
+                <div class="ai-fault-card__header">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                    <line x1="12" y1="9" x2="12" y2="13"/>
+                    <line x1="12" y1="17" x2="12.01" y2="17"/>
+                  </svg>
+                  <span>故障诊断详情</span>
+                </div>
+                <div class="ai-fault-card__grid">
+                  <div class="ai-fault-card__item" v-if="msg.faultDetail?.fault_type">
+                    <span class="ai-fault-card__label">故障类型</span>
+                    <span class="ai-fault-card__value ai-fault-card__value--type">{{ msg.faultDetail.fault_type as string }}</span>
+                  </div>
+                  <div class="ai-fault-card__item" v-if="msg.faultDetail?.root_cause">
+                    <span class="ai-fault-card__label">根因分析</span>
+                    <span class="ai-fault-card__value">{{ msg.faultDetail.root_cause as string }}</span>
+                  </div>
+                  <div class="ai-fault-card__item" v-if="msg.faultDetail?.immediate_solution">
+                    <span class="ai-fault-card__label">临时方案</span>
+                    <span class="ai-fault-card__value">{{ msg.faultDetail.immediate_solution as string }}</span>
+                  </div>
+                  <div class="ai-fault-card__item" v-if="msg.faultDetail?.long_term_optimize">
+                    <span class="ai-fault-card__label">长期优化</span>
+                    <span class="ai-fault-card__value">{{ msg.faultDetail.long_term_optimize as string }}</span>
+                  </div>
+                  <div class="ai-fault-card__item" v-if="msg.faultDetail?.test_risk">
+                    <span class="ai-fault-card__label">测试风险</span>
+                    <span class="ai-fault-card__value">{{ msg.faultDetail.test_risk as string }}</span>
+                  </div>
+                  <div class="ai-fault-card__item" v-if="msg.faultDetail?.reproduce_steps">
+                    <span class="ai-fault-card__label">复现步骤</span>
+                    <span class="ai-fault-card__value">{{ msg.faultDetail.reproduce_steps as string }}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div v-if="(!msg.streaming && (isToolUsageMessage(msg) || msg.traceId || msg.processingTime))" class="ai-message__tools">
+                <template v-if="isToolUsageMessage(msg)">
+                  <el-tag
+                    v-for="tool in msg.usedTools"
+                    :key="tool"
+                    size="small"
+                    type="info"
+                    effect="plain"
+                    class="ai-message__tool-tag"
+                  >
+                    {{ tool }}
+                  </el-tag>
+                </template>
+                <el-tag v-if="msg.confidence" size="small" :type="msg.confidence === 'HIGH' ? 'success' : msg.confidence === 'MEDIUM' ? 'warning' : 'danger'" effect="plain">
+                  置信度: {{ msg.confidence }}
                 </el-tag>
                 <el-tag v-if="msg.processingTime" size="small" type="success" effect="plain">
                   {{ msg.processingTime }}
                 </el-tag>
+                <el-tooltip
+                  v-if="msg.traceId"
+                  placement="top"
+                  :show-after="200"
+                  effect="dark"
+                  :show-arrow="true"
+                >
+                  <template #content>
+                    <div class="ai-trace-tooltip">
+                      <div class="ai-trace-tooltip__label">traceId</div>
+                      <div class="ai-trace-tooltip__value">{{ msg.traceId }}</div>
+                      <div class="ai-trace-tooltip__hint">点击标签复制完整 ID</div>
+                    </div>
+                  </template>
+                  <el-tag
+                    size="small"
+                    type="info"
+                    effect="plain"
+                    class="ai-message__trace-id"
+                    @click="copyTraceId(msg.traceId)"
+                  >
+                    <span class="ai-message__trace-label">traceId:</span>
+                    <span class="ai-message__trace-value">{{ msg.traceId.slice(0, 8) }}...</span>
+                  </el-tag>
+                </el-tooltip>
               </div>
             </div>
           </div>
@@ -309,6 +474,7 @@ function getToolSummary(msg: ChatMessage) {
   border: 1px solid #e5e7eb;
   box-shadow: 0 24px 60px rgba(15, 23, 42, 0.18);
   overflow: hidden;
+  box-sizing: border-box;
 }
 
 .ai-dialog__header {
@@ -363,10 +529,20 @@ function getToolSummary(msg: ChatMessage) {
 .ai-dialog__messages {
   flex: 1 1 auto;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 16px 20px;
   display: grid;
   gap: 16px;
   align-content: start;
+  min-width: 0;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.ai-dialog__messages::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
 }
 
 .ai-dialog__welcome {
@@ -414,6 +590,8 @@ function getToolSummary(msg: ChatMessage) {
   display: flex;
   gap: 10px;
   max-width: 100%;
+  min-width: 0;
+  overflow: visible;
 }
 
 .ai-message--user {
@@ -440,8 +618,18 @@ function getToolSummary(msg: ChatMessage) {
 }
 
 .ai-message__avatar-user {
-  background: #ecfeff;
-  color: #0f766e;
+  background: linear-gradient(135deg, #14b8a6, #0f9f92);
+  color: #ffffff;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.ai-avatar-img {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+  display: block;
 }
 
 .ai-message__avatar-ai {
@@ -456,7 +644,11 @@ function getToolSummary(msg: ChatMessage) {
 
 .ai-message__content {
   min-width: 0;
-  max-width: calc(100% - 44px);
+  flex: 1 1 auto;
+  overflow: visible;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .ai-message--user .ai-message__content {
@@ -492,24 +684,33 @@ function getToolSummary(msg: ChatMessage) {
   font-size: 13px;
   line-height: 1.7;
   word-break: break-word;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .ai-message__body :deep(h1),
 .ai-message__body :deep(h2),
 .ai-message__body :deep(h3),
-.ai-message__body :deep(h4) {
-  margin: 12px 0 8px;
+.ai-message__body :deep(h4),
+.ai-message__body :deep(h5),
+.ai-message__body :deep(h6) {
+  margin: 14px 0 8px;
   font-weight: 700;
-  line-height: 1.4;
+  line-height: 1.35;
+  color: #0f172a;
 }
 
 .ai-message__body :deep(h1) { font-size: 18px; }
 .ai-message__body :deep(h2) { font-size: 16px; }
 .ai-message__body :deep(h3) { font-size: 15px; }
 .ai-message__body :deep(h4) { font-size: 14px; }
+.ai-message__body :deep(h5) { font-size: 13px; }
+.ai-message__body :deep(h6) { font-size: 12px; }
 
 .ai-message__body :deep(p) {
-  margin: 0 0 8px;
+  margin: 0 0 10px;
+  line-height: 1.75;
 }
 
 .ai-message__body :deep(p:last-child) {
@@ -518,59 +719,136 @@ function getToolSummary(msg: ChatMessage) {
 
 .ai-message__body :deep(ul),
 .ai-message__body :deep(ol) {
-  margin: 8px 0;
-  padding-left: 20px;
+  margin: 8px 0 10px;
+  padding-left: 0;
+  list-style-position: outside;
+  line-height: 1.75;
+}
+
+.ai-message__body :deep(ul) {
+  list-style: disc;
+  padding-left: 1.4em;
+}
+
+.ai-message__body :deep(ol) {
+  list-style: decimal;
+  padding-left: 1.4em;
 }
 
 .ai-message__body :deep(li) {
   margin: 4px 0;
+  padding-left: 0.3em;
+  line-height: 1.7;
+}
+
+.ai-message__body :deep(li > ul),
+.ai-message__body :deep(li > ol) {
+  margin: 4px 0 4px;
+  padding-left: 1.2em;
+}
+
+.ai-message__body :deep(li::marker) {
+  color: #14b8a6;
+  font-weight: 600;
 }
 
 .ai-message__body :deep(strong) {
   font-weight: 700;
+  word-break: break-word;
 }
 
 .ai-message__body :deep(em) {
   font-style: italic;
 }
 
+.ai-message__body :deep(code) {
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: rgba(20, 184, 166, 0.12);
+  color: #0f766e;
+  font-size: 12.5px;
+  font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+  word-break: break-all;
+}
+
+.ai-message__body :deep(pre) {
+  margin: 10px 0;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: #1e293b;
+  color: #e2e8f0;
+  font-size: 12.5px;
+  line-height: 1.65;
+  overflow-x: auto;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.ai-message__body :deep(pre code) {
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  white-space: pre;
+}
+
 .ai-message__body :deep(blockquote) {
-  margin: 8px 0;
-  padding: 8px 12px;
+  margin: 10px 0;
+  padding: 10px 14px;
   border-left: 3px solid #14b8a6;
   background: rgba(20, 184, 166, 0.06);
-  border-radius: 0 8px 8px 0;
+  border-radius: 0 10px 10px 0;
   color: #475569;
+  line-height: 1.7;
 }
 
 .ai-message__body :deep(a) {
   color: #0f766e;
   text-decoration: underline;
+  word-break: break-all;
+}
+
+.ai-message__body :deep(a:hover) {
+  color: #0d9488;
 }
 
 .ai-message__body :deep(hr) {
-  margin: 12px 0;
+  margin: 14px 0;
   border: none;
   border-top: 1px solid #e2e8f0;
 }
 
 .ai-message__body :deep(table) {
   width: 100%;
+  max-width: 100%;
   border-collapse: collapse;
-  margin: 8px 0;
-  font-size: 12px;
+  margin: 10px 0;
+  font-size: 12.5px;
+  display: block;
+  overflow-x: auto;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 0 0 1px #e2e8f0;
 }
 
 .ai-message__body :deep(th),
 .ai-message__body :deep(td) {
-  padding: 6px 10px;
+  padding: 8px 12px;
   border: 1px solid #e2e8f0;
   text-align: left;
+  line-height: 1.5;
 }
 
 .ai-message__body :deep(th) {
   background: #f1f5f9;
   font-weight: 600;
+  color: #334155;
+  white-space: nowrap;
+}
+
+.ai-message__body :deep(tr:nth-child(even) td) {
+  background: #f8fafc;
 }
 
 .ai-message--user .ai-message__body :deep(a) {
@@ -602,6 +880,135 @@ function getToolSummary(msg: ChatMessage) {
   flex-wrap: wrap;
   gap: 6px;
   margin-top: 8px;
+  width: 100%;
+  overflow: visible;
+  flex-shrink: 0;
+}
+
+.ai-message__type-tag {
+  margin-left: 4px;
+}
+
+.ai-message__tool-tag {
+  font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.ai-message__trace-id {
+  cursor: pointer;
+  user-select: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  transition: all 0.2s ease;
+  font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+}
+
+.ai-message__trace-id:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(20, 184, 166, 0.35);
+  background: rgba(20, 184, 166, 0.15) !important;
+  border-color: #14b8a6 !important;
+}
+
+.ai-message__trace-label {
+  opacity: 0.7;
+  font-size: 11px;
+}
+
+.ai-message__trace-value {
+  font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+  font-size: 11px;
+}
+
+:deep(.ai-trace-tooltip) {
+  max-width: 280px;
+  padding: 4px 0;
+}
+
+:deep(.ai-trace-tooltip__label) {
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.7);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+:deep(.ai-trace-tooltip__value) {
+  font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+  font-size: 12px;
+  color: #fff;
+  word-break: break-all;
+  line-height: 1.5;
+  padding: 4px 8px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  margin-bottom: 4px;
+}
+
+:deep(.ai-trace-tooltip__hint) {
+  font-size: 10.5px;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.ai-fault-card {
+  margin-top: 10px;
+  border: 1px solid #fecaca;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(254, 226, 226, 0.4), rgba(254, 242, 242, 0.6));
+  overflow: hidden;
+}
+
+.ai-fault-card__header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: rgba(239, 68, 68, 0.08);
+  color: #b91c1c;
+  font-size: 12px;
+  font-weight: 600;
+  border-bottom: 1px solid #fecaca;
+}
+
+.ai-fault-card__grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0;
+}
+
+.ai-fault-card__item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 14px;
+  border-bottom: 1px solid rgba(254, 202, 202, 0.5);
+}
+
+.ai-fault-card__item:last-child {
+  border-bottom: none;
+}
+
+.ai-fault-card__label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.ai-fault-card__value {
+  font-size: 13px;
+  color: #1f2937;
+  line-height: 1.6;
+  word-break: break-word;
+}
+
+.ai-fault-card__value--type {
+  color: #b91c1c;
+  font-weight: 600;
 }
 
 .ai-message--loading .ai-message__body {

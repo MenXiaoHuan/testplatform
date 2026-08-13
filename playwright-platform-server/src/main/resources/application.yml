@@ -22,27 +22,6 @@ spring:
         options:
           model: ${PLATFORM_DEEPSEEK_MODEL:deepseek-chat}
           temperature: ${PLATFORM_DEEPSEEK_TEMPERATURE:0.7}
-mybatis:
-  configuration:
-    map-underscore-to-camel-case: true
-logging:
-  pattern:
-    console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %5p [%thread] [requestId=%X{requestId:-}, traceId=%X{traceId:-}, taskId=%X{taskId:-}, sceneId=%X{sceneId:-}, repoId=%X{repoId:-}, stage=%X{stage:-}] %logger{36} - %msg%n"
-server:
-  port: ${SERVER_PORT:8080}
-  tomcat:
-    threads:
-      max: ${SERVER_TOMCAT_THREADS_MAX:200}
-      min-spare: ${SERVER_TOMCAT_THREADS_MIN_SPARE:10}
-    accept-count: ${SERVER_TOMCAT_ACCEPT_COUNT:100}
-platform:
-  cache:
-    detail-ttl: ${PLATFORM_CACHE_DETAIL_TTL:5m}
-    null-ttl: ${PLATFORM_CACHE_NULL_TTL:1m}
-    jitter-seconds: ${PLATFORM_CACHE_JITTER_SECONDS:60}
-    mutex-ttl: ${PLATFORM_CACHE_MUTEX_TTL:5s}
-    lock-retry-times: ${PLATFORM_CACHE_LOCK_RETRY_TIMES:3}
-    lock-wait-millis: ${PLATFORM_CACHE_LOCK_WAIT_MILLIS:50}
   task:
     execution:
       core-pool-size: 2
@@ -71,7 +50,22 @@ platform:
       region: ${PLATFORM_MINIO_REGION:us-east-1}
       access-key: ${PLATFORM_MINIO_ACCESS_KEY}
       secret-key: ${PLATFORM_MINIO_SECRET_KEY}
+mybatis:
+  configuration:
+    map-underscore-to-camel-case: true
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %5p [%thread] [requestId=%X{requestId:-}, traceId=%X{traceId:-}, taskId=%X{taskId:-}, sceneId=%X{sceneId:-}, repoId=%X{repoId:-}, stage=%X{stage:-}] %logger{36} - %msg%n"
+server:
+  port: ${SERVER_PORT:8080}
+  tomcat:
+    threads:
+      max: ${SERVER_TOMCAT_THREADS_MAX:200}
+      min-spare: ${SERVER_TOMCAT_THREADS_MIN_SPARE:10}
+    accept-count: ${SERVER_TOMCAT_ACCEPT_COUNT:100}
+platform:
   ai:
+    system-prompt-path: ${PLATFORM_AI_SYSTEM_PROMPT_PATH:classpath:AGENT.md}
     context:
       max-tokens: ${PLATFORM_AI_CONTEXT_MAX_TOKENS:8000}
       max-messages: ${PLATFORM_AI_CONTEXT_MAX_MESSAGES:50}
@@ -84,3 +78,10 @@ platform:
     sanitizer:
       enabled: ${PLATFORM_AI_SANITIZER_ENABLED:true}
       max-length: ${PLATFORM_AI_SANITIZER_MAX_LENGTH:10000}
+  cache:
+    detail-ttl: ${PLATFORM_CACHE_DETAIL_TTL:5m}
+    null-ttl: ${PLATFORM_CACHE_NULL_TTL:1m}
+    jitter-seconds: ${PLATFORM_CACHE_JITTER_SECONDS:60}
+    mutex-ttl: ${PLATFORM_CACHE_MUTEX_TTL:5s}
+    lock-retry-times: ${PLATFORM_CACHE_LOCK_RETRY_TIMES:3}
+    lock-wait-millis: ${PLATFORM_CACHE_LOCK_WAIT_MILLIS:50}

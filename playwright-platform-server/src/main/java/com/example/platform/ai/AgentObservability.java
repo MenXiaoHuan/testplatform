@@ -31,13 +31,14 @@ public class AgentObservability {
                 .incrementAndGet();
     }
 
-    public void recordError(String sessionId, String errorType, String errorMessage) {
-        totalErrors.incrementAndGet();
-        sessionErrorCounts.computeIfAbsent(sessionId, k -> new AtomicLong(0))
-                .incrementAndGet();
+    public void recordCall(String traceId, String sessionId) {
+        recordCall(sessionId);
+        log.info("[TRACE:{}] Agent call recorded: sessionId={}", traceId, sessionId);
+    }
 
-        log.error("Agent error: sessionId={}, type={}, message={}",
-                sessionId, errorType, errorMessage);
+    public void recordError(String traceId, String errorType, String errorMessage) {
+        totalErrors.incrementAndGet();
+        log.error("[TRACE:{}] Agent error: type={}, message={}", traceId, errorType, errorMessage);
     }
 
     public void recordToolCall(String sessionId, String toolName, long durationMs, boolean success) {
@@ -62,6 +63,12 @@ public class AgentObservability {
                 sessionId, userMessage != null ? userMessage.length() : 0);
     }
 
+    public void recordConversationStart(String traceId, String sessionId, String userMessage) {
+        recordConversationStart(sessionId, userMessage);
+        log.info("[TRACE:{}] Conversation started: sessionId={}, messageLength={}",
+                traceId, sessionId, userMessage != null ? userMessage.length() : 0);
+    }
+
     public void recordConversationEnd(String sessionId, Duration totalTime,
                                        int messageCount, boolean hadErrors) {
         long calls = sessionCallCounts.getOrDefault(sessionId, new AtomicLong(0)).get();
@@ -80,6 +87,13 @@ public class AgentObservability {
                 calls, errors, tokens.inputTokens(), tokens.outputTokens(), toolSummary);
 
         cleanupSession(sessionId);
+    }
+
+    public void recordConversationEnd(String traceId, String sessionId, Duration totalTime,
+                                       int messageCount, boolean hadErrors) {
+        recordConversationEnd(sessionId, totalTime, messageCount, hadErrors);
+        log.info("[TRACE:{}] Conversation ended: sessionId={}, totalTime={}ms, messages={}, hadErrors={}",
+                traceId, sessionId, totalTime.toMillis(), messageCount, hadErrors);
     }
 
     public AgentStats getGlobalStats() {
