@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { defineComponent, provide, inject } from 'vue'
-import ScheduleEventListView from '../../src/views/scene/ScheduleEventListView.vue'
+import { defineComponent, provide } from 'vue'
+import EventListView from '../../src/views/event/EventListView.vue'
 import { useScheduleEventStore } from '../../src/stores/schedule-event'
 
 const { pushMock, messageCallMock } = vi.hoisted(() => ({
@@ -15,7 +15,7 @@ vi.mock('vue-router', () => ({
     push: pushMock,
   }),
   useRoute: () => ({
-    query: { sceneId: '11' },
+    query: { scheduleType: 'AGENT' },
   }),
 }))
 
@@ -52,20 +52,7 @@ const ElTableStub = defineComponent({
   },
 })
 
-const ElTableColumnStub = defineComponent({
-  props: {
-    label: {
-      type: String,
-      default: '',
-    },
-  },
-  setup(_props, { slots }) {
-    const rows = inject<unknown[]>('tableRows', [])
-    return () => rows.map((row, index) => slots.default?.({ row, $index: index }))
-  },
-})
-
-describe('ScheduleEventListView', () => {
+describe('EventListView', () => {
   let pinia: ReturnType<typeof createPinia>
 
   beforeEach(() => {
@@ -86,51 +73,53 @@ describe('ScheduleEventListView', () => {
     store.items = [{
       id: 7,
       sceneId: 11,
+      sceneName: '测试场景',
       plannedFireAt: '2026-07-02T12:00:00',
       status: 'FAILED',
+      scheduleType: 'CRON',
       retryCount: 1,
-      nextRetryAt: '2026-07-02T12:45:00',
-      lastErrorAt: '2026-07-02T12:44:00',
       triggerReason: 'cron:0 */5 * * * *',
       errorMessage: 'system busy',
       taskId: null,
-      createdAt: '2026-07-02T12:40:00',
-      updatedAt: '2026-07-02T12:44:00',
     }]
     store.page = 1
     store.size = 20
     store.total = 1
   })
 
-  it('should load schedule events on mount using route sceneId query', async () => {
-    const wrapper = mount(ScheduleEventListView, {
+  it('should load schedule events on mount using route scheduleType query', async () => {
+    const wrapper = mount(EventListView, {
       global: {
         plugins: [pinia],
         stubs: {
           ListPageShell: ListPageShellStub,
           'el-button': ElButtonStub,
           'el-table': ElTableStub,
-          'el-table-column': ElTableColumnStub,
+          'el-radio-group': { template: '<div><slot /></div>' },
+          'el-radio-button': { template: '<label><slot /></label>' },
+          'el-input': { template: '<input />' },
         },
       },
     })
 
     await flushPromises()
     const store = useScheduleEventStore()
-    expect(store.setSceneIdFilter).toBeDefined()
+    expect(store.setScheduleTypeFilter).toBeDefined()
     expect(store.fetchAll).toHaveBeenCalled()
     expect(wrapper.text()).toContain('调度事件')
   })
 
   it('should retry issue event when clicking retry action', async () => {
-    const wrapper = mount(ScheduleEventListView, {
+    const wrapper = mount(EventListView, {
       global: {
         plugins: [pinia],
         stubs: {
           ListPageShell: ListPageShellStub,
           'el-button': ElButtonStub,
           'el-table': ElTableStub,
-          'el-table-column': ElTableColumnStub,
+          'el-radio-group': { template: '<div><slot /></div>' },
+          'el-radio-button': { template: '<label><slot /></label>' },
+          'el-input': { template: '<input />' },
         },
       },
     })

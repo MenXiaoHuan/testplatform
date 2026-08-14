@@ -340,6 +340,10 @@ onBeforeUnmount(() => {
 }
 
 .shell-aside {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   gap: 18px;
@@ -347,6 +351,7 @@ onBeforeUnmount(() => {
   background: #f8fafc;
   color: #111827;
   border-right: 1px solid #e2e8f0;
+  overflow-y: auto;
 }
 
 .shell-space-switcher {

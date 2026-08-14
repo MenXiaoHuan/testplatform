@@ -1,14 +1,17 @@
 package com.example.platform.ai.output;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+
 import java.util.List;
 
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public record ChatAssistantResult(
         String traceId,
-        String response,
         List<String> usedTools,
         String confidence,
         String responseType,
-        FaultDetail faultDetail
+        FaultDetail faultDetail,
+        List<ContentBlock> sections
 ) {
     public ChatAssistantResult {
         if (traceId == null || traceId.isBlank()) {
@@ -23,14 +26,25 @@ public record ChatAssistantResult(
         if (responseType == null || responseType.isBlank()) {
             responseType = "UNKNOWN";
         }
+        if (sections == null) {
+            sections = List.of();
+        }
     }
 
-    public ChatAssistantResult(String response, List<String> usedTools, String confidence) {
-        this(null, response, usedTools, confidence, null, null);
+    public ChatAssistantResult(List<String> usedTools, String confidence) {
+        this(null, usedTools, confidence, null, null, null);
     }
 
-    public ChatAssistantResult(String response, List<String> usedTools, String confidence, String responseType, FaultDetail faultDetail) {
-        this(null, response, usedTools, confidence, responseType, faultDetail);
+    public ChatAssistantResult(List<String> usedTools, String confidence, String responseType, FaultDetail faultDetail) {
+        this(null, usedTools, confidence, responseType, faultDetail, null);
+    }
+
+    public ChatAssistantResult(List<String> usedTools, String confidence, String responseType, FaultDetail faultDetail, List<ContentBlock> sections) {
+        this(null, usedTools, confidence, responseType, faultDetail, sections);
+    }
+
+    public String deriveResponse() {
+        return OutputFormatFallbackService.deriveTextFromSections(sections);
     }
 
     public record FaultDetail(

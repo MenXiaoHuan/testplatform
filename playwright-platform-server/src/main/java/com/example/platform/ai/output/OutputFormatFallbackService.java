@@ -38,6 +38,7 @@ public class OutputFormatFallbackService {
                     new BeanOutputConverter<>(ChatAssistantResult.class);
             ChatAssistantResult result = converter.convert(cleanedText);
             if (isValidResult(result)) {
+                result = enrichSections(result, cleanedText);
                 return ParseResult.success(result, "bean_converter");
             }
             errors.add("BeanOutputConverter returned invalid result");
@@ -64,6 +65,7 @@ public class OutputFormatFallbackService {
         try {
             ChatAssistantResult result = parseFieldByField(cleanedText);
             if (isValidResult(result)) {
+                result = enrichSections(result, cleanedText);
                 return ParseResult.success(result, "field_extraction");
             }
         } catch (Exception e) {
@@ -73,6 +75,29 @@ public class OutputFormatFallbackService {
         ChatAssistantResult fallbackResult = buildFallbackResult(rawText);
         log.warn("All parsing strategies failed, using fallback: errors={}", errors);
         return ParseResult.success(fallbackResult, "fallback");
+    }
+
+    private ChatAssistantResult enrichSections(ChatAssistantResult result, String rawJson) {
+        if (result.sections() != null && !result.sections().isEmpty()) {
+            return result;
+        }
+        try {
+            String jsonStr = extractJson(rawJson);
+            if (jsonStr != null) {
+                JsonNode node = objectMapper.readTree(jsonStr);
+                List<ContentBlock> sections = parseSections(node);
+                if (!sections.isEmpty()) {
+                    return new ChatAssistantResult(
+                            result.usedTools(), result.confidence(),
+                            result.responseType(), result.faultDetail(),
+                            sections
+                    );
+                }
+            }
+        } catch (Exception e) {
+            log.debug("Could not enrich sections from raw JSON: {}", e.getMessage());
+        }
+        return result;
     }
 
     private String preprocessText(String text) {
@@ -117,7 +142,6 @@ public class OutputFormatFallbackService {
     }
 
     private ChatAssistantResult parseFromJsonNode(JsonNode node) {
-        String response = getTextValue(node, "response", "response_text");
         List<String> usedTools = getArrayValue(node, "usedTools", "used_tools");
         String confidence = getTextValue(node, "confidence");
         String responseType = getTextValue(node, "responseType", "response_type");
@@ -135,13 +159,51 @@ public class OutputFormatFallbackService {
             );
         }
 
+        List<ContentBlock> sections = parseSections(node);
+
         return new ChatAssistantResult(
-                response != null ? response : "",
                 usedTools != null ? usedTools : List.of(),
                 confidence != null ? confidence : "MEDIUM",
                 responseType != null ? responseType : "UNKNOWN",
-                faultDetail
+                faultDetail,
+                sections
         );
+    }
+
+    private List<ContentBlock> parseSections(JsonNode node) {
+        JsonNode sectionsNode = node.get("sections");
+        if (sectionsNode == null || !sectionsNode.isArray()) {
+            return List.of();
+        }
+        List<ContentBlock> sections = new ArrayList<>();
+        for (JsonNode block : sectionsNode) {
+            sections.add(parseContentBlock(block));
+        }
+        return sections;
+    }
+
+    private ContentBlock parseContentBlock(JsonNode block) {
+        String type = getTextValue(block, "type");
+        Integer level = block.has("level") && !block.get("level").isNull() ? block.get("level").asInt() : null;
+        String text = getTextValue(block, "text");
+        List<String> items = getArrayValue(block, "items");
+        Boolean ordered = block.has("ordered") && !block.get("ordered").isNull() ? block.get("ordered").asBoolean() : null;
+        String language = getTextValue(block, "language");
+        String code = getTextValue(block, "code");
+        List<String> headers = getArrayValue(block, "headers");
+        List<List<String>> rows = null;
+        JsonNode rowsNode = block.get("rows");
+        if (rowsNode != null && rowsNode.isArray()) {
+            rows = new ArrayList<>();
+            for (JsonNode rowNode : rowsNode) {
+                if (rowNode.isArray()) {
+                    List<String> row = new ArrayList<>();
+                    rowNode.forEach(cell -> row.add(cell.isNull() ? "" : cell.asText()));
+                    rows.add(row);
+                }
+            }
+        }
+        return new ContentBlock(type, level, text, items, ordered, language, code, headers, rows);
     }
 
     private String getTextValue(JsonNode node, String... fieldNames) {
@@ -176,19 +238,9 @@ public class OutputFormatFallbackService {
     }
 
     private ChatAssistantResult parseFieldByField(String text) {
-        String response = null;
         List<String> usedTools = new ArrayList<>();
         String confidence = null;
         String responseType = null;
-
-        Pattern responsePattern = Pattern.compile(
-                "(?:\"response\"|\"response_text\")\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"");
-        Matcher rm = responsePattern.matcher(text);
-        if (rm.find()) {
-            response = rm.group(1)
-                    .replace("\\\"", "\"")
-                    .replace("\\\\", "\\");
-        }
 
         Pattern toolsPattern = Pattern.compile(
                 "(?:\"usedTools\"|\"used_tools\")\\s*:\\s*\\[([^\\]]*)\\]");
@@ -214,27 +266,80 @@ public class OutputFormatFallbackService {
             responseType = rpm.group(1);
         }
 
+        List<ContentBlock> sections = extractSectionsFromText(text);
+
         return new ChatAssistantResult(
-                response != null ? response : text,
                 usedTools,
                 confidence != null ? confidence : "MEDIUM",
                 responseType != null ? responseType : "UNKNOWN",
-                null
+                null,
+                sections
         );
     }
 
-    private ChatAssistantResult buildFallbackResult(String rawText) {
-        String responseText = rawText;
-        if (responseText.length() > 2000) {
-            responseText = responseText.substring(0, 2000) + "...";
+    private List<ContentBlock> extractSectionsFromText(String text) {
+        String jsonStr = extractJson(text);
+        if (jsonStr == null) return List.of();
+        try {
+            JsonNode node = objectMapper.readTree(jsonStr);
+            return parseSections(node);
+        } catch (Exception e) {
+            return List.of();
         }
-        return new ChatAssistantResult(responseText, List.of(), "LOW", "UNKNOWN", null);
+    }
+
+    private ChatAssistantResult buildFallbackResult(String rawText) {
+        String truncated = rawText;
+        if (truncated.length() > 2000) {
+            truncated = truncated.substring(0, 2000) + "...";
+        }
+        List<ContentBlock> sections = List.of(ContentBlock.paragraph(truncated));
+        return new ChatAssistantResult(List.of(), "LOW", "UNKNOWN", null, sections);
     }
 
     private boolean isValidResult(ChatAssistantResult result) {
         return result != null
-                && result.response() != null
-                && !result.response().isBlank();
+                && result.sections() != null
+                && !result.sections().isEmpty();
+    }
+
+    public static String deriveTextFromSections(List<ContentBlock> sections) {
+        if (sections == null || sections.isEmpty()) return "";
+        StringBuilder sb = new StringBuilder();
+        for (ContentBlock b : sections) {
+            switch (b.type() != null ? b.type() : "paragraph") {
+                case "heading" -> {
+                    int level = b.level() != null ? b.level() : 2;
+                    sb.append("#".repeat(level)).append(' ').append(b.text() != null ? b.text() : "").append("\n\n");
+                }
+                case "paragraph" -> sb.append(b.text() != null ? b.text() : "").append("\n\n");
+                case "list" -> {
+                    if (b.items() != null) {
+                        int i = 0;
+                        for (String item : b.items()) {
+                            String prefix = b.ordered() != null && b.ordered() ? (++i) + ". " : "- ";
+                            sb.append(prefix).append(item).append('\n');
+                        }
+                        sb.append('\n');
+                    }
+                }
+                case "code" -> sb.append("```").append(b.language() != null ? b.language() : "").append('\n')
+                        .append(b.code() != null ? b.code() : "").append("\n```\n\n");
+                case "quote" -> sb.append("> ").append(b.text() != null ? b.text() : "").append("\n\n");
+                case "table" -> {
+                    if (b.headers() != null && b.rows() != null) {
+                        sb.append('|').append(String.join("|", b.headers())).append("|\n");
+                        sb.append('|').append(b.headers().stream().map(h -> "---").collect(java.util.stream.Collectors.joining("|"))).append("|\n");
+                        for (java.util.List<String> row : b.rows()) {
+                            sb.append('|').append(String.join("|", row)).append("|\n");
+                        }
+                        sb.append('\n');
+                    }
+                }
+                default -> sb.append(b.text() != null ? b.text() : "").append("\n\n");
+            }
+        }
+        return sb.toString().trim();
     }
 
     public record ParseResult(
@@ -248,8 +353,11 @@ public class OutputFormatFallbackService {
         }
 
         public static ParseResult failure(String errorMessage) {
+            List<ContentBlock> fallbackSections = List.of(
+                    ContentBlock.paragraph("输出解析失败: " + errorMessage)
+            );
             return new ParseResult(
-                    new ChatAssistantResult("", List.of(), "LOW", "UNKNOWN", null),
+                    new ChatAssistantResult(List.of(), "LOW", "UNKNOWN", null, fallbackSections),
                     false,
                     "none",
                     errorMessage

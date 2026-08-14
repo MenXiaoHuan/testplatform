@@ -57,7 +57,7 @@ erDiagram
 | 任务 | `task`、`task` 模块 | 一次真实执行记录 | 任务承载状态机、执行参数快照、结果和耗时 |
 | 用例结果 | `case_result` | 每条测试用例的执行结果 | 从 Playwright 结果文件解析后入库 |
 | 产物 | `artifact`、MinIO | 截图、视频、Trace、报告等文件 | MySQL 存元数据，MinIO 存文件本体 |
-| 调度事件 | `schedule_event` | 定时任务幂等和补偿 | 避免重复触发，并支持失败追踪和重试 |
+| 调度事件 | `schedule_event` | 定时任务幂等和补偿 | 避免重复触发，并支持失败追踪和重试；含 `schedule_type` 区分 CRON/AGENT/MANUAL 三种调度类型 |
 
 ---
 
@@ -210,7 +210,8 @@ flowchart LR
 | `src/views/home/HomeView.vue` | 空间广场 | 展示可访问空间和申请状态 |
 | `src/views/repository/RepositoryListView.vue` | 仓库管理 | 测试仓库配置入口 |
 | `src/views/scene/SceneListView.vue` | 场景管理 | 配置浏览器、分支、环境变量、Cron |
-| `src/views/scene/ScheduleEventListView.vue` | 调度事件 | 定时任务问题排查 |
+| `src/views/event/EventListView.vue` | 日志追踪（调度事件） | 动态列：定时/Agent/手动三种类型显示不同列；默认展示 Agent 调度事件；支持 traceId 精确筛选和场景名称筛选 |
+| `src/views/ai/AgentTraceDetailView.vue` | Agent Trace 时间线 | 侧边栏固定不随滚动移动，阶段名称中文化，可查看完整 MODEL_CALL/TOOL_CALL 各阶段详情 |
 | `src/views/task/TaskListView.vue` | 任务列表 | 查看任务历史和状态 |
 | `src/views/task/TaskDetailView.vue` | 任务详情 | 展示状态、用例、日志、产物、诊断 |
 | `src/views/task/useTaskDetailLoader.ts` | 详情加载逻辑 | 把复杂加载逻辑从 Vue 页面抽出 |
@@ -223,13 +224,22 @@ flowchart LR
 | 类型 | 文件 | 职责 |
 |---|---|---|
 | 布局组件 | `SidebarUserPanel.vue`、`SpaceSwitcher.vue` | 用户区、空间切换、头像/昵称展示 |
-| AI 组件 | `ai/AiAssistantDialog.vue` | AI 智能助手对话框，气泡布局、Markdown 渲染、SSE 流式 |
+| AI 组件 | `ai/AiAssistantDialog.vue` | AI 智能助手对话框，气泡布局、Markdown 渲染（三路分支）、SSE 流式打字机效果、sections 结构化渲染、highlight.js 代码高亮、DOMPurify XSS 消毒、代码块复制按钮 |
 | 列表组件 | `ListPageShell.vue` | 复用列表页壳层 |
 | 类型定义 | `src/types/*.ts` | DTO 和页面模型类型 |
 | 工具函数 | `artifact.ts`、`stage-log.ts`、`task-display.ts` | 产物、日志、任务状态展示 |
-| AI 工具 | `src/utils/render-markdown.ts` | Markdown 渲染（代码块保护、段落预处理） |
+| AI 前端类型 | `stores/ai.ts`、`api/ai.ts` | ContentBlock 六类型定义、ChatMessage、SSE 事件类型 |
+| 权限工具 | `space-permissions.ts`、`space-access-requests.ts` | 空间权限和申请状态判断；侧边栏菜单顺序：仓库管理→场景管理→空间审批→日志追踪（仅管理员可见空间审批） |
+| 调度事件 Store | `stores/schedule-event.ts` | 调度事件列表状态管理，默认选中 AGENT 类型 |
 | 错误与提示 | `error.ts`、`ui-feedback.ts` | 错误解析和 UI 提示 |
-| 权限工具 | `space-permissions.ts`、`space-access-requests.ts` | 空间权限和申请状态判断 |
+
+#### 前端 AI 渲染三路分支
+
+`AiAssistantDialog.vue` 中 AI 消息的 Markdown 渲染采用三路分支：
+
+1. **流式打字中**：`marked.parse(content)` + `protectTablesAndEscape()` 智能保护代码块/内联代码、识别真实表格分隔行、转义普通文本中的 `\|` 防 marked 误判为 GFM 表格 + DOMPurify 消毒
+2. **完成 + 有 sections**：Vue `v-for` 按 `ContentBlock.type` 结构化渲染（h1/h2/h3、p、ul/ol、pre.hljs、blockquote、table）+ fade-in 动画
+3. **完成 + 无 sections**：降级到 `marked.parse(content)` + DOMPurify 消毒
 
 ---
 
@@ -241,12 +251,12 @@ flowchart LR
 
 | 文件 | 职责 | 说明 |
 |---|---|---|
-| `pom.xml` | Maven 依赖和构建配置 | Spring Boot、MyBatis、Flyway、Redis、MinIO、测试依赖 |
+| `pom.xml` | Maven 依赖和构建配置 | Spring Boot、MyBatis、Flyway、Redis、MinIO、Spring AI Alibaba、测试依赖 |
 | `Dockerfile.dev` | 开发镜像 | Maven 镜像运行 `spring-boot:run`，适合挂载源码 |
 | `Dockerfile` | 生产镜像 | 多阶段构建，运行阶段只保留 JRE + jar |
 | `.dockerignore` | 构建上下文过滤 | 避免无关文件进入镜像 |
-| `PlatformApplication.java` | 启动类 | 启动 Spring Boot，开启调度和 Mapper 扫描 |
-| `application.yml` | 主配置 | 数据源、Redis、Flyway、缓存、线程池、Runner、MinIO |
+| `PlatformApplication.java` | 启动类 | 启动 Spring Boot，开启调度、Mapper 扫描和 AOP 代理 |
+| `application.yml` | 主配置 | 数据源、Redis、Flyway、缓存、线程池、Runner、MinIO、AI 配置 |
 | `application-dev.yml` | 开发配置 | 仍然通过环境变量注入敏感配置 |
 
 ### 6.2 数据库迁移
@@ -298,23 +308,32 @@ flowchart LR
 
 | 文件 | 职责 | 为什么重要 |
 |---|---|---|
-| `AgentController.java` | AI 对话 HTTP 接口（同步/流式/SSE） | AI 能力入口，支持 traceId 返回 |
-| `AgentService.java` | AI 对话服务主入口 | 串联输入清洗、会话管理、token 预算检查、上下文压缩、Agent 调用、trace 记录、输出兜底 |
-| `ReactAgentConfig.java` | ReactAgent Bean 配置 | 注册 Skills、Tools、Hooks（含 ModelCallLimitHook 限制最多 20 次模型调用） |
-| `AgentTraceLogService.java` | 全链路 trace 日志存储 | Redis List + ZSet，90 天 TTL，每阶段记录（含 PROMPT_TOKEN_BUDGET、CONTEXT_COMPRESSED 等） |
-| `TraceQueryTool.java` | Agent 可调用的 trace 查询工具 | 按 traceId 查询调用链路，支持对话内查询 |
+| `AgentController.java` | AI 对话 HTTP 接口（同步 chat、流式 chatStream/SSE、trace 查询） | AI 能力入口，SSE chunk 使用 MediaType.TEXT_PLAIN 避免 JSON 序列化；meta 事件携带完整 sections 数组；trace 查询接口 `GET /api/ai/trace` 和 `GET /api/ai/trace/{traceId}` |
+| `AgentService.java` | AI 对话服务主入口 | 串联输入清洗、会话管理、token 预算检查、上下文压缩、Agent 调用、trace 记录、输出兜底、SSE 流式发送。从 sections 派生纯文本用于 streaming chunk 和历史存储 |
+| `ReactAgentConfig.java` | ReactAgent Bean 配置 | 注册 Tools、SystemPromptHook（AGENT.md + 技能索引）、ModelCallLimitHook（max 20 次模型调用） |
+| `DeepSeekChatModelConfig.java` | LLM 模型配置 | 配置 deepseek-chat 模型 |
+| `AgentTraceLogService.java` | 全链路 trace 日志存储 | Redis List + ZSet，90 天 TTL，每个阶段记录（含 MODEL_CALL_*/TOOL_CALL_* 等 AOP 拦截的详细阶段）。metadata 完整保留不再截断（仅单值超 200000 字符时截断） |
+| `ModelCallTraceAspect.java` | AOP 拦截 ChatModel.call() | 记录 MODEL_CALL_STARTING/COMPLETED/FAILED，获取真实 token 用量（promptTokens/completionTokens/totalTokens）用于成本统计和 tokenDiffVsEstimate 对比 |
+| `ToolTraceAspect.java` | AOP 拦截 @Tool 方法 | 记录 TOOL_CALL_STARTING/COMPLETED/FAILED，含工具名、入参（完整）、结果（完整）、耗时 |
+| `AgentTraceContext.java` | ThreadLocal traceId 持有器 | 让两个 AOP 切面能获取当前请求的 traceId，独立于业务层 |
+| `TraceQueryTool.java` | Agent 可调用的 trace 查询工具 | 三个方法：`queryTrace(traceId)` 查询完整链路并返回摘要、`listRecentTraces(limit?)` 列出最近调用记录、`getTraceStats()` 存储统计 |
 | `ChatSessionManager.java` | 会话管理（Caffeine 缓存，30min TTL，最大 10K 会话） | 会话持久化和上下文维护，touch() 更新访问时间 |
 | `ChatSession.java` | 会话数据模型（record） | 包含 sessionId、messages、systemPrompt、estimatedTokens，统一 token 估算（中文×1.5 + 英文×0.25） |
-| `ContextCompressionService.java` | 上下文压缩（结构化摘要 + 滑动窗口） | keepRecentMessages=3 保留最近 3 条原始消息，历史消息生成结构化轮次摘要，两级压缩（Smart/Aggressive），硬 token 上限熔断 |
+| `ContextCompressionService.java` | 上下文压缩（结构化摘要 + 滑动窗口） | keepRecentMessages=3 保留最近 3 条原始消息，历史消息生成结构化轮次摘要，两级压缩（Smart/Aggressive），LLM 摘要优先（30s 超时，use-llm-summary 开关） |
 | `AgentCallManager.java` | Agent 调用可靠性封装 | 超时（60s）+ 重试（2 次，指数退避） |
 | `InputSanitizer.java` | 输入清洗 + Prompt 注入检测 | 安全防护，最大长度 10000 字符 |
-| `OutputFormatFallbackService.java` | 四层输出解析兜底 | BeanConverter → JSON 提取 → 字段正则 → 纯文本 |
-| `AgentObservability.java` | 调用量/错误率/token 监控 | Agent 可观测性 |
-| `AgentTraceLogService.java` | Trace 日志写入服务 | 每个对话阶段（REQUEST_RECEIVED→SESSION_READY→PROMPT_TOKEN_BUDGET→AGENT_CALL_STARTING→AGENT_CALL_SUCCESS→OUTPUT_PARSED→REQUEST_COMPLETED）记录结构化日志 |
+| `OutputFormatFallbackService.java` | 四层输出解析兜底（sections-only） | BeanConverter → JSON 提取 → sections 重建 → 纯文本包装。`deriveTextFromSections()` 从 sections 派生纯文本 |
+| `ChatAssistantResult.java` | 输出数据模型（record, @JsonInclude(NON_NULL)） | 含 traceId/usedTools/confidence/responseType/faultDetail/sections，无 response 字段 |
+| `ContentBlock.java` | 结构化内容块（record） | 六种类型：heading(level+text)/paragraph(text)/list(items+ordered)/code(language+code)/quote(text)/table(headers+rows)，提供静态工厂方法 |
+| `AgentObservability.java` | 调用量/错误率/token 用量监控 | Agent 可观测性 |
 | `ToolErrorFallback.java` | 工具调用异常分析 | 检测工具使用问题并生成改进建议 |
-| `AgentPromptBuilder.java` | Prompt 构建服务 | 组装 System Prompt + 上下文信息 + 对话历史（区分摘要区和最近对话区） |
-| `AGENT.md` | 系统提示词（Tools + 输出格式 + 安全约束） | Agent 行为定义 |
-| `skills/` | Skills 技能文档（业务知识、错误分析） | Agent 领域知识注入 |
+| `SystemPromptHook.java` | 注入系统提示词 | 注入 AGENT.md 内容，末尾追加 SkillIndexLoader 生成的技能索引 |
+| `SkillIndexLoader.java` | 技能索引加载 | 启动时扫描 skills/*/SKILL.md 的 frontmatter（name + description）生成索引；按需读取技能正文和子文档 |
+| `LoadSkillContentTool.java` | 按需加载技能 `SKILL.md` 正文 | `loadSkill(name)` 读取指定技能的正文，同时返回该技能目录下可用子文档清单 |
+| `LoadSkillDocumentTool.java` | 按需加载技能子文档 | `loadSkillDocument(skillName, docName)` 读取技能目录下的子文档（如 playwright-error.md） |
+| `ChatRequest.java` / `ChatResponse.java` | 请求/响应 DTO | AI 对话接口的请求和响应数据结构 |
+| `AGENT.md` | 系统提示词 | 定义 sections-only 输出格式、六种 ContentBlock 类型、安全约束、Few-shot 示例 |
+| `skills/` | Skills 技能文档（业务知识、错误分析） | Agent 领域知识注入，按需加载 |
 
 ---
 
@@ -416,14 +435,17 @@ sequenceDiagram
     participant CS as ChatSessionManager
     participant CC as ContextCompressionService
     participant T as AgentTraceLogService
+    participant MC as ModelCallTraceAspect (AOP)
+    participant TC as ToolTraceAspect (AOP)
     participant R as ReactAgent
     participant L as LLM (deepseek-chat)
-    participant Tool as TaskTool / TraceQueryTool
+    participant Tool as TaskTool / TraceQueryTool / LoadSkillContentTool
     participant Redis as Redis
 
     U->>W: 输入问题并发送
     W->>C: POST /api/ai/chat/stream (SSE)
     C->>S: chatStream(spaceId, message)
+    S->>S: AgentTraceContext.setTraceId()
     S->>T: log(traceId, REQUEST_RECEIVED, ...)
     S->>S: InputSanitizer.sanitize(message)
     S->>CS: getOrCreateSession(sessionId)
@@ -446,24 +468,39 @@ sequenceDiagram
             S-->>W: 返回错误"上下文过长"
         end
     end
+    S->>T: log(traceId, AGENT_CALL_STARTING, ...)
     S->>R: ReactAgent.call(prompt)
-    R->>L: 发送请求（含 Skills + Tools 定义 + 摘要 + 最近3条消息）
-    L-->>R: 返回工具调用指令
-    R->>Tool: 调用 getTask / queryTrace 等
-    Tool->>Redis: 查询缓存或 trace 日志
-    Redis-->>Tool: 返回数据
-    Tool-->>R: 返回工具结果
-    R->>L: 再次调用（含工具结果）
-    L-->>R: 返回最终回复
-    R-->>S: AgentResponse (response + usedTools + traceId)
-    S->>T: log(traceId, AGENT_CALL_SUCCESS, ...)
-    S->>S: OutputFormatFallbackService.parseAgentOutput()
+
+    loop ReAct 循环（每次模型调用都触发 AOP 拦截）
+        R->>L: 发送请求（含 Skills + Tools 定义 + 摘要 + 最近3条消息）
+        Note over MC: ModelCallTraceAspect 拦截
+        MC->>T: log(traceId, MODEL_CALL_STARTING, ...)
+        L-->>R: 返回工具调用指令或最终回答
+        MC->>T: log(traceId, MODEL_CALL_COMPLETED, ...) [含真实 token 用量]
+
+        alt 工具调用
+            R->>Tool: 调用 getTask / queryTrace / loadSkill 等
+            Note over TC: ToolTraceAspect 拦截
+            TC->>T: log(traceId, TOOL_CALL_STARTING, ...)
+            Tool->>Redis: 查询缓存或 trace 日志
+            Redis-->>Tool: 返回数据
+            TC->>T: log(traceId, TOOL_CALL_COMPLETED, ...)
+            Tool-->>R: 返回工具结果
+        else 最终回答 (sections 非空)
+            R-->>S: ChatAssistantResult (sections + usedTools + traceId)
+        end
+    end
+
+    S->>T: log(traceId, AGENT_CALL_SUCCESS, ...) [含 sectionCount]
+    S->>S: OutputFormatFallbackService.parseAgentOutput(sections)
+    S->>S: deriveResponse() 从 sections 派生纯文本
     S->>T: log(traceId, OUTPUT_PARSED, ...)
     S->>T: log(traceId, REQUEST_COMPLETED, ...)
+    S->>S: ScheduleEventService.completeAgentEvent()
     S-->>C: SseEmitter (流式分片)
-    C-->>W: SSE 事件: meta → chunk × N → complete
-    W->>W: renderContent(marked.parse(content))
-    W-->>U: 打字机效果展示
+    C-->>W: SSE 事件: meta{sections} → chunk(TEXT_PLAIN) × N → complete
+    W->>W: 三路分支渲染（sections 结构化 / marked + protectTablesAndEscape / markdown）
+    W-->>U: 打字机效果展示 + fade-in 动画
 ```
 
 ### 7.7 AI Agent 步骤说明
@@ -471,19 +508,22 @@ sequenceDiagram
 | 步骤 | 发生位置 | 做什么 | 设计意义 |
 |---|---|---|---|
 | 1 | 前端 | 用户在对话框输入问题 | AI 交互入口 |
-| 2 | Controller | 接收 `POST /api/ai/chat/stream` | SSE 流式接口，支持 traceId 返回 |
-| 3 | Service | 生成 traceId，记录 REQUEST_RECEIVED | 全链路追踪起点 |
+| 2 | Controller | 接收 `POST /api/ai/chat/stream` | SSE 流式接口，chunk 使用 MediaType.TEXT_PLAIN 避免 JSON 序列化 |
+| 3 | Service | 生成 traceId，写入 AgentTraceContext，记录 REQUEST_RECEIVED | 全链路追踪起点 |
 | 4 | Sanitizer | 输入清洗 + Prompt 注入检测 | 安全防护 |
 | 5 | Session | 获取或创建会话（Caffeine 30min TTL） | 多轮对话上下文维护 |
 | 6 | Compression | 结构化摘要压缩：保留最近 3 条消息，历史消息按轮次生成结构化摘要 | 滑动窗口 + 结构化压缩，控制 token 总量 |
-| 7 | Token Budget | 计算 promptTokens 与 maxTokens (8000) 对比 | 硬 token 上限检查，超限则熔断 |
+| 7 | Token Budget | 计算 promptTokens（启发式估算）与 maxTokens (8000) 对比 | 硬 token 上限检查，超限则熔断 |
 | 8 | Trace Log | 记录 SESSION_READY / PROMPT_TOKEN_BUDGET / CONTEXT_COMPRESSED | 链路可观测性 |
 | 9 | Agent | ReAct 循环（思考→调用工具→观察→输出，最多 20 次模型调用） | 核心推理循环 |
-| 10 | Tools | 调用 TaskTool/SceneTool/TraceQueryTool 等 | Agent 与业务系统交互的桥梁 |
-| 11 | LLM | deepseek-chat 推理 | 生成回复和工具调用决策 |
-| 12 | Fallback | 四层输出解析兜底 | 保证输出格式正确 |
-| 13 | SSE | 流式返回给前端 | 打字机效果，提升用户体验 |
-| 14 | Trace Log | 记录全链路各阶段日志 | 90 天内可通过 traceId 查询完整链路 |
+| 10 | **ModelCallTraceAspect (AOP)** | 拦截 ChatModel.call()，记录 MODEL_CALL_STARTING/COMPLETED/FAILED | 获取每次 LLM 调用的真实 token 用量、耗时、generationFull |
+| 11 | **ToolTraceAspect (AOP)** | 拦截 @Tool 方法，记录 TOOL_CALL_STARTING/COMPLETED/FAILED | 获取每次工具调用的入参、结果、耗时 |
+| 12 | Tools | 调用 TaskTool/SceneTool/TraceQueryTool/LoadSkillContentTool 等 | Agent 与业务系统交互的桥梁 |
+| 13 | LLM | deepseek-chat 推理 | 输出 sections 结构化数组（heading/paragraph/list/code/quote/table） |
+| 14 | Fallback | 四层输出解析（focus on sections-only），从 sections 派生纯文本 | 保证输出格式正确 |
+| 15 | SSE | meta{sections} → chunk(TEXT_PLAIN) → complete 流式返回 | 打字机效果 + 完成后结构化渲染 |
+| 16 | Trace Log | 记录全链路各阶段日志（含 MODEL_CALL_*/TOOL_CALL_*） | 90 天内可通过 traceId 查询完整链路 |
+| 17 | ScheduleEvent | 创建/完成 AGENT 调度事件 | 在调度事件模块统一观测 Agent 运行情况 |
 
 ---
 
@@ -839,8 +879,14 @@ flowchart TD
 | Redis 缓存保护 | `DetailCacheService` | 考虑穿透、击穿、雪崩 |
 | Flyway 迁移 | `db/migration` | 自动建表和 schema 演进 |
 | 调度幂等 | `schedule_event`、租约 | 避免定时任务重复触发 |
-| AI Agent 集成 | `ai` 模块 | Spring AI Alibaba Agent，ReAct 循环 + Skills + Tools + 结构化摘要上下文管理 |
-| 全链路追踪 | `AgentTraceLogService`、`TraceQueryTool` | traceId + Redis 存储 + 对话内查询 + PROMPT_TOKEN_BUDGET 日志 |
+| AI Agent 集成 | `ai` 模块 | Spring AI Alibaba Agent，ReAct 循环 + Skills 按需加载 + Tools + 结构化摘要上下文管理 |
+| **sections-only 输出** | `ChatAssistantResult`、`ContentBlock` | LLM 只输出结构化 sections 数组，从 sections 派生纯文本，节省 40-50% token，避免双写不一致 |
+| **真实 token 用量追踪** | `ModelCallTraceAspect` | AOP 拦截 ChatModel.call()，获取 LLM API 真实返回的 promptTokens/completionTokens/totalTokens，与启发式估算对比 |
+| **全链路 Trace AOP 拦截** | `ModelCallTraceAspect`、`ToolTraceAspect` | 独立于业务层的拦截器，完整记录每次 LLM 调用和工具调用的入参、结果、耗时，Trace 时间线可还原 Agent 思考-行动全过程 |
+| **表格符号智能保护** | `AiAssistantDialog.protectTablesAndEscape()` | 保护代码块/内联代码，识别真实表格分隔行，转义普通文本中的 `\|`，解决 LLM 输出中的 `\|` 被 marked 误判为 GFM 表格问题 |
+| **三路分支渲染** | `AiAssistantDialog.vue` | streaming 打字中用 marked + protectTablesAndEscape + DOMPurify；完成+有 sections 用 Vue v-for 结构化渲染；完成+无 sections 降级到 marked |
+| **动态列调度事件** | `EventListView.vue` | 根据 schedule_type（CRON/AGENT/MANUAL）显示不同表格列，默认展示 Agent 调度事件，支持 traceId 精确筛选 |
+| 全链路追踪 | `AgentTraceLogService`、`TraceQueryTool` | traceId + Redis 存储 + 对话内查询 + MODEL_CALL_*/TOOL_CALL_* 详细阶段日志 |
 | 上下文爆炸防护 | `ContextCompressionService`、`ChatSession` | 结构化摘要 + 滑动窗口(keepRecentMessages=3) + 硬 token 上限熔断 |
 | RBAC 权限体系 | `space`、`auth` 模块 | 空间级角色控制 + 审批流程 |
 | 工程化完整 | Compose、Dockerfile、CI | 能开发、部署、测试闭环 |
@@ -956,22 +1002,24 @@ AI Agent 基于 Spring AI Alibaba Agent 框架实现，核心能力包括：
 - **故障分析**：分析任务失败原因，给出根因和解决方案
 - **业务问答**：回答平台使用、业务流程等问题
 - **信息查询**：查询任务、场景、仓库等信息
-- **链路追踪**：通过 TraceQueryTool 查询 Agent 调用全链路
+- **链路追踪**：通过 TraceQueryTool 查询 Agent 调用全链路，支持查看 ModelCallTraceAspect/ToolTraceAspect 拦截的完整 LLM 和工具调用详情
 - **上下文管理**：自动维护多轮对话历史，结构化摘要压缩历史对话，滑动窗口保留最近 3 条消息，硬 token 上限熔断防止上下文爆炸
+- **真实 token 用量统计**：ModelCallTraceAspect 拦截每次 ChatModel.call()，从 LLM API response.metadata.usage 获取真实 token 用量（promptTokens/completionTokens/totalTokens）
 
-Agent 通过 ReAct 循环（思考→调用工具→观察→输出）工作，可以调用 TaskTool、SceneTool、LogPreprocessingTool、TraceQueryTool 等工具。上下文管理采用结构化摘要（按轮次组织用户消息、工具调用、助手结论）+ 滑动窗口（keepRecentMessages=3）的组合策略，在 token 超过 80% 阈值时触发 Smart 压缩，超过 maxTokens(8000) 时触发 Aggressive 压缩，极端情况下硬截断熔断。
+Agent 通过 ReAct 循环（思考→调用工具→观察→输出）工作，可以调用 TaskTool、SceneTool、LogPreprocessingTool、TraceQueryTool、LoadSkillContentTool、LoadSkillDocumentTool 等工具。采用 sections-only 输出格式：LLM 只输出结构化 ContentBlock 数组（heading/paragraph/list/code/quote/table 六种类型），后端通过 deriveTextFromSections() 派生纯文本用于历史存储和 SSE streaming。上下文管理采用结构化摘要（按轮次组织用户消息、工具调用、助手结论）+ 滑动窗口（keepRecentMessages=3）的组合策略，在 token 超过 80% 阈值时触发 Smart 压缩（LLM 摘要优先，30 秒超时，失败回退规则提取），超过 maxTokens(8000) 时触发 Aggressive 压缩，极端情况下硬截断熔断。
 
 ### Q14：traceId 是什么？怎么用？
 
 答：
 
-traceId 是每次 Agent 对话生成的唯一 UUID，用于全链路追踪。每次对话的各个阶段（请求接收、上下文准备、Agent 调用、输出解析、请求完成）都会通过 AgentTraceLogService 记录到 Redis 中，TTL 为 90 天。
+traceId 是每次 Agent 对话生成的唯一 UUID，用于全链路追踪。每次对话的各个阶段都会通过 AgentTraceLogService 记录到 Redis 中，TTL 为 90 天。Trace 阶段包括：REQUEST_RECEIVED → SESSION_READY → CONTEXT_COMPRESSED/CONTEXT_READY → PROMPT_TOKEN_BUDGET → AGENT_CALL_STARTING → **MODEL_CALL_STARTING/COMPLETED/FAILED**（每次 LLM 调用）→ **TOOL_CALL_STARTING/COMPLETED/FAILED**（每次工具调用）→ AGENT_CALL_SUCCESS → OUTPUT_PARSED → REQUEST_COMPLETED。
 
 使用方式：
 1. 在 AI 对话回答底部复制 traceId
 2. 告诉 AI 助手「查询 traceId: {traceId}」
 3. Agent 调用 TraceQueryTool.queryTrace(traceId) 返回完整链路
-4. 包含所有阶段日志、耗时、工具调用信息、metadata
+4. 包含所有阶段日志、耗时、工具调用信息、真实 token 用量（promptTokens/completionTokens/totalTokens）、metadata
+5. 在"日志追踪"页面（EventListView）的 Agent 调度事件中点击 traceId 可跳转到 AgentTraceDetailView 时间线页，完整查看 MODEL_CALL 和 TOOL_CALL 各阶段详情
 
 ### Q15：平台的权限体系是怎样的？
 

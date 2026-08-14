@@ -10,4 +10,4 @@ WORKDIR /workspace
 EXPOSE 8080
 
 # Run from the bind-mounted source tree so local code changes are picked up.
-CMD ["mvn", "spring-boot:run"]
+CMD ["mvn", "spring-boot:run", "-Dmaven.test.skip=true"]

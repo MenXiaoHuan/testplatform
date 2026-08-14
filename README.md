@@ -84,10 +84,15 @@ flowchart LR
 │           │   ├── ai/
 │           │   │   ├── config/          # Agent 配置 (ReactAgentConfig, SystemPromptConfig)
 │           │   │   ├── controller/      # AgentController HTTP 接口
+│           │   │   ├── hook/            # SystemPromptHook 系统提示词注入
 │           │   │   ├── service/         # AgentService 对话主入口
-│           │   │   ├── session/         # ChatSession + ChatSessionManager
+│           │   │   ├── session/         # ChatSession + ChatSessionManager + ContextCompressionService
 │           │   │   ├── output/          # 输出解析兜底
-│           │   │   ├── tools/           # Agent 工具 (TaskTool, SceneTool, ...)
+│           │   │   ├── skill/           # SkillIndexLoader 技能索引/按需加载
+│           │   │   ├── tools/           # Agent 工具 (TaskTool, SceneTool, LoadSkillContentTool, ...)
+│           │   │   ├── ModelCallTraceAspect.java  # 拦截 ChatModel.call() 记录真实 token 用量
+│           │   │   ├── ToolTraceAspect.java        # 拦截 @Tool 方法记录工具调用详情
+│           │   │   ├── AgentTraceContext.java      # ThreadLocal traceId 持有器
 │           │   │   └── AgentObservability.java
 │           │   └── ...                  # 业务模块 (space, repo, scene, task)
 │           └── resources/
@@ -326,63 +331,81 @@ AI Agent 采用 **ReAct（Reason + Act）** 循环模式：
 
 ```
 用户提问
-  → SystemPromptHook 注入系统提示词 (AGENT.md)
-  → SkillsAgentHook 加载技能文档
+  → SystemPromptHook 注入系统提示词 (AGENT.md + SkillIndexLoader 生成的技能索引)
   → ReAct 循环 (最多 20 次模型调用)
       → Think (思考) → Call Tool (调用工具) → Observe (观察结果) → ... → Answer
-  → OutputFormatFallbackService 四层输出解析
-  → AgentTraceLogService 写入全链路 Trace
+      → 按需调用 loadSkill / loadSkillDocument 加载技能正文与子文档
+      → ModelCallTraceAspect / ToolTraceAspect 拦截记录每一次模型调用和工具调用详情
+  → OutputFormatFallbackService 四层输出解析（sections-only，无 response 字段）
+  → AgentTraceLogService 写入全链路 Trace（含 MODEL_CALL_*/TOOL_CALL_* 各阶段）
+  → ScheduleEventService 记录一条 AGENT 调度事件
 ```
+
+> 技能（Skills）采用**按需加载**：启动时 `SkillIndexLoader` 只扫描各 `SKILL.md` 的 frontmatter（name + description）生成索引并追加到系统提示词，正文不进入上下文；LLM 判断需要某技能时再调用 `loadSkill` 工具加载正文，并按正文指引用 `loadSkillDocument` 加载子文档。
 
 #### 核心组件
 
 | 组件 | 职责 |
 |---|---|
 | `ReactAgent` | ReAct 推理循环，思考→行动→观察 |
-| `SystemPromptHook` | 注入 `AGENT.md` 系统提示词 |
-| `SkillsAgentHook` | 加载 `error-analysis` 和 `business-knowledge` 技能文档 |
+| `SystemPromptHook` | 注入 `AGENT.md` 系统提示词（末尾追加技能索引） |
+| `SkillIndexLoader` | 启动时扫描 `skills/*/SKILL.md` frontmatter 生成技能索引，按需读取技能正文/子文档 |
 | `ModelCallLimitHook` | 限制最多 20 次模型调用，防止死循环 |
+| `ModelCallTraceAspect` | AOP 拦截 `ChatModel.call()`，记录每次模型调用的真实 token 用量（promptTokens/completionTokens/totalTokens）和耗时 |
+| `ToolTraceAspect` | AOP 拦截所有 `@Tool` 方法，记录工具名、入参、结果、耗时 |
+| `AgentTraceContext` | ThreadLocal 持有当前请求 traceId，供两个 AOP 切面使用 |
 | `ChatSessionManager` | 会话管理（Caffeine 缓存，30min TTL） |
-| `ContextCompressionService` | 上下文压缩（结构化摘要 + 滑动窗口） |
-| `OutputFormatFallbackService` | 四层输出解析兜底 |
+| `ContextCompressionService` | 上下文压缩（LLM 摘要优先，失败回退规则提取 + 滑动窗口） |
+| `OutputFormatFallbackService` | 四层输出解析兜底（sections-only，从 sections 派生纯文本） |
 | `InputSanitizer` | 输入清洗 + Prompt 注入检测 |
 | `AgentObservability` | 调用量/错误率/Token 用量监控 |
 | `AgentTraceLogService` | 全链路 Trace 日志（Redis，90 天 TTL） |
+| `ScheduleEventService` | Agent 对话入口写入/完成 AGENT 调度事件 |
 
 #### Agent 工具
 
 | 工具 | 方法 | 功能 |
 |---|---|---|
-| **TaskTool** | `getTask(taskId, spaceId)` | 查询任务详情（状态、结果、用例统计） |
-| | `listTasks(spaceId, sceneId)` | 列出空间/场景下的任务 |
-| | `analyzeTask(taskId, spaceId)` | AI 分析任务根因 |
-| **SceneTool** | `listScenes(spaceId)` | 列出空间下的测试场景 |
-| | `getSceneDetail(sceneId, spaceId)` | 查询场景详情 |
-| **RepositoryTool** | `getRepository(repoId, spaceId)` | 查询仓库配置 |
-| | `listRepositories(spaceId)` | 列出空间下的仓库 |
-| **LogPreprocessingTool** | `analyzeLogs(taskId, spaceId)` | 分析任务日志，提取错误摘要 |
-| **TraceQueryTool** | `queryTrace(traceId)` | 查询 Agent 调用链路 |
+| **TaskTool** | `getTask(taskId, spaceId)` | 查询任务详情（状态、结果、用例统计、阶段日志预览） |
+| | `listTasks(sceneId?, spaceId)` | 列出空间下的任务（sceneId 可选过滤） |
+| **SceneTool** | `listScenes(repoId?, spaceId)` | 列出空间下的测试场景（repoId 可选过滤） |
+| | `getSceneDetail(sceneId, spaceId)` | 查询场景详情（浏览器、分支、选择器、环境变量） |
+| **RepositoryTool** | `getRepository(repositoryId, spaceId)` | 查询仓库配置（Git 地址、默认分支、安装/执行命令） |
+| | `searchRepository(keyword, spaceId)` | 按名称关键词搜索仓库 |
+| **LogPreprocessingTool** | `analyzeLogs(taskId, spaceId)` | 分析任务日志，提取错误摘要和失败用例列表 |
+| **TraceQueryTool** | `queryTrace(traceId)` | 查询某条 Agent 调用的完整链路（所有阶段日志） |
+| | `listRecentTraces(limit?)` | 列出最近的 Agent 调用记录（摘要，默认 10 条） |
+| | `getTraceStats()` | Trace 存储统计（总数、保留策略） |
+| **LoadSkillContentTool** | `loadSkill(name)` | 按需加载某技能的 `SKILL.md` 正文（含子文档清单） |
+| **LoadSkillDocumentTool** | `loadSkillDocument(skillName, docName)` | 按需加载技能目录下的子文档 |
 
 #### 上下文管理
 
 - **Token 预算**：最大 8000 tokens，达到 80%（6400）触发压缩。
-- **压缩策略**：先尝试智能压缩（摘要 + 滑动窗口，保留最近 3 条消息），超限时降级为暴力压缩。
+- **压缩策略**：
+  - Smart 压缩（80%~100%）：优先调用 LLM 生成结构化摘要（30 秒超时），失败/超时/未启用时回退到规则提取，保留最近 3 条原始消息。
+  - Aggressive 压缩（>100%）：规则提取精简摘要，只保留最近 3 条 user/assistant 消息。
+- **LLM 摘要开关**：`platform.ai.context.use-llm-summary`（默认 `true`）。
 - **会话存储**：Caffeine 本地缓存，30 分钟 TTL，最多 10000 个会话。
 - **Token 估算**：中文 × 1.5 + 英文 × 0.25。
 
 #### 输出格式
 
-Agent 使用 `ChatAssistantResult` 结构化输出：
+Agent 使用 `ChatAssistantResult` 结构化输出（sections-only，不含 response 文本）：
 
 ```java
-record ChatAssistantResult(
-    String response,              // AI 回复文本 (Markdown)
+@JsonInclude(JsonInclude.Include.NON_NULL)
+public record ChatAssistantResult(
+    String traceId,                // 追踪 ID（自动生成）
     List<String> usedTools,       // 使用过的工具名列表
-    String confidence,            // 置信度 (HIGH/MEDIUM/LOW)
+    String confidence,             // 置信度 (HIGH/MEDIUM/LOW)
     String responseType,          // 响应类型 (ANALYSIS/QA/TRACE/...)
-    FaultDetail faultDetail       // 故障详情 (可选)
+    FaultDetail faultDetail,      // 故障详情 (可选)
+    List<ContentBlock> sections   // 结构化内容块
 ) {
-    record FaultDetail(
+    public String deriveResponse() { /* 从 sections 派生纯文本 */ }
+
+    public record FaultDetail(
         String fault_type,         // 故障类型
         String root_cause,         // 根因分析
         String immediate_solution, // 临时解决方案
@@ -392,6 +415,26 @@ record ChatAssistantResult(
     )
 }
 ```
+
+`ContentBlock` 六种类型：
+
+```java
+public record ContentBlock(
+    String type,        // heading / paragraph / list / code / quote / table
+    Integer level,      // heading 专用: 1/2/3
+    String text,        // heading / paragraph / quote 专用
+    List<String> items, // list 专用
+    Boolean ordered,    // list 专用: true=有序, false=无序
+    String language,    // code 专用: 语言
+    String code,        // code 专用: 代码内容
+    List<String> headers,  // table 专用: 表头
+    List<List<String>> rows // table 专用: 二维数据
+)
+```
+
+**设计决策**：LLM 只输出 `sections`（结构化 JSON），不再输出 `response` 字段。后端通过 `deriveTextFromSections(sections)` 自动派生纯文本用于历史存储和 streaming chunk，避免 response/sections 双写不一致，节省约 40-50% token。
+
+SSE 流式输出时：`meta` 事件携带完整 `sections` 数组供前端完成后结构化渲染，`chunk` 事件逐字符发送 `deriveResponse()` 的纯文本用于打字机效果。
 
 #### 安全与可靠性
 
@@ -519,12 +562,14 @@ npm run build
 | `GET /api/spaces/{spaceId}/tasks/{taskId}/cases/{caseResultId}/artifacts` | 某条用例关联产物 |
 | `GET /api/spaces/{spaceId}/tasks/{taskId}/logs` | 阶段日志 |
 | `GET /api/spaces/{spaceId}/tasks/{taskId}/logs/{logId}/download` | 下载阶段日志 |
-| `GET /api/spaces/{spaceId}/schedule-events` | 调度事件列表 |
+| `GET /api/spaces/{spaceId}/schedule-events` | 调度事件列表（支持 `scheduleType` 筛选 CRON/AGENT/MANUAL） |
 | `POST /api/spaces/{spaceId}/schedule-events/{eventId}/retry` | 重试调度事件 |
 | `POST /api/ai/chat` | 同步 AI 对话 |
 | `POST /api/ai/chat/stream` | 流式 AI 对话（SSE） |
 | `DELETE /api/ai/session/{sessionId}` | 清理会话 |
 | `GET /api/ai/sessions/count` | 查询活跃会话数 |
+| `GET /api/ai/trace` | 最近 Agent Trace 摘要列表（按时间倒序，limit 上限 100） |
+| `GET /api/ai/trace/{traceId}` | 某条 Trace 的完整时间线（Redis List，按时间升序） |
 
 ---
 
@@ -597,6 +642,7 @@ platform:
       compression-threshold: 0.8
       keep-recent-messages: 3
       max-message-content-length: 4000
+      use-llm-summary: true
 ```
 
 | 配置项 | 默认值 | 说明 |
@@ -605,29 +651,44 @@ platform:
 | `platform.ai.call.timeout-seconds` | 60 | 单次调用超时 |
 | `platform.ai.call.max-retries` | 2 | 失败重试次数 |
 | `platform.ai.context.max-tokens` | 8000 | 上下文 Token 上限 |
-| `platform.ai.context.compression-threshold` | 0.8 | 压缩触发阈值 |
-| `platform.ai.context.keep-recent-messages` | 3 | 压缩时保留最近消息数 |
+| `platform.ai.context.max-messages` | 50 | 上下文消息数量上限 |
+| `platform.ai.context.compression-threshold` | 0.8 | 压缩触发阈值（80% × maxTokens） |
+| `platform.ai.context.keep-recent-messages` | 3 | 压缩时保留最近原始消息数 |
+| `platform.ai.context.max-message-content-length` | 4000 | 单条消息最大字符长度（超过自动截断） |
+| `platform.ai.context.use-llm-summary` | true | Smart 压缩是否优先用 LLM 生成结构化摘要（30s 超时，失败回退规则提取） |
 
 ### 14.4 系统提示词
 
 系统提示词文件位于 `playwright-platform-server/src/main/resources/AGENT.md`，定义了：
 
 - Agent 角色（测试平台智能助手）
-- 输出格式规范（JSON Schema）
+- **输出格式**：LLM 必须只输出 `sections` 结构化数组（heading/paragraph/list/code/quote/table 六种块类型），不再输出 response 纯文本
 - 故障详情结构（FaultDetail）
 - 约束规则（安全、格式、行为边界）
-- Few-shot 示例
+- 3 个 Few-shot 示例（含 table 示例）
+- 禁止普通文本中用 `|` 作分隔符，禁止输出 markdown 表格语法
 
 修改 `AGENT.md` 后重启后端即可生效。
 
-### 14.5 Skills 技能
+### 14.5 Skills 技能（按需加载）
 
-Agent 加载两个 Skills 技能文档：
+Agent 启动时由 `SkillIndexLoader` 扫描 `resources/skills/*/SKILL.md` 的 YAML frontmatter（`name` + `description`），生成技能索引追加到系统提示词。**正文不进入上下文**，LLM 判断需要某技能时调用 `loadSkill(name)` 加载 `SKILL.md` 正文，再按正文指引用 `loadSkillDocument(skillName, docName)` 加载子文档。
 
-| 技能 | 路径 | 内容 |
-|---|---|---|
-| `error-analysis` | `resources/skills/error-analysis/` | 故障诊断方法论、SOP、分类体系 |
-| `business-knowledge` | `resources/skills/business-knowledge/` | 业务知识、技术架构、API 速查 |
+| 技能 | 路径 | 子文档 | 说明 |
+|---|---|---|---|
+| `error-analysis` | `resources/skills/error-analysis/` | `playwright-error.md`、`scheduler-error.md`、`docker-error.md`、`cache-db-error.md`、`llm-agent-error.md` | 平台故障排查 SOP（Playwright/调度/Docker/基础设施/LLM-Agent 五大类） |
+| `business-knowledge` | `resources/skills/business-knowledge/` | `tech-architecture.md`、`data-model.md`、`business-functions.md`、`llm-agent.md` | 业务知识（技术架构、数据模型、业务功能、AI Agent 评测） |
+
+`SKILL.md` frontmatter 示例：
+
+```markdown
+---
+name: error-analysis
+description: 平台故障排查技能。覆盖 Playwright UI 异常、调度冲突、Docker、基础设施、LLM-Agent 评测故障五大类排查 SOP。
+---
+```
+
+新增技能只需在 `resources/skills/` 下新建目录并放入带 frontmatter 的 `SKILL.md`，重启后端即可被索引。
 
 ### 14.6 前端组件
 
@@ -635,11 +696,23 @@ AI 对话前端组件位于 `playwright-platform-web/src/components/ai/`：
 
 | 文件 | 职责 |
 |---|---|
-| `AiAssistantDialog.vue` | 对话框主组件（消息列表、输入框、工具展示） |
-| `ChatMessage.vue` | 单条消息组件 |
-| `ErrorCard.vue` | 故障详情卡片 |
-| `useAiAssistant.ts` | AI 助手 composable（状态管理、SSE 流处理） |
-| `types.ts` | TypeScript 类型定义 |
+| `AiAssistantDialog.vue` | 对话框主组件（消息列表、输入框、工具调用展示、**结构化 sections 渲染**、highlight.js 代码高亮、DOMPurify XSS 消毒、打字机效果 + fade-in 过渡、代码块复制按钮） |
+
+相关支撑文件：
+
+| 文件 | 职责 |
+|---|---|
+| `stores/ai.ts` | AI 对话 Pinia store（消息状态、SSE 流处理、sections 接收、会话管理） |
+| `api/ai.ts` | AI 接口封装（同步/流式对话、会话清理、Trace 查询、ContentBlock 类型定义） |
+| `views/ai/AgentTraceDetailView.vue` | Agent Trace 时间线详情页（侧边栏固定、阶段名称中文化、响应耗时统一秒显示） |
+| `views/event/EventListView.vue` | 调度事件列表（含定时/Agent/手动三种动态列、traceId 筛选、场景名称筛选、列宽自适应） |
+| `utils/space-permissions.ts` | 侧边栏菜单权限（空间审批在日志追踪之上，仅管理员可见） |
+
+前端 AI 渲染三路分支：
+
+1. **流式打字中** → `marked.parse(content)` + `protectTablesAndEscape()` 智能保护表格、转义普通文本 `\|` 防误判 + DOMPurify 消毒
+2. **完成 + 有 sections** → Vue `v-for` 按 type 渲染（h1/h2/h3、p、ul/ol、pre.hljs、blockquote、table）+ fade-in 动画
+3. **完成 + 无 sections** → 降级到 `marked.parse(content)` + DOMPurify 消毒
 
 ---
 

@@ -1,17 +1,90 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { marked } from 'marked'
+import DOMPurify from 'dompurify'
+import hljs from 'highlight.js'
+import 'highlight.js/styles/github-dark.css'
 import { useAiStore, type ChatMessage } from '../../stores/ai'
 import { useSpaceStore } from '../../stores/space'
 import { useAuthStore } from '../../stores/auth'
 import { showAppToast } from '../../utils/ui-feedback'
 
 marked.setOptions({
-  breaks: true,
   gfm: true,
-  headerIds: false,
-  mangle: false,
+  breaks: false,
 })
+
+const TABLE_SEP_RE = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?\s*$/
+
+function isTableSeparator(line: string): boolean {
+  return TABLE_SEP_RE.test(line)
+}
+
+function protectTablesAndEscape(text: string): string {
+  const protectedBlocks: string[] = []
+  let working = text.replace(/```[\s\S]*?```/g, (m) => {
+    const ph = `\u0000CB${protectedBlocks.length}\u0000`
+    protectedBlocks.push(m)
+    return ph
+  })
+  working = working.replace(/`[^`\n]+`/g, (m) => {
+    const ph = `\u0000CI${protectedBlocks.length}\u0000`
+    protectedBlocks.push(m)
+    return ph
+  })
+
+  const lines = working.split('\n')
+  const protectedRanges: Array<{ start: number; end: number }> = []
+
+  for (let i = 0; i < lines.length - 1; i++) {
+    const hasPipe = lines[i].includes('|')
+    const nextIsSep = isTableSeparator(lines[i + 1])
+    if (hasPipe && nextIsSep) {
+      let end = i + 2
+      while (end < lines.length && lines[end].includes('|')) end++
+      protectedRanges.push({ start: i, end })
+      i = end - 1
+    }
+  }
+
+  const inProtected = (idx: number) =>
+    protectedRanges.some(r => idx >= r.start && idx < r.end)
+
+  for (let i = 0; i < lines.length; i++) {
+    if (inProtected(i)) continue
+    if (lines[i].includes('|')) {
+      lines[i] = lines[i].replace(/\|/g, '\\|')
+    }
+  }
+
+  return lines.join('\n').replace(/\u0000(CB|CI)(\d+)\u0000/g, (_, __, idx) => protectedBlocks[Number(idx)])
+}
+
+function sanitize(html: string): string {
+  return DOMPurify.sanitize(html, {
+    ADD_ATTR: ['target'],
+  })
+}
+
+function renderInline(text?: string | null): string {
+  if (!text) return ''
+  try {
+    return sanitize(marked.parseInline(text) as string)
+  } catch {
+    return text
+  }
+}
+
+function renderHighlightedCode(code: string, language?: string | null): string {
+  try {
+    if (language && hljs.getLanguage(language)) {
+      return hljs.highlight(code, { language }).value
+    }
+    return hljs.highlightAuto(code).value
+  } catch {
+    return code
+  }
+}
 
 const aiStore = useAiStore()
 const spaceStore = useSpaceStore()
@@ -19,11 +92,13 @@ const authStore = useAuthStore()
 
 const inputText = ref('')
 const messagesContainerRef = ref<HTMLDivElement | null>(null)
+const copiedCodeBlock = ref<string | null>(null)
+let copiedCodeResetTimer: ReturnType<typeof setTimeout> | null = null
 const sending = computed(() => aiStore.isLoading)
 const messages = computed(() => aiStore.messages)
-const currentSpaceName = computed(() => spaceStore.currentSpace?.name ?? '当前空间')
-const currentUserNickname = computed(() => authStore.user?.nickname ?? authStore.user?.username ?? '用户')
-const currentUserAvatar = computed(() => authStore.user?.avatarUrl ?? null)
+const currentSpaceName = computed<string>(() => spaceStore.currentSpace?.name ?? '当前空间')
+const currentUserNickname = computed<string>(() => authStore.user?.nickname ?? authStore.user?.username ?? '用户')
+const currentUserAvatar = computed<string | undefined>(() => authStore.user?.avatarUrl ?? undefined)
 const avatarLoadError = ref(false)
 const showUserAvatar = computed(() => currentUserAvatar.value && !avatarLoadError.value)
 const lastMessage = computed(() => messages.value[messages.value.length - 1])
@@ -33,31 +108,11 @@ const isStreaming = computed(() => {
 })
 
 const quickActions = computed(() => {
-  const actions: Array<{ label: string; prompt: string }> = []
-
-  if (aiStore.hasTaskContext && aiStore.currentTaskId) {
-    const taskId = aiStore.currentTaskId
-    actions.push({
-      label: `分析当前任务 #${taskId}`,
-      prompt: aiStore.currentSceneId
-        ? `请帮我分析任务 #${taskId} 的错误根因，该任务属于场景 #${aiStore.currentSceneId}`
-        : `请帮我分析任务 #${taskId} 的错误根因`,
-    })
-    actions.push({
-      label: '查看最近失败用例',
-      prompt: `请列出任务 #${taskId} 中失败的用例，并分析每个用例的失败原因`,
-    })
-    actions.push({
-      label: '检查执行日志',
-      prompt: `请分析任务 #${taskId} 的执行阶段日志，提取关键错误信息`,
-    })
-  } else {
-    actions.push({ label: '列出最近任务', prompt: '请列出最近的测试任务' })
-    actions.push({ label: '分析失败任务', prompt: '请分析当前空间最近失败的任务，并给出根因分析' })
-    actions.push({ label: '查看场景列表', prompt: '请列出当前空间的所有测试场景' })
-  }
-
-  return actions
+  return [
+    { label: '平台介绍', prompt: '请介绍一下这个平台的整体架构、技术栈和主要功能' },
+    { label: '列出已有仓库', prompt: '请列出当前空间下所有代码仓库及其状态' },
+    { label: '列出已有场景', prompt: '请列出当前空间下所有测试场景及其执行模式' },
+  ]
 })
 
 async function scrollToBottom() {
@@ -124,37 +179,31 @@ function formatTime(timestamp: number) {
   return `${hours}:${minutes}`
 }
 
-function renderContent(content: string) {
+function renderContent(content: string): string {
+  if (!content) return ''
   try {
-    const codeBlocks: string[] = []
-    let protectedContent = content.replace(/```[\s\S]*?```|`[^`\n]+`/g, (match) => {
-      const placeholder = `\u0000CB${codeBlocks.length}\u0000`
-      codeBlocks.push(match)
-      return placeholder
-    })
-
-    protectedContent = protectedContent
-      .replace(/\n{3,}/g, '\n\n')
-      .replace(/\n(?=\d+[.、)）])/g, '\n\n')
-      .replace(/\n(?=[-*•])/g, '\n\n')
-      .replace(/\n(?=(?:步骤|说明|注意|总结|原因|方案|方法|首先|其次|最后|然后|接着|核心|关键|重要|提示|要点))/g, '\n\n')
-
-    let processed = protectedContent
-      .replace(/([a-zA-Z_][a-zA-Z0-9_.]*(?:\.ts|\.js|\.java|\.sql|\.json|\.yml|\.yaml|\.xml))/g, '`$1`')
-      .replace(/([A-Z][a-zA-Z]+(?:Exception|Error|Timeout))/g, '`$1`')
-      .replace(/\b(locator\.click|locator\.fill|locator|assert|expect|page|browser|context)\b/g, '`$1`')
-      .replace(/\b(getTask|getSceneDetail|getRepository|getTestCase|analyzeLogs|getSystemConfig)\b/g, '`$1`')
-      .replace(/\b(envCount)=\d+\b/g, '`$1`')
-      .replace(/\bstatus:\s*\S+/g, '`$&`')
-      .replace(/\b(PASS|FAIL|ERROR|SKIP|TIMEOUT)\b/g, '`$1`')
-
-    processed = processed.replace(/\u0000CB(\d+)\u0000/g, (_, idx) => codeBlocks[Number(idx)])
-
-    const raw = marked.parse(processed) as string
-    return raw
+    const safe = protectTablesAndEscape(content)
+    const html = marked.parse(safe) as string
+    return sanitize(html)
   } catch {
     return content.replace(/\n/g, '<br>')
   }
+}
+
+function copyCode(code: string, event: MouseEvent) {
+  event.preventDefault()
+  event.stopPropagation()
+  const key = code
+  navigator.clipboard.writeText(code).then(() => {
+    copiedCodeBlock.value = key
+    if (copiedCodeResetTimer) clearTimeout(copiedCodeResetTimer)
+    copiedCodeResetTimer = setTimeout(() => {
+      copiedCodeBlock.value = null
+    }, 2000)
+    showAppToast('代码已复制到剪贴板', 'success')
+  }).catch(() => {
+    showAppToast('复制失败，请手动选择复制', 'error')
+  })
 }
 
 function isToolUsageMessage(msg: ChatMessage) {
@@ -209,7 +258,7 @@ function copyTraceId(traceId?: string) {
           <div class="ai-dialog__title-group">
             <h3 class="ai-dialog__title">智能测试助手</h3>
             <span class="ai-dialog__subtitle">
-              {{ currentUserNickname }} · {{ currentSpaceName }} · AI 驱动
+              {{ currentUserNickname }} · {{ currentSpaceName }}
               <template v-if="aiStore.hasTaskContext">
                 · 分析任务 #{{ aiStore.currentTaskId }}
               </template>
@@ -245,8 +294,7 @@ function copyTraceId(traceId?: string) {
               <path d="M9 15c1 1 2 1.5 3 1.5s2-.5 3-1.5"/>
             </svg>
           </div>
-          <h4>你好，我是你的测试助手</h4>
-          <p>我可以帮你查询任务、分析错误、查看场景信息。试试下面的快捷操作：</p>
+          <h4>你好，有什么我能帮你的吗？</h4>
           <div class="ai-dialog__quick-actions">
             <el-button
               v-for="action in quickActions"
@@ -316,12 +364,60 @@ function copyTraceId(traceId?: string) {
                 <span class="ai-message__time">{{ formatTime(msg.timestamp) }}</span>
               </div>
               <div
-                v-if="msg.content || msg.streaming"
+                v-if="msg.content || msg.streaming || (msg.sections && msg.sections.length > 0)"
                 class="ai-message__body"
-                :class="{ 'ai-message__body--streaming': msg.streaming }"
+                :class="{
+                  'ai-message__body--streaming': msg.streaming,
+                  'ai-message__body--fade-in': !msg.streaming && msg.sections && msg.sections.length > 0,
+                }"
               >
-                <div v-html="renderContent(msg.content)"></div>
-                <span v-if="msg.streaming" class="ai-cursor">|</span>
+                <template v-if="msg.streaming">
+                  <div v-html="renderContent(msg.content)"></div>
+                  <span class="ai-cursor">|</span>
+                </template>
+                <template v-else-if="msg.sections && msg.sections.length > 0">
+                  <template v-for="(block, i) in msg.sections" :key="i">
+                    <h1 v-if="block.type === 'heading' && block.level === 1" class="ai-sec-heading ai-sec-h1">{{ block.text }}</h1>
+                    <h2 v-else-if="block.type === 'heading' && block.level === 2" class="ai-sec-heading ai-sec-h2">{{ block.text }}</h2>
+                    <h3 v-else-if="block.type === 'heading' && block.level === 3" class="ai-sec-heading ai-sec-h3">{{ block.text }}</h3>
+                    <p v-else-if="block.type === 'paragraph'" class="ai-sec-p" v-html="renderInline(block.text)"></p>
+                    <ul v-else-if="block.type === 'list' && !block.ordered" class="ai-sec-ul">
+                      <li v-for="(item, j) in block.items" :key="j" v-html="renderInline(item)"></li>
+                    </ul>
+                    <ol v-else-if="block.type === 'list' && block.ordered" class="ai-sec-ol">
+                      <li v-for="(item, j) in block.items" :key="j" v-html="renderInline(item)"></li>
+                    </ol>
+                    <div v-else-if="block.type === 'code'" class="ai-sec-code-wrap">
+                      <div class="ai-sec-code-header">
+                        <span class="ai-sec-code-lang">{{ block.language || 'text' }}</span>
+                        <button class="ai-sec-copy-btn" type="button" @click="copyCode(block.code || '', $event)">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                          </svg>
+                          {{ (copiedCodeBlock === (block.code || '') + (block.language || '')) ? '已复制' : '复制' }}
+                        </button>
+                      </div>
+                      <pre class="ai-sec-pre"><code :class="block.language ? `language-${block.language}` : ''" v-html="renderHighlightedCode(block.code || '', block.language)"></code></pre>
+                    </div>
+                    <blockquote v-else-if="block.type === 'quote'" class="ai-sec-blockquote" v-html="renderInline(block.text)"></blockquote>
+                    <table v-else-if="block.type === 'table'" class="ai-sec-table">
+                      <thead v-if="block.headers && block.headers.length > 0">
+                        <tr>
+                          <th v-for="(h, j) in block.headers" :key="j" v-html="renderInline(h)"></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr v-for="(row, j) in block.rows" :key="j">
+                          <td v-for="(cell, k) in row" :key="k" v-html="renderInline(cell)"></td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </template>
+                </template>
+                <template v-else>
+                  <div v-html="renderContent(msg.content)"></div>
+                </template>
               </div>
               <div v-else class="ai-message__body ai-message__body--empty">
                 <div class="ai-typing-indicator">
@@ -657,9 +753,10 @@ function copyTraceId(traceId?: string) {
   overflow: visible;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
   max-width: 100%;
   align-items: flex-start !important;
+  padding-top: 1px;
 }
 
 .ai-message--user .ai-message__content {
@@ -679,7 +776,6 @@ function copyTraceId(traceId?: string) {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-bottom: 1px;
 }
 
 .ai-message--user .ai-message__header {
@@ -698,15 +794,14 @@ function copyTraceId(traceId?: string) {
 }
 
 .ai-message__body {
-  padding: 6px 12px;
+  padding: 8px 12px;
   border-radius: 14px;
   font-size: 13px;
-  line-height: 1.6;
+  line-height: 1.65;
   word-break: break-word;
   overflow-wrap: anywhere;
   max-width: 340px;
   box-sizing: border-box;
-  white-space: pre-wrap;
 }
 
 .ai-message__body > div {
@@ -1049,6 +1144,15 @@ function copyTraceId(traceId?: string) {
   position: relative;
 }
 
+.ai-message__body--fade-in {
+  animation: ai-fade-in 0.35s ease-out;
+}
+
+@keyframes ai-fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
 .ai-message__body--empty {
   padding: 8px 12px;
   display: flex;
@@ -1177,5 +1281,144 @@ function copyTraceId(traceId?: string) {
     border-radius: 0;
     border: none;
   }
+}
+
+.ai-message__body .ai-sec-heading {
+  margin: 12px 0 6px;
+  font-weight: 700;
+  line-height: 1.35;
+  color: #0f172a;
+}
+.ai-message__body .ai-sec-h1 { font-size: 16px; }
+.ai-message__body .ai-sec-h2 { font-size: 15px; }
+.ai-message__body .ai-sec-h3 { font-size: 14px; }
+
+.ai-message__body .ai-sec-p {
+  margin: 4px 0;
+  line-height: 1.6;
+  color: #0f172a;
+}
+
+.ai-message__body .ai-sec-p:last-child {
+  margin-bottom: 0;
+}
+
+.ai-message__body .ai-sec-ul,
+.ai-message__body .ai-sec-ol {
+  margin: 6px 0 8px;
+  padding-left: 1.4em;
+  line-height: 1.7;
+}
+.ai-message__body .ai-sec-ul { list-style: disc; }
+.ai-message__body .ai-sec-ol { list-style: decimal; }
+
+.ai-message__body .ai-sec-ul > li,
+.ai-message__body .ai-sec-ol > li {
+  margin: 3px 0;
+  padding-left: 0.3em;
+}
+
+.ai-message__body .ai-sec-ul > li::marker {
+  color: #14b8a6;
+  font-weight: 600;
+}
+
+.ai-message__body .ai-sec-code-wrap {
+  margin: 8px 0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #1e293b;
+}
+
+.ai-message__body .ai-sec-code-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: rgba(0, 0, 0, 0.15);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.ai-message__body .ai-sec-code-lang {
+  font-size: 11px;
+  font-weight: 600;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+}
+
+.ai-message__body .ai-sec-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  line-height: 1;
+  background: rgba(255, 255, 255, 0.08);
+  color: #cbd5e1;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.ai-message__body .ai-sec-copy-btn:hover {
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+}
+
+.ai-message__body .ai-sec-pre {
+  margin: 0;
+  padding: 12px 14px;
+  background: #1e293b;
+  color: #e2e8f0;
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-x: auto;
+  max-width: 100%;
+  box-sizing: border-box;
+  font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+  white-space: pre;
+}
+
+.ai-message__body .ai-sec-blockquote {
+  margin: 8px 0;
+  padding: 8px 12px;
+  border-left: 3px solid #14b8a6;
+  background: rgba(20, 184, 166, 0.06);
+  border-radius: 0 8px 8px 0;
+  color: #475569;
+  line-height: 1.6;
+  font-size: 12.5px;
+}
+
+.ai-message__body .ai-sec-table {
+  width: 100%;
+  max-width: 100%;
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 12.5px;
+  display: block;
+  overflow-x: auto;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 0 0 1px #e2e8f0;
+}
+.ai-message__body .ai-sec-table th,
+.ai-message__body .ai-sec-table td {
+  padding: 7px 10px;
+  border: 1px solid #e2e8f0;
+  text-align: left;
+  line-height: 1.5;
+}
+.ai-message__body .ai-sec-table th {
+  background: #f1f5f9;
+  font-weight: 600;
+  color: #334155;
+  white-space: nowrap;
+}
+.ai-message__body .ai-sec-table tbody tr:nth-child(even) td {
+  background: #f8fafc;
 }
 </style>

@@ -132,4 +132,52 @@ public class ScheduleEventServiceImpl implements ScheduleEventService {
         return FAILURE_CATEGORY_NON_RETRYABLE_CONFIG.equals(failureCategory)
                 || FAILURE_CATEGORY_NON_RETRYABLE_RESOURCE.equals(failureCategory);
     }
+
+    @Override
+    @Transactional
+    public Long createAgentEvent(Long spaceId, String traceId, String sessionId, String userMessage) {
+        ScheduleEventEntity entity = new ScheduleEventEntity();
+        entity.setSpaceId(spaceId);
+        entity.setPlannedFireAt(LocalDateTime.now());
+        entity.setStatus("RUNNING");
+        entity.setScheduleType("AGENT");
+        entity.setTraceId(traceId);
+        entity.setSessionId(sessionId);
+        entity.setUserMessage(userMessage != null && userMessage.length() > 1024
+                ? userMessage.substring(0, 1024) : userMessage);
+        entity.setTriggerReason("AI_AGENT_CHAT");
+        entity.setRetryCount(0);
+        mapper.insert(entity);
+        return entity.getId();
+    }
+
+    @Override
+    @Transactional
+    public void completeAgentEvent(Long eventId, boolean success, String errorMessage) {
+        if (eventId == null) {
+            return;
+        }
+        ScheduleEventEntity entity = mapper.findById(eventId).orElse(null);
+        if (entity == null) {
+            return;
+        }
+        String status = success ? "COMPLETED" : "FAILED";
+        String truncatedError = errorMessage != null && errorMessage.length() > 1024
+                ? errorMessage.substring(0, 1024) : errorMessage;
+        mapper.updateStatus(eventId, status, truncatedError, success ? null : "AGENT_ERROR", LocalDateTime.now());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PageResponse<ScheduleEventEntity> listEventsWithFilter(
+            List<String> statuses, Long spaceId, Long sceneId, String scheduleType, int page, int size) {
+        int normalizedPage = Math.max(page, 1);
+        int normalizedSize = Math.min(Math.max(size, 1), 100);
+        int offset = (normalizedPage - 1) * normalizedSize;
+        return PageResponse.of(
+                mapper.findEventsPageWithFilter(spaceId, sceneId, statuses, scheduleType, normalizedSize, offset),
+                mapper.countEventsWithFilter(spaceId, sceneId, statuses, scheduleType),
+                normalizedPage,
+                normalizedSize);
+    }
 }

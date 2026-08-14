@@ -851,5 +851,21 @@ class SceneServiceImplTest {
         public PageResponse<ScheduleEventEntity> listIssueEvents(List<String> statuses, Long spaceId, Long sceneId, int page, int size) {
             return PageResponse.of(retryableFailedEvents, retryableFailedEvents.size(), page, size);
         }
+
+        @Override
+        public Long createAgentEvent(Long spaceId, String traceId, String sessionId, String userMessage) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void completeAgentEvent(Long eventId, boolean success, String errorMessage) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public PageResponse<ScheduleEventEntity> listEventsWithFilter(
+                List<String> statuses, Long spaceId, Long sceneId, String scheduleType, int page, int size) {
+            throw new UnsupportedOperationException();
+        }
     }
 }

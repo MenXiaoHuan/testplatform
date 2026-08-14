@@ -8,15 +8,19 @@ import type {
 
 export const listScheduleEvents = async ({
   spaceId,
-  statusCsv = 'FAILED,ABANDONED',
+  scheduleType,
   sceneId,
+  sceneName,
+  traceId,
   page = 1,
   limit = 20,
 }: ScheduleEventListQuery & { spaceId: number }) => {
   return get<ScheduleEventPageResult>(`/spaces/${spaceId}/schedule-events`, {
     params: {
-      status: statusCsv,
+      scheduleType: scheduleType && scheduleType.trim() ? scheduleType : undefined,
       sceneId: typeof sceneId === 'number' ? sceneId : undefined,
+      sceneName: sceneName && sceneName.trim() ? sceneName : undefined,
+      traceId: traceId && traceId.trim() ? traceId : undefined,
       page,
       limit,
     },

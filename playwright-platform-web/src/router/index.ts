@@ -44,8 +44,14 @@ const router = createRouter({
     },
     {
       path: '/spaces/:spaceId/schedule-events',
-      component: () => import('../views/scene/ScheduleEventListView.vue'),
+      component: () => import('../views/event/EventListView.vue'),
       meta: { title: '调度事件', requiresAuth: true },
+    },
+    {
+      path: '/ai/trace/:traceId',
+      name: 'agent-trace-detail',
+      component: () => import('../views/ai/AgentTraceDetailView.vue'),
+      meta: { title: 'Agent Trace 时间线', requiresAuth: true },
     },
     {
       path: '/spaces/:spaceId/scenes/:sceneId/tasks',

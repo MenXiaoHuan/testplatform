@@ -70,7 +70,9 @@ platform:
       max-tokens: ${PLATFORM_AI_CONTEXT_MAX_TOKENS:8000}
       max-messages: ${PLATFORM_AI_CONTEXT_MAX_MESSAGES:50}
       compression-threshold: ${PLATFORM_AI_CONTEXT_COMPRESSION_THRESHOLD:0.8}
-      keep-recent-messages: ${PLATFORM_AI_CONTEXT_KEEP_RECENT:10}
+      keep-recent-messages: ${PLATFORM_AI_CONTEXT_KEEP_RECENT:3}
+      max-message-content-length: ${PLATFORM_AI_CONTEXT_MAX_MSG_LENGTH:4000}
+      use-llm-summary: ${PLATFORM_AI_CONTEXT_USE_LLM_SUMMARY:true}
     call:
       timeout-seconds: ${PLATFORM_AI_CALL_TIMEOUT:60}
       max-retries: ${PLATFORM_AI_CALL_MAX_RETRIES:2}

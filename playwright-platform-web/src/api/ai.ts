@@ -1,4 +1,4 @@
-import { del, post } from './http'
+import { del, get, post } from './http'
 
 export interface ChatRequestPayload {
   sessionId?: string
@@ -25,8 +25,20 @@ export interface ChatResponseData {
 
 export type StreamEventHandler = (data: unknown) => void
 
+export interface ContentBlock {
+  type: 'heading' | 'paragraph' | 'list' | 'code' | 'quote' | 'table'
+  level?: number | null
+  text?: string | null
+  items?: string[] | null
+  ordered?: boolean | null
+  language?: string | null
+  code?: string | null
+  headers?: string[] | null
+  rows?: string[][] | null
+}
+
 export interface StreamHandlers {
-  onMeta?: (data: { traceId: string; usedTools: string[]; confidence: string | null; responseType: string }) => void
+  onMeta?: (data: { traceId: string; usedTools: string[]; confidence: string | null; responseType: string; sections?: ContentBlock[] }) => void
   onChunk: (chunk: string) => void
   onComplete?: (data: { traceId: string; processingTime: string; sessionId: string }) => void
   onError?: (error: string) => void
@@ -88,7 +100,7 @@ export const streamChatMessage = (payload: ChatRequestPayload, handlers: StreamH
                   handlers.onMeta?.(parsed as { traceId: string; usedTools: string[]; confidence: string | null; responseType: string })
                   break
                 case 'chunk':
-                  handlers.onChunk(dataStr)
+                  handlers.onChunk(typeof parsed === 'string' ? parsed : dataStr)
                   break
                 case 'complete':
                   handlers.onComplete?.(parsed as { traceId: string; processingTime: string; sessionId: string })
@@ -118,4 +130,32 @@ export const streamChatMessage = (payload: ChatRequestPayload, handlers: StreamH
 
 export const clearChatSession = async (sessionId: string) => {
   return del(`/ai/session/${sessionId}`)
+}
+
+/** 单条 trace 日志条目，对应后端 AgentTraceLogService.TraceLogEntry。 */
+export interface TraceLogEntry {
+  id: string
+  traceId: string
+  timestamp: string
+  level: string
+  stage: string
+  message: string
+  metadata: Record<string, unknown>
+}
+
+/** trace 摘要，对应后端 AgentTraceLogService.TraceSummary。 */
+export interface TraceSummary {
+  traceId: string
+  entryCount: number
+  lastUpdatedAt: string
+}
+
+/** 拉取某条 trace 的完整时间线（所有日志条目按时间升序）。 */
+export const getTrace = async (traceId: string) => {
+  return get<TraceLogEntry[]>(`/ai/trace/${encodeURIComponent(traceId)}`)
+}
+
+/** 拉取最近的 trace 摘要列表（按时间倒序）。 */
+export const listRecentTraces = async (limit = 20) => {
+  return get<TraceSummary[]>('/ai/trace', { params: { limit } })
 }

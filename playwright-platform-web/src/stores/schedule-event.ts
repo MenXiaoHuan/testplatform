@@ -5,6 +5,7 @@ import type {
   ScheduleEventIssueRecord,
   ScheduleEventRetryRequest,
   ScheduleEventRetryResult,
+  ScheduleEventType,
 } from '../types/schedule-event'
 
 export const useScheduleEventStore = defineStore('schedule-event', {
@@ -16,8 +17,10 @@ export const useScheduleEventStore = defineStore('schedule-event', {
     size: 20,
     total: 0,
     totalPages: 0,
-    statusCsv: 'FAILED,ABANDONED',
+    scheduleType: 'AGENT' as ScheduleEventType,
     sceneId: null as number | null,
+    sceneName: '' as string,
+    traceId: '' as string,
   }),
   actions: {
     async fetchAll(page?: number, size?: number) {
@@ -28,8 +31,10 @@ export const useScheduleEventStore = defineStore('schedule-event', {
       try {
         const response = await listScheduleEvents({
           spaceId,
-          statusCsv: this.statusCsv,
+          scheduleType: this.scheduleType,
           sceneId: this.sceneId,
+          sceneName: this.sceneName,
+          traceId: this.traceId,
           page: currentPage,
           limit: currentSize,
         })
@@ -42,12 +47,20 @@ export const useScheduleEventStore = defineStore('schedule-event', {
         this.loading = false
       }
     },
-    setStatusFilter(statusCsv: string) {
-      this.statusCsv = statusCsv.trim() || 'FAILED,ABANDONED'
+    setScheduleTypeFilter(scheduleType: ScheduleEventType) {
+      this.scheduleType = scheduleType
       this.page = 1
     },
     setSceneIdFilter(sceneId: number | null) {
       this.sceneId = typeof sceneId === 'number' && Number.isFinite(sceneId) ? sceneId : null
+      this.page = 1
+    },
+    setSceneNameFilter(sceneName: string) {
+      this.sceneName = sceneName.trim()
+      this.page = 1
+    },
+    setTraceIdFilter(traceId: string) {
+      this.traceId = traceId.trim()
       this.page = 1
     },
     setPage(page: number) {

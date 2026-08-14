@@ -307,10 +307,18 @@ async function handleSizeChange(size: number) {
           </el-tooltip>
         </template>
       </el-table-column>
-      <el-table-column prop="name" label="场景名称" min-width="200" />
+      <el-table-column label="场景名称" min-width="200">
+        <template #default="{ row }">
+          <el-tooltip :content="row.name" placement="top" :show-after="300" effect="dark">
+            <span class="cell-tooltip">{{ row.name }}</span>
+          </el-tooltip>
+        </template>
+      </el-table-column>
       <el-table-column label="所属仓库" min-width="200">
         <template #default="{ row }">
-          <span>{{ repositoryName(row) }}</span>
+          <el-tooltip :content="repositoryName(row)" placement="top" :show-after="300" effect="dark">
+            <span class="cell-tooltip">{{ repositoryName(row) }}</span>
+          </el-tooltip>
         </template>
       </el-table-column>
       <el-table-column label="执行模式" width="140">
@@ -414,6 +422,15 @@ async function handleSizeChange(size: number) {
 
 .table-action-trigger {
   display: inline-flex;
+}
+
+.cell-tooltip {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
 }
 
 .table-actions :deep(.el-button + .el-button) {

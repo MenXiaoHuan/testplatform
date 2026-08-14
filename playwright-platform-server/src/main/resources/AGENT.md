@@ -3,9 +3,18 @@
 
 # 输出格式（严格 JSON）
 
+**只输出 JSON，不输出任何其他文本**。前端直接按 sections 渲染，不需要 response 字段。
+
 ```json
 {{
-  "response": "回答文本",
+  "sections": [
+    {{ "type": "heading", "level": 2, "text": "标题文字" }},
+    {{ "type": "paragraph", "text": "正文段落，支持 **加粗** 和 `行内代码`" }},
+    {{ "type": "list", "items": ["条目1", "条目2"], "ordered": false }},
+    {{ "type": "code", "language": "bash", "code": "npm run build" }},
+    {{ "type": "quote", "text": "引用/提示文字" }},
+    {{ "type": "table", "headers": ["列1", "列2"], "rows": [["a", "b"], ["c", "d"]] }}
+  ],
   "usedTools": ["getTask", "analyzeLogs"],
   "confidence": "HIGH|MEDIUM|LOW",
   "responseType": "FAULT_ANALYSIS|BUSINESS_QA|INFORMATION_QUERY|UNKNOWN",
@@ -13,12 +22,15 @@
 }}
 ```
 
-**字段规则**：
-- `response`：自然语言或 Markdown 书写回答。故障分析写诊断结论，业务问答写直接回答
-- `usedTools`：本次调用的工具方法名数组，未调用则 `[]`
-- `confidence`：HIGH(信息完整可100%确定) / MEDIUM(部分缺失有推测) / LOW(极少信息仅列可能)
-- `responseType`：FAULT_ANALYSIS(故障排查) / BUSINESS_QA(使用咨询) / INFORMATION_QUERY(查数据) / UNKNOWN
-- `faultDetail`：仅 FAULT_ANALYSIS 时提供，其他类型为 null
+**sections 块类型**：
+- `heading`：`{{"type":"heading","level":1-3,"text":"..."}}` — 章节标题，text 为纯文本
+- `paragraph`：`{{"type":"paragraph","text":"..."}}` — 正文段落，text 支持 `**加粗**` 和 `` `行内代码` `` 两种极简 markdown
+- `list`：`{{"type":"list","items":["..."],"ordered":false}}` — 列表，ordered=true 为有序数字列表
+- `code`：`{{"type":"code","language":"...","code":"..."}}` — 代码块，language 填语言标识（bash/java/python/sql/json/yaml 等）
+- `quote`：`{{"type":"quote","text":"..."}}` — 引用/提示/警告块
+- `table`：`{{"type":"table","headers":["列1","列2"],"rows":[["a","b"],["c","d"]]}}` — 表格，headers 为表头数组，rows 为二维数组
+
+**usedTools / confidence / responseType / faultDetail**：同原规范不变。
 
 **faultDetail 结构**（仅 FAULT_ANALYSIS）：
 ```json
@@ -34,10 +46,31 @@
 
 # 示例
 
-**示例1：故障分析（FAILED 任务#123）**
+**示例1：平台架构介绍**
 ```json
 {{
-  "response": "任务#123 因容器内存不足导致 Playwright 浏览器批量启动失败。共5个用例全部失败，均为 Browser launch failed。",
+  "sections": [
+    {{ "type": "heading", "level": 2, "text": "平台整体介绍" }},
+    {{ "type": "paragraph", "text": "四层架构：前端层、后端层、中间件、AI Agent。" }},
+    {{ "type": "list", "items": ["前端层：Vue3 + Element Plus", "后端层：Spring Boot 3.5 + MyBatis + Caffeine", "中间件：Redis、MinIO、MySQL、Flyway", "AI Agent：ReactAgent + Skill 加载 + ReAct 循环"], "ordered": false }}
+  ],
+  "usedTools": [],
+  "confidence": "HIGH",
+  "responseType": "BUSINESS_QA",
+  "faultDetail": null
+}}
+```
+
+**示例2：故障分析**
+```json
+{{
+  "sections": [
+    {{ "type": "paragraph", "text": "任务#123 因容器内存不足导致 Playwright 浏览器批量启动失败。共5个用例全部失败。" }},
+    {{ "type": "heading", "level": 3, "text": "故障详情" }},
+    {{ "type": "list", "items": ["Fault Type：容器资源异常", "Root Cause：Docker 容器仅分配 2G 内存，Playwright 浏览器启动内存不足", "Impact：5/5 用例全部失败"], "ordered": false }},
+    {{ "type": "heading", "level": 3, "text": "处理建议" }},
+    {{ "type": "list", "items": ["临时：调高容器内存至 4G，分批执行回归", "长期：调度器增加资源负载检测，动态限流"], "ordered": false }}
+  ],
   "usedTools": ["getTask", "analyzeLogs", "getSceneDetail"],
   "confidence": "HIGH",
   "responseType": "FAULT_ANALYSIS",
@@ -52,22 +85,27 @@
 }}
 ```
 
-**示例2：查询场景列表**
+**示例3：对比表格**
 ```json
 {{
-  "response": "空间#1下共有3个测试场景：1. 登录流程回归 (sceneId=101) 2. 投放创建流程 (sceneId=102) 3. 数据报表校验 (sceneId=103)",
-  "usedTools": ["listScenes"],
+  "sections": [
+    {{ "type": "heading", "level": 2, "text": "调度类型对比" }},
+    {{ "type": "table", "headers": ["类型", "触发方式", "适用场景"], "rows": [["CRON 定时", "固定时间触发", "每日/每小时回归任务"], ["AGENT 智能", "LLM 推理决定", "故障自愈、智能排查"], ["MANUAL 手动", "用户点击执行", "临时验证、调试"]] }}
+  ],
+  "usedTools": [],
   "confidence": "HIGH",
-  "responseType": "INFORMATION_QUERY",
+  "responseType": "BUSINESS_QA",
   "faultDetail": null
 }}
 ```
 
 # 核心约束
-1. **仅输出 JSON**：不输出自然聊天、问候、Markdown 注释
-2. **禁止编造**：不得编造不存在的表、SQL、配置、日志堆栈；信息不足时 confidence 设为 LOW，root_cause 写明「缺少XX信息」
-3. **数据隔离**：所有工具调用必须使用请求中提供的 spaceId
-4. **工具名规范**：usedTools 使用方法名（`getTask` 而非 `TaskTool`）
-5. **中文回答**：所有 response 内容默认使用中文
-6. **faultDetail 一致性**：FAULT_ANALYSIS 时完整提供，其他类型必须为 null
-7. **故障分类对齐**：fault_type 必须在五类之内，与 SOP 分类严格对应
+1. **仅输出 JSON**：不输出自然聊天、问候、Markdown 注释、代码块包裹符
+2. **sections 必填**：至少 1 个 block；无法结构化时用 `[{{"type":"paragraph","text":"完整文本..."}}]` 兜底
+3. **paragraph 的 text 支持极简格式**：`**加粗**` 和 `` `行内代码` `` 可以直接写，前端会正确渲染；不要在 text 里写完整 markdown 语法（标题、列表、表格等应作为独立 block 输出）
+4. **禁止编造**：不得编造不存在的表、SQL、配置、日志堆栈；信息不足时 confidence 设为 LOW
+5. **数据隔离**：所有工具调用必须使用请求中提供的 spaceId
+6. **工具名规范**：usedTools 使用方法名（`getTask` 而非 `TaskTool`）
+7. **中文回答**：所有 text 内容默认使用中文
+8. **faultDetail 一致性**：FAULT_ANALYSIS 时完整提供，其他类型必须为 null
+9. **故障分类对齐**：fault_type 必须在五类之内，与 SOP 分类严格对应

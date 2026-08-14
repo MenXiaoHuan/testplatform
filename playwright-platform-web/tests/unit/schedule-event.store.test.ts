@@ -25,16 +25,14 @@ describe('schedule event store', () => {
         {
           id: 7,
           sceneId: 11,
+          sceneName: '测试场景',
+          scheduleType: 'CRON',
           plannedFireAt: '2026-07-02T12:00:00',
           status: 'FAILED',
           retryCount: 1,
-          nextRetryAt: '2026-07-02T12:45:00',
-          lastErrorAt: '2026-07-02T12:44:00',
           triggerReason: 'cron:0 */5 * * * *',
           errorMessage: 'system busy',
           taskId: null,
-          createdAt: '2026-07-02T12:40:00',
-          updatedAt: '2026-07-02T12:44:00',
         },
       ],
       total: 1,
@@ -46,14 +44,16 @@ describe('schedule event store', () => {
     })
 
     const store = useScheduleEventStore()
-    store.setStatusFilter('FAILED,ABANDONED')
+    store.setScheduleTypeFilter('CRON')
     store.setSceneIdFilter(11)
     await store.fetchAll()
 
     expect(listScheduleEvents).toHaveBeenCalledWith({
       spaceId: 7,
-      statusCsv: 'FAILED,ABANDONED',
+      scheduleType: 'CRON',
       sceneId: 11,
+      sceneName: '',
+      traceId: '',
       page: 1,
       limit: 20,
     })

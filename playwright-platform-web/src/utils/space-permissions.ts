@@ -19,12 +19,12 @@ export function getSpaceMenuItems(spaceId: number, role: SpaceRole | null): Spac
     { index: `/spaces/${spaceId}/scenes`, label: '场景管理' },
   ]
 
-  if (hasAtLeastOperatorRole(role)) {
-    items.push({ index: `/spaces/${spaceId}/schedule-events`, label: '调度事件' })
-  }
-
   if (isAdminRole(role)) {
     items.push({ index: `/spaces/${spaceId}/access-requests`, label: '空间审批' })
+  }
+
+  if (hasAtLeastOperatorRole(role)) {
+    items.push({ index: `/spaces/${spaceId}/schedule-events`, label: '日志追踪' })
   }
 
   return items

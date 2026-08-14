@@ -8,7 +8,7 @@ import com.example.platform.scene.dto.ScheduleEventRetryRequest;
 import com.example.platform.scene.service.ScheduleEventAdminService;
 import com.example.platform.space.service.SpaceAuthorizationService;
 import com.example.platform.task.dto.TaskRunResponse;
-import java.util.Arrays;
+
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -33,20 +33,15 @@ public class ScheduleEventController {
     @GetMapping
     public ApiResponse<PageResponse<ScheduleEventIssueResponse>> listIssueEvents(
             @PathVariable Long spaceId,
-            @RequestParam(name = "status", defaultValue = "FAILED,ABANDONED") String statusCsv,
+            @RequestParam(name = "scheduleType", required = false) String scheduleType,
             @RequestParam(name = "sceneId", required = false) Long sceneId,
+            @RequestParam(name = "sceneName", required = false) String sceneNameLike,
+            @RequestParam(name = "traceId", required = false) String traceId,
             @RequestParam(name = "page", defaultValue = "1") int page,
             @RequestParam(name = "limit", defaultValue = "20") int limit) {
         spaceAuthorizationService.requireOperableSpace(spaceId, AuthContextHolder.require());
-        return ApiResponse.ok(adminService.listIssueEvents(
-                Arrays.stream(statusCsv.split(","))
-                        .map(String::trim)
-                        .filter(value -> !value.isBlank())
-                        .toList(),
-                spaceId,
-                sceneId,
-                page,
-                limit));
+        return ApiResponse.ok(adminService.listEventsV2(
+                spaceId, sceneId, scheduleType, sceneNameLike, traceId, page, limit));
     }
 
     @PostMapping("/{eventId}/retry")

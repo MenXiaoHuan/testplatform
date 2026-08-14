@@ -1,5 +1,17 @@
 import { defineStore } from 'pinia'
-import { sendChatMessage, streamChatMessage, clearChatSession, type ChatRequestPayload, type ChatResponseData } from '../api/ai'
+import { streamChatMessage, clearChatSession, type ChatRequestPayload } from '../api/ai'
+
+export interface ContentBlock {
+  type: 'heading' | 'paragraph' | 'list' | 'code' | 'quote' | 'table'
+  level?: number | null
+  text?: string | null
+  items?: string[] | null
+  ordered?: boolean | null
+  language?: string | null
+  code?: string | null
+  headers?: string[] | null
+  rows?: string[][] | null
+}
 
 export interface ChatMessage {
   id: string
@@ -13,6 +25,7 @@ export interface ChatMessage {
   confidence?: string | null
   processingTime?: string
   streaming?: boolean
+  sections?: ContentBlock[]
 }
 
 export const useAiStore = defineStore('ai', {
@@ -89,6 +102,9 @@ export const useAiStore = defineStore('ai', {
               msg.usedTools = data.usedTools
               msg.responseType = data.responseType
               msg.confidence = data.confidence
+              if (data.sections && data.sections.length > 0) {
+                msg.sections = data.sections
+              }
             }
           },
           onChunk: (chunk) => {

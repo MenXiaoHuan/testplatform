@@ -239,5 +239,21 @@ class ScheduleEventServiceImplTest {
             }
             return 0;
         }
+
+        @Override
+        public List<ScheduleEventEntity> findEventsPageWithFilter(
+                Long spaceId, Long sceneId, List<String> statuses, String scheduleType, int limit, int offset) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public long countEventsWithFilter(Long spaceId, Long sceneId, List<String> statuses, String scheduleType) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public int updateStatus(Long id, String status, String errorMessage, String failureCategory, LocalDateTime lastErrorAt) {
+            throw new UnsupportedOperationException();
+        }
     }
 }

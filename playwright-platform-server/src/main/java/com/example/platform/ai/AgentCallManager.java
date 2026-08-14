@@ -41,7 +41,23 @@ public class AgentCallManager {
     }
 
     public <T> CallResult<T> executeWithTimeout(Supplier<T> action, int timeoutSec) {
-        CompletableFuture<T> future = CompletableFuture.supplyAsync(action, executorService);
+        String traceId = AgentTraceContext.getTraceId();
+        CompletableFuture<T> future = CompletableFuture.supplyAsync(() -> {
+            String prev = AgentTraceContext.getTraceId();
+            if (traceId != null) {
+                AgentTraceContext.setTraceId(traceId);
+            }
+            try {
+                return action.get();
+            } finally {
+                if (traceId != null) {
+                    AgentTraceContext.clear();
+                }
+                if (prev != null) {
+                    AgentTraceContext.setTraceId(prev);
+                }
+            }
+        }, executorService);
 
         try {
             T result = future.get(timeoutSec, TimeUnit.SECONDS);

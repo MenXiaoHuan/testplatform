@@ -1,11 +1,18 @@
 import type { PageResult } from './common'
 import type { TaskRecord } from './task'
 
+export type ScheduleEventType = 'CRON' | 'AGENT' | 'MANUAL'
+
 export interface ScheduleEventIssueRecord {
   id: number
-  sceneId: number
+  sceneId: number | null
+  sceneName?: string | null
   plannedFireAt: string
   status: string
+  scheduleType?: ScheduleEventType | string
+  traceId?: string | null
+  sessionId?: string | null
+  userMessage?: string | null
   retryCount: number
   nextRetryAt?: string | null
   lastErrorAt?: string | null
@@ -23,8 +30,10 @@ export interface ScheduleEventRetryRequest {
 }
 
 export interface ScheduleEventListQuery {
-  statusCsv?: string
+  scheduleType?: ScheduleEventType | ''
   sceneId?: number | null
+  sceneName?: string
+  traceId?: string
   page?: number
   limit?: number
 }

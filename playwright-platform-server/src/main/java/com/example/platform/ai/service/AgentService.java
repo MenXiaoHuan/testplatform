@@ -8,7 +8,9 @@ import com.example.platform.ai.dto.ChatResponse;
 import com.example.platform.ai.output.ChatAssistantResult;
 import com.example.platform.ai.output.OutputFormatFallbackService;
 import com.example.platform.ai.session.*;
+import com.example.platform.ai.skill.SkillIndexLoader;
 import com.example.platform.ai.tools.ToolErrorFallback;
+import com.example.platform.scene.service.ScheduleEventService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import jakarta.annotation.PostConstruct;
@@ -35,6 +37,8 @@ public class AgentService {
     private final InputSanitizer inputSanitizer;
     private final AgentObservability observability;
     private final AgentTraceLogService traceLogService;
+    private final SkillIndexLoader skillIndexLoader;
+    private final ScheduleEventService scheduleEventService;
     private final String systemPrompt;
 
     public AgentService(
@@ -47,6 +51,8 @@ public class AgentService {
             InputSanitizer inputSanitizer,
             AgentObservability observability,
             AgentTraceLogService traceLogService,
+            SkillIndexLoader skillIndexLoader,
+            ScheduleEventService scheduleEventService,
             SystemPromptConfig systemPromptConfig,
             ResourceLoader resourceLoader,
             @Value("${platform.ai.system-prompt-path:classpath:AGENT.md}") String systemPromptPath) {
@@ -59,6 +65,8 @@ public class AgentService {
         this.inputSanitizer = inputSanitizer;
         this.observability = observability;
         this.traceLogService = traceLogService;
+        this.skillIndexLoader = skillIndexLoader;
+        this.scheduleEventService = scheduleEventService;
         this.systemPrompt = systemPromptConfig.loadSystemPrompt(resourceLoader, systemPromptPath);
     }
 
@@ -90,12 +98,16 @@ public class AgentService {
                         "taskId", request.taskId() != null ? request.taskId() : "none",
                         "sceneId", request.sceneId() != null ? request.sceneId() : "none",
                         "messageLength", userMessage.length(),
-                        "userMessage", truncate(userMessage, 500),
+                        "userMessage", userMessage,
                         "saveHistory", request.saveHistory()
                 ));
 
         observability.recordCall(traceId, sessionId);
         observability.recordConversationStart(traceId, sessionId, request.message());
+
+        Long agentEventId = scheduleEventService.createAgentEvent(
+                request.spaceId(), traceId, sessionId, userMessage);
+        final boolean[] success = {false};
 
         try {
             InputSanitizer.SanitizeResult sanitizeResult = inputSanitizer.sanitize(request.message());
@@ -123,14 +135,15 @@ public class AgentService {
                     session.systemPromptTokens(),
                     session.estimatedTokens());
 
+            Map<String, Object> sessionReadyMeta = new LinkedHashMap<>();
+            sessionReadyMeta.put("sessionId", session.sessionId());
+            sessionReadyMeta.put("messageCount", session.messageCount());
+            sessionReadyMeta.put("estimatedTokens", session.estimatedTokens());
+            sessionReadyMeta.put("hasSystemPrompt", session.systemPrompt() != null && !session.systemPrompt().isBlank());
+            sessionReadyMeta.put("systemPromptTokens", session.systemPromptTokens());
+            sessionReadyMeta.put("messageHistory", formatMessagesForTrace(session.messages()));
             traceLogService.log(traceId, "INFO", "SESSION_READY",
-                    "Chat session loaded", Map.of(
-                            "sessionId", session.sessionId(),
-                            "messageCount", session.messageCount(),
-                            "estimatedTokens", session.estimatedTokens(),
-                            "hasSystemPrompt", session.systemPrompt() != null && !session.systemPrompt().isBlank(),
-                            "systemPromptTokens", session.systemPromptTokens()
-                    ));
+                    "Chat session loaded", sessionReadyMeta);
 
             ContextCompressionService.CompressionResult compressionResult =
                     compressionService.compressIfNeeded(session);
@@ -146,25 +159,34 @@ public class AgentService {
                                 "messageCount", session.messageCount(),
                                 "systemPromptTokens", session.systemPromptTokens()));
             } else {
+                Map<String, Object> ctxMeta = new LinkedHashMap<>();
+                ctxMeta.put("messageCount", session.messageCount());
+                ctxMeta.put("estimatedTokens", session.estimatedTokens());
+                ctxMeta.put("compressed", false);
+                ctxMeta.put("systemPromptTokens", session.systemPromptTokens());
+                ctxMeta.put("sessionId", session.sessionId());
+                ctxMeta.put("messageHistory", formatMessagesForTrace(session.messages()));
                 traceLogService.log(traceId, "INFO", "CONTEXT_READY",
-                        "Session context ready (not compressed)",
-                        Map.of("messageCount", session.messageCount(),
-                                "estimatedTokens", session.estimatedTokens(),
-                                "compressed", false,
-                                "systemPromptTokens", session.systemPromptTokens()));
+                        "Session context ready (not compressed)", ctxMeta);
+            }
+
+            Map<String, Object> systemPromptMeta = new LinkedHashMap<>();
+            systemPromptMeta.put("systemPromptLength", session.systemPrompt() != null ? session.systemPrompt().length() : 0);
+            systemPromptMeta.put("systemPrompt", session.systemPrompt() != null ? session.systemPrompt() : "");
+            systemPromptMeta.put("systemPromptTokens", session.systemPromptTokens());
+            systemPromptMeta.put("contextMessageCount", session.messageCount());
+            systemPromptMeta.put("sessionId", session.sessionId());
+            systemPromptMeta.put("totalEstimatedTokens", session.estimatedTokens());
+            systemPromptMeta.put("messageTokens", session.messageTokens());
+            if (skillIndexLoader != null) {
+                List<String> skillNames = skillIndexLoader.getSkillNames();
+                systemPromptMeta.put("skillCount", skillNames.size());
+                systemPromptMeta.put("skillNames", skillNames);
+                systemPromptMeta.put("skillIndexText", skillIndexLoader.getIndexText());
             }
 
             traceLogService.log(traceId, "INFO", "SYSTEM_PROMPT_LOADED",
-                    "System prompt and context prepared",
-                    Map.of(
-                            "systemPromptLength", session.systemPrompt() != null ? session.systemPrompt().length() : 0,
-                            "systemPromptPreview", truncate(session.systemPrompt(), 300),
-                            "systemPromptTokens", session.systemPromptTokens(),
-                            "contextMessageCount", session.messageCount(),
-                            "sessionId", session.sessionId(),
-                            "totalEstimatedTokens", session.estimatedTokens(),
-                            "messageTokens", session.messageTokens()
-                    ));
+                    "System prompt + skill index prepared", systemPromptMeta);
 
             ChatMessage chatUserMessage = ChatMessage.user(sanitizeResult.sanitizedInput());
             session = sessionManager.appendMessage(sessionId, chatUserMessage);
@@ -206,19 +228,20 @@ public class AgentService {
 
             String prompt = buildPrompt(session, request);
 
+            Map<String, Object> promptBuiltMeta = new LinkedHashMap<>();
+            promptBuiltMeta.put("promptLength", prompt.length());
+            promptBuiltMeta.put("prompt", prompt);
+            promptBuiltMeta.put("historyMessageCount", session.messageCount());
+            promptBuiltMeta.put("currentUserMessage", sanitizeResult.sanitizedInput());
+            promptBuiltMeta.put("sessionId", session.sessionId());
+            promptBuiltMeta.put("estimatedTokens", session.estimatedTokens());
+            promptBuiltMeta.put("systemPromptTokens", session.systemPromptTokens());
+            promptBuiltMeta.put("messageTokens", session.messageTokens());
+            promptBuiltMeta.put("hasSummary", hasStructuredSummary(session));
+            promptBuiltMeta.put("structuredSummary", extractStructuredSummaryText(session));
+            promptBuiltMeta.put("recentMessages", extractRecentMessagesText(session));
             traceLogService.log(traceId, "INFO", "PROMPT_BUILT",
-                    "Full prompt constructed for Agent call",
-                    Map.of(
-                            "promptLength", prompt.length(),
-                            "promptPreview", truncate(prompt, 500),
-                            "historyMessageCount", session.messageCount(),
-                            "currentUserMessage", truncate(sanitizeResult.sanitizedInput(), 200),
-                            "sessionId", session.sessionId(),
-                            "estimatedTokens", session.estimatedTokens(),
-                            "systemPromptTokens", session.systemPromptTokens(),
-                            "messageTokens", session.messageTokens(),
-                            "hasSummary", hasStructuredSummary(session)
-                    ));
+                    "Full prompt constructed for Agent call", promptBuiltMeta);
 
             traceLogService.log(traceId, "INFO", "AGENT_CALL_STARTING",
                     "Starting Agent call with ReAct loop",
@@ -227,6 +250,8 @@ public class AgentService {
                             "maxRetries", callManager.getMaxRetries(),
                             "timeoutSeconds", callManager.getTimeoutSeconds(),
                             "toolCount", 5,
+                            "skillNames", skillIndexLoader != null
+                                    ? String.join(",", skillIndexLoader.getSkillNames()) : "",
                             "loopLimit", 20,
                             "spaceId", request.spaceId() != null ? request.spaceId() : 0,
                             "taskId", request.taskId() != null ? request.taskId() : "none",
@@ -268,7 +293,7 @@ public class AgentService {
                     "Agent call completed successfully",
                     Map.of(
                             "responseLength", responseText != null ? responseText.length() : 0,
-                            "responsePreview", truncate(responseText, 500),
+                            "agentOutput", responseText != null ? responseText : "",
                             "callDurationMs", callResult.durationMs()
                     ));
 
@@ -292,15 +317,11 @@ public class AgentService {
                             "usedTools", result.usedTools() != null ? String.join(",", result.usedTools()) : "",
                             "usedToolsCount", result.usedTools() != null ? result.usedTools().size() : 0,
                             "confidence", result.confidence() != null ? result.confidence() : "UNKNOWN",
-                            "responseLength", result.response() != null ? result.response().length() : 0,
-                            "responsePreview", truncate(result.response(), 300)
+                            "sectionCount", result.sections() != null ? result.sections().size() : 0,
+                            "response", result.deriveResponse()
                     ));
 
-            if (result.response() == null || result.response().isBlank()) {
-                result = new ChatAssistantResult(traceId, responseText, result.usedTools(), result.confidence(), null, null);
-            }
-
-            ChatMessage assistantMessage = ChatMessage.assistant(result.response());
+            ChatMessage assistantMessage = ChatMessage.assistant(result.deriveResponse());
             session = sessionManager.appendMessage(sessionId, assistantMessage);
 
             if (!request.saveHistory()) {
@@ -314,12 +335,13 @@ public class AgentService {
             }
 
             Duration elapsed = Duration.between(startTime, Instant.now());
-            String processingTime = elapsed.toMillis() + "ms";
+            String processingTime = formatDuration(elapsed);
 
+            String responseText = result.deriveResponse();
             log.info("[TRACE:{}] Chat processed: sessionId={}, responseLength={}, time={}, parsingStrategy={}, responseType={}, compressed={}",
                     traceId,
                     sessionId,
-                    result.response() != null ? result.response().length() : 0,
+                    responseText.length(),
                     processingTime,
                     parseResult.strategy(),
                     result.responseType(),
@@ -327,7 +349,7 @@ public class AgentService {
 
             traceLogService.log(traceId, "INFO", "REQUEST_COMPLETED",
                     "Chat request completed",
-                    Map.of("responseLength", result.response() != null ? result.response().length() : 0,
+                    Map.of("responseLength", responseText.length(),
                             "processingTime", processingTime,
                             "parsingStrategy", parseResult.strategy(),
                             "responseType", result.responseType() != null ? result.responseType() : "UNKNOWN",
@@ -337,9 +359,10 @@ public class AgentService {
             observability.recordConversationEnd(traceId, sessionId, elapsed,
                     session.messageCount(), false);
 
+            success[0] = true;
             return new ChatResponse(
                     traceId,
-                    result.response(),
+                    responseText,
                     result.usedTools(),
                     result.confidence(),
                     result.responseType(),
@@ -356,6 +379,8 @@ public class AgentService {
             log.error("[TRACE:{}] Unexpected error in chat: sessionId={}, time={}", traceId, sessionId, elapsed.toMillis(), e);
             observability.recordError(traceId, "UNEXPECTED", e.getMessage());
             return buildErrorResponse(traceId, e, sessionId, false);
+        } finally {
+            scheduleEventService.completeAgentEvent(agentEventId, success[0], success[0] ? null : "chat failed");
         }
     }
 
@@ -381,12 +406,16 @@ public class AgentService {
                         "taskId", request.taskId() != null ? request.taskId() : "none",
                         "sceneId", request.sceneId() != null ? request.sceneId() : "none",
                         "messageLength", userMessage.length(),
-                        "userMessage", truncate(userMessage, 500),
+                        "userMessage", userMessage,
                         "saveHistory", request.saveHistory()
                 ));
 
         observability.recordCall(traceId, sessionId);
         observability.recordConversationStart(traceId, sessionId, request.message());
+
+        Long agentEventId = scheduleEventService.createAgentEvent(
+                request.spaceId(), traceId, sessionId, userMessage);
+        final boolean[] success = {false};
 
         try {
             InputSanitizer.SanitizeResult sanitizeResult = inputSanitizer.sanitize(request.message());
@@ -415,14 +444,15 @@ public class AgentService {
                     session.systemPromptTokens(),
                     session.estimatedTokens());
 
+            Map<String, Object> sessionReadyMeta = new LinkedHashMap<>();
+            sessionReadyMeta.put("sessionId", session.sessionId());
+            sessionReadyMeta.put("messageCount", session.messageCount());
+            sessionReadyMeta.put("estimatedTokens", session.estimatedTokens());
+            sessionReadyMeta.put("hasSystemPrompt", session.systemPrompt() != null && !session.systemPrompt().isBlank());
+            sessionReadyMeta.put("systemPromptTokens", session.systemPromptTokens());
+            sessionReadyMeta.put("messageHistory", formatMessagesForTrace(session.messages()));
             traceLogService.log(traceId, "INFO", "SESSION_READY",
-                    "Chat session loaded (stream)", Map.of(
-                            "sessionId", session.sessionId(),
-                            "messageCount", session.messageCount(),
-                            "estimatedTokens", session.estimatedTokens(),
-                            "hasSystemPrompt", session.systemPrompt() != null && !session.systemPrompt().isBlank(),
-                            "systemPromptTokens", session.systemPromptTokens()
-                    ));
+                    "Chat session loaded (stream)", sessionReadyMeta);
 
             ContextCompressionService.CompressionResult compressionResult =
                     compressionService.compressIfNeeded(session);
@@ -439,26 +469,34 @@ public class AgentService {
                                 "messageCount", session.messageCount(),
                                 "systemPromptTokens", session.systemPromptTokens()));
             } else {
+                Map<String, Object> ctxMeta = new LinkedHashMap<>();
+                ctxMeta.put("messageCount", session.messageCount());
+                ctxMeta.put("estimatedTokens", session.estimatedTokens());
+                ctxMeta.put("compressed", false);
+                ctxMeta.put("systemPromptTokens", session.systemPromptTokens());
+                ctxMeta.put("sessionId", session.sessionId());
+                ctxMeta.put("messageHistory", formatMessagesForTrace(session.messages()));
                 traceLogService.log(traceId, "INFO", "CONTEXT_READY",
-                        "Session context ready (stream, not compressed)",
-                        Map.of("messageCount", session.messageCount(),
-                                "estimatedTokens", session.estimatedTokens(),
-                                "compressed", false,
-                                "systemPromptTokens", session.systemPromptTokens(),
-                                "sessionId", session.sessionId()));
+                        "Session context ready (stream, not compressed)", ctxMeta);
+            }
+
+            Map<String, Object> systemPromptMeta = new LinkedHashMap<>();
+            systemPromptMeta.put("systemPromptLength", session.systemPrompt() != null ? session.systemPrompt().length() : 0);
+            systemPromptMeta.put("systemPrompt", session.systemPrompt() != null ? session.systemPrompt() : "");
+            systemPromptMeta.put("systemPromptTokens", session.systemPromptTokens());
+            systemPromptMeta.put("contextMessageCount", session.messageCount());
+            systemPromptMeta.put("sessionId", session.sessionId());
+            systemPromptMeta.put("totalEstimatedTokens", session.estimatedTokens());
+            systemPromptMeta.put("messageTokens", session.messageTokens());
+            if (skillIndexLoader != null) {
+                List<String> skillNames = skillIndexLoader.getSkillNames();
+                systemPromptMeta.put("skillCount", skillNames.size());
+                systemPromptMeta.put("skillNames", skillNames);
+                systemPromptMeta.put("skillIndexText", skillIndexLoader.getIndexText());
             }
 
             traceLogService.log(traceId, "INFO", "SYSTEM_PROMPT_LOADED",
-                    "System prompt and context prepared (stream)",
-                    Map.of(
-                            "systemPromptLength", session.systemPrompt() != null ? session.systemPrompt().length() : 0,
-                            "systemPromptPreview", truncate(session.systemPrompt(), 300),
-                            "systemPromptTokens", session.systemPromptTokens(),
-                            "contextMessageCount", session.messageCount(),
-                            "sessionId", session.sessionId(),
-                            "totalEstimatedTokens", session.estimatedTokens(),
-                            "messageTokens", session.messageTokens()
-                    ));
+                    "System prompt + skill index prepared (stream)", systemPromptMeta);
 
             ChatMessage chatUserMsg = ChatMessage.user(sanitizeResult.sanitizedInput());
             session = sessionManager.appendMessage(sessionId, chatUserMsg);
@@ -501,19 +539,20 @@ public class AgentService {
 
             String prompt = buildPrompt(session, request);
 
+            Map<String, Object> promptBuiltMetaStream = new LinkedHashMap<>();
+            promptBuiltMetaStream.put("promptLength", prompt.length());
+            promptBuiltMetaStream.put("prompt", prompt);
+            promptBuiltMetaStream.put("historyMessageCount", session.messageCount());
+            promptBuiltMetaStream.put("currentUserMessage", sanitizeResult.sanitizedInput());
+            promptBuiltMetaStream.put("sessionId", session.sessionId());
+            promptBuiltMetaStream.put("estimatedTokens", session.estimatedTokens());
+            promptBuiltMetaStream.put("systemPromptTokens", session.systemPromptTokens());
+            promptBuiltMetaStream.put("messageTokens", session.messageTokens());
+            promptBuiltMetaStream.put("hasSummary", hasStructuredSummary(session));
+            promptBuiltMetaStream.put("structuredSummary", extractStructuredSummaryText(session));
+            promptBuiltMetaStream.put("recentMessages", extractRecentMessagesText(session));
             traceLogService.log(traceId, "INFO", "PROMPT_BUILT",
-                    "Full prompt constructed for Agent call (stream)",
-                    Map.of(
-                            "promptLength", prompt.length(),
-                            "promptPreview", truncate(prompt, 500),
-                            "historyMessageCount", session.messageCount(),
-                            "currentUserMessage", truncate(sanitizeResult.sanitizedInput(), 200),
-                            "sessionId", session.sessionId(),
-                            "estimatedTokens", session.estimatedTokens(),
-                            "systemPromptTokens", session.systemPromptTokens(),
-                            "messageTokens", session.messageTokens(),
-                            "hasSummary", hasStructuredSummary(session)
-                    ));
+                    "Full prompt constructed for Agent call (stream)", promptBuiltMetaStream);
 
             traceLogService.log(traceId, "INFO", "AGENT_CALL_STARTING",
                     "Starting Agent call with ReAct loop (stream)",
@@ -522,6 +561,8 @@ public class AgentService {
                             "maxRetries", callManager.getMaxRetries(),
                             "timeoutSeconds", callManager.getTimeoutSeconds(),
                             "toolCount", 5,
+                            "skillNames", skillIndexLoader != null
+                                    ? String.join(",", skillIndexLoader.getSkillNames()) : "",
                             "loopLimit", 20,
                             "spaceId", request.spaceId() != null ? request.spaceId() : 0,
                             "taskId", request.taskId() != null ? request.taskId() : "none",
@@ -563,16 +604,13 @@ public class AgentService {
                     "Agent call completed successfully (stream)",
                     Map.of(
                             "responseLength", responseText != null ? responseText.length() : 0,
-                            "responsePreview", truncate(responseText, 500),
+                            "agentOutput", responseText != null ? responseText : "",
                             "callDurationMs", callResult.durationMs()
                     ));
 
             OutputFormatFallbackService.ParseResult parseResult =
                     outputFallbackService.parseAgentOutput(responseText);
             ChatAssistantResult result = parseResult.result();
-            if (result.response() == null || result.response().isBlank()) {
-                result = new ChatAssistantResult(traceId, responseText, result.usedTools(), result.confidence(), null, null);
-            }
 
             if (!parseResult.success()) {
                 log.warn("[TRACE:{}] Output parsing used fallback (stream): sessionId={}, strategy={}",
@@ -580,6 +618,8 @@ public class AgentService {
                 traceLogService.log(traceId, "WARN", "OUTPUT_PARSE_FALLBACK",
                         "Output parsing used fallback (stream): " + parseResult.strategy());
             }
+
+            String fullResponse = result.deriveResponse();
 
             traceLogService.log(traceId, "INFO", "OUTPUT_PARSED",
                     "Agent output parsed (stream)",
@@ -589,16 +629,14 @@ public class AgentService {
                             "usedTools", result.usedTools() != null ? String.join(",", result.usedTools()) : "",
                             "usedToolsCount", result.usedTools() != null ? result.usedTools().size() : 0,
                             "confidence", result.confidence() != null ? result.confidence() : "UNKNOWN",
-                            "responseLength", result.response() != null ? result.response().length() : 0,
-                            "responsePreview", truncate(result.response(), 300)
+                            "sectionCount", result.sections() != null ? result.sections().size() : 0
                     ));
 
-            String fullResponse = result.response();
             int totalChars = fullResponse.length();
             int chunkSize = Math.max(1, totalChars / 80);
             int sent = 0;
 
-            callback.onMeta(traceId, result.usedTools(), result.confidence(), result.responseType());
+            callback.onMeta(traceId, result.usedTools(), result.confidence(), result.responseType(), result.sections());
 
             while (sent < totalChars) {
                 int end = Math.min(sent + chunkSize, totalChars);
@@ -623,7 +661,7 @@ public class AgentService {
             }
 
             Duration elapsed = Duration.between(startTime, Instant.now());
-            String processingTime = elapsed.toMillis() + "ms";
+            String processingTime = formatDuration(elapsed);
 
             log.info("[TRACE:{}] Streaming chat processed: sessionId={}, responseLength={}, time={}, parsingStrategy={}, responseType={}, compressed={}",
                     traceId,
@@ -654,6 +692,7 @@ public class AgentService {
             observability.recordConversationEnd(traceId, sessionId, elapsed,
                     session.messageCount(), false);
 
+            success[0] = true;
             return new ChatResponse(
                     traceId,
                     fullResponse,
@@ -676,11 +715,13 @@ public class AgentService {
             observability.recordError(traceId, "UNEXPECTED", e.getMessage());
             callback.onError(e.getMessage());
             return buildErrorResponse(traceId, e, sessionId, false);
+        } finally {
+            scheduleEventService.completeAgentEvent(agentEventId, success[0], success[0] ? null : "stream chat failed");
         }
     }
 
     public interface StreamCallback {
-        void onMeta(String traceId, List<String> usedTools, String confidence, String responseType);
+        void onMeta(String traceId, List<String> usedTools, String confidence, String responseType, List<com.example.platform.ai.output.ContentBlock> sections);
         void onChunk(String chunk);
         void onComplete(String traceId, String processingTime, String sessionId);
         void onError(String error);
@@ -710,7 +751,8 @@ public class AgentService {
                     }
                     String summaryContent = msg.content()
                             .replace("[历史对话摘要]\n", "")
-                            .replace("[历史对话摘要·精简]\n", "");
+                            .replace("[历史对话摘要·精简]\n", "")
+                            .replace("[历史对话摘要·LLM]\n", "");
                     promptBuilder.append(summaryContent).append("\n");
                     firstRecentIdx = i + 1;
                 }
@@ -846,12 +888,68 @@ public class AgentService {
         for (ChatMessage msg : session.messages()) {
             if (msg.isAssistant() && msg.content() != null
                     && (msg.content().startsWith("[历史对话摘要]")
-                        || msg.content().startsWith("[历史对话摘要·精简]"))) {
+                        || msg.content().startsWith("[历史对话摘要·精简]")
+                        || msg.content().startsWith("[历史对话摘要·LLM]"))) {
                 return true;
             }
         }
         return false;
     }
+
+    /**
+     * 提取 session 中第一条「历史对话摘要」消息的完整内容（含 [历史对话摘要] 前缀）。
+     * 没有摘要时返回空串。
+     */
+    private String extractStructuredSummaryText(ChatSession session) {
+        if (session == null || session.messages() == null) {
+            return "";
+        }
+        for (ChatMessage msg : session.messages()) {
+            if (msg.isAssistant() && msg.content() != null
+                    && (msg.content().startsWith("[历史对话摘要]")
+                        || msg.content().startsWith("[历史对话摘要·精简]")
+                        || msg.content().startsWith("[历史对话摘要·LLM]"))) {
+                return msg.content();
+            }
+        }
+        return "";
+    }
+
+    /**
+     * 提取结构化摘要之后的所有「最近对话」原始文本，按 "用户: ... / 助手: ... / [toolName]: ..." 拼接。
+     */
+    private String extractRecentMessagesText(ChatSession session) {
+        if (session == null || session.messages() == null || session.messages().isEmpty()) {
+            return "";
+        }
+        List<ChatMessage> messages = session.messages();
+        int firstRecentIdx = 0;
+        for (int i = 0; i < messages.size(); i++) {
+            ChatMessage msg = messages.get(i);
+            if (msg.isAssistant() && msg.content() != null
+                    && (msg.content().startsWith("[历史对话摘要]")
+                        || msg.content().startsWith("[历史对话摘要·精简]")
+                        || msg.content().startsWith("[历史对话摘要·LLM]"))) {
+                firstRecentIdx = i + 1;
+            }
+        }
+        if (firstRecentIdx >= messages.size()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (int i = firstRecentIdx; i < messages.size(); i++) {
+            ChatMessage msg = messages.get(i);
+            switch (msg.role()) {
+                case "user" -> sb.append("用户: ").append(msg.content()).append("\n");
+                case "assistant" -> sb.append("助手: ").append(msg.content()).append("\n");
+                case "tool" -> sb.append("[").append(msg.toolName()).append("]: ")
+                        .append(msg.content() != null ? msg.content() : "")
+                        .append("\n");
+            }
+        }
+        return sb.toString();
+    }
+
 
     private int countRecentMessages(ChatSession session) {
         if (session == null || session.messages() == null) {
@@ -862,7 +960,8 @@ public class AgentService {
         for (ChatMessage msg : session.messages()) {
             if (msg.isAssistant() && msg.content() != null
                     && (msg.content().startsWith("[历史对话摘要]")
-                        || msg.content().startsWith("[历史对话摘要·精简]"))) {
+                        || msg.content().startsWith("[历史对话摘要·精简]")
+                        || msg.content().startsWith("[历史对话摘要·LLM]"))) {
                 foundSummary = true;
                 continue;
             }
@@ -871,5 +970,30 @@ public class AgentService {
             }
         }
         return count;
+    }
+
+    private String formatMessagesForTrace(List<ChatMessage> messages) {
+        if (messages == null || messages.isEmpty()) {
+            return "(empty)";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (ChatMessage msg : messages) {
+            sb.append("[").append(msg.role()).append("]");
+            if (msg.toolName() != null) {
+                sb.append("(").append(msg.toolName()).append(")");
+            }
+            sb.append(": ").append(msg.content() != null ? msg.content() : "").append("\n");
+        }
+        return sb.toString();
+    }
+
+    private static String formatDuration(Duration d) {
+        long ms = d.toMillis();
+        if (ms < 1000) return ms + "ms";
+        double seconds = ms / 1000.0;
+        if (seconds < 60) return String.format("%.1fs", seconds);
+        long min = (long) seconds / 60;
+        double rem = seconds - min * 60;
+        return String.format("%dm %.1fs", min, rem);
     }
 }

@@ -22,7 +22,8 @@ public class AgentTraceLogService {
     private static final String KEY_TRACE_PREFIX = "agent:trace:";
     private static final String KEY_TRACE_INDEX = "agent:trace:index";
     private static final int MAX_INDEX_SIZE = 10_000;
-    private static final int MAX_METADATA_VALUE_LENGTH = 2000;
+    /** 所有 metadata 字符串值统一截断上限（不再区分 Preview/Full，全部保留原文）。 */
+    private static final int MAX_METADATA_VALUE_LENGTH = 200_000;
 
     private final StringRedisTemplate redis;
     private final ObjectMapper objectMapper;
@@ -72,17 +73,18 @@ public class AgentTraceLogService {
     private Map<String, Object> truncateMetadata(Map<String, Object> metadata) {
         Map<String, Object> truncated = new LinkedHashMap<>();
         for (Map.Entry<String, Object> entry : metadata.entrySet()) {
+            String key = entry.getKey();
             Object value = entry.getValue();
             if (value instanceof String str) {
-                truncated.put(entry.getKey(), truncate(str, MAX_METADATA_VALUE_LENGTH));
+                truncated.put(key, truncate(str, MAX_METADATA_VALUE_LENGTH));
             } else if (value instanceof List<?> list) {
-                if (list.size() > 50) {
-                    truncated.put(entry.getKey(), list.subList(0, 50) + "...(total:" + list.size() + ")");
+                if (list.size() > 200) {
+                    truncated.put(key, list.subList(0, 200) + "...(total:" + list.size() + ")");
                 } else {
-                    truncated.put(entry.getKey(), value);
+                    truncated.put(key, value);
                 }
             } else {
-                truncated.put(entry.getKey(), value);
+                truncated.put(key, value);
             }
         }
         return truncated;

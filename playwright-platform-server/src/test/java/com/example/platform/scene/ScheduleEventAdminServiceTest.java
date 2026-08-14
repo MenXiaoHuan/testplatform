@@ -208,6 +208,22 @@ class ScheduleEventAdminServiceTest {
                 return event;
             });
         }
+
+        @Override
+        public Long createAgentEvent(Long spaceId, String traceId, String sessionId, String userMessage) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void completeAgentEvent(Long eventId, boolean success, String errorMessage) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public PageResponse<ScheduleEventEntity> listEventsWithFilter(
+                List<String> statuses, Long spaceId, Long sceneId, String scheduleType, int page, int size) {
+            throw new UnsupportedOperationException();
+        }
     }
 
     private static final class FakeTaskService implements TaskService {

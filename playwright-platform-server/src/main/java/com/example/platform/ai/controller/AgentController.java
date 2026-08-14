@@ -1,5 +1,6 @@
 package com.example.platform.ai.controller;
 
+import com.example.platform.ai.AgentTraceLogService;
 import com.example.platform.ai.dto.ChatRequest;
 import com.example.platform.ai.dto.ChatResponse;
 import com.example.platform.ai.service.AgentService;
@@ -10,6 +11,7 @@ import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -20,10 +22,12 @@ public class AgentController {
 
     private static final Logger log = LoggerFactory.getLogger(AgentController.class);
     private final AgentService agentService;
+    private final AgentTraceLogService traceLogService;
     private final ExecutorService executorService;
 
-    public AgentController(AgentService agentService) {
+    public AgentController(AgentService agentService, AgentTraceLogService traceLogService) {
         this.agentService = agentService;
+        this.traceLogService = traceLogService;
         this.executorService = Executors.newVirtualThreadPerTaskExecutor();
     }
 
@@ -50,15 +54,31 @@ public class AgentController {
             try {
                 agentService.chatStream(request, new AgentService.StreamCallback() {
                     @Override
-                    public void onMeta(String traceId, java.util.List<String> usedTools, String confidence, String responseType) {
+                    public void onMeta(String traceId, java.util.List<String> usedTools, String confidence, String responseType, java.util.List<com.example.platform.ai.output.ContentBlock> sections) {
                         try {
+                            List<Map<String, Object>> sectionMaps = sections != null
+                                    ? sections.stream().map(s -> {
+                                        java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
+                                        m.put("type", s.type());
+                                        if (s.level() != null) m.put("level", s.level());
+                                        if (s.text() != null) m.put("text", s.text());
+                                        if (s.items() != null) m.put("items", s.items());
+                                        if (s.ordered() != null) m.put("ordered", s.ordered());
+                                        if (s.language() != null) m.put("language", s.language());
+                                        if (s.code() != null) m.put("code", s.code());
+                                        if (s.headers() != null) m.put("headers", s.headers());
+                                        if (s.rows() != null) m.put("rows", s.rows());
+                                        return m;
+                                    }).toList()
+                                    : List.of();
                             emitter.send(SseEmitter.event()
                                     .name("meta")
                                     .data(Map.of(
                                             "traceId", traceId != null ? traceId : "",
                                             "usedTools", usedTools,
                                             "confidence", confidence != null ? confidence : "",
-                                            "responseType", responseType != null ? responseType : "UNKNOWN"
+                                            "responseType", responseType != null ? responseType : "UNKNOWN",
+                                            "sections", sectionMaps
                                     )));
                         } catch (Exception e) {
                             log.error("[TRACE:{}] Failed to send meta event", traceId, e);
@@ -70,7 +90,7 @@ public class AgentController {
                         try {
                             emitter.send(SseEmitter.event()
                                     .name("chunk")
-                                    .data(chunk));
+                                    .data(chunk, MediaType.TEXT_PLAIN));
                         } catch (Exception e) {
                             log.error("Failed to send chunk event", e);
                         }
@@ -140,5 +160,26 @@ public class AgentController {
     public ApiResponse<Map<String, Object>> getActiveSessionCount() {
         long count = agentService.getActiveSessionCount();
         return ApiResponse.ok(Map.of("activeSessions", count));
+    }
+
+    /** 返回最近的 trace 摘要列表（按时间倒序），用于前端调度事件模块里的 Agent 调度事件列表。 */
+    @GetMapping("/trace")
+    public ApiResponse<List<AgentTraceLogService.TraceSummary>> listRecentTraces(
+            @RequestParam(defaultValue = "20") int limit) {
+        int safeLimit = Math.max(1, Math.min(limit, 100));
+        return ApiResponse.ok(traceLogService.queryRecentTraces(safeLimit));
+    }
+
+    /** 返回某条 trace 的完整时间线（所有日志条目按时间升序）。 */
+    @GetMapping("/trace/{traceId}")
+    public ApiResponse<List<AgentTraceLogService.TraceLogEntry>> getTrace(@PathVariable String traceId) {
+        if (traceId == null || traceId.isBlank()) {
+            return ApiResponse.error("BAD_REQUEST", "traceId is required");
+        }
+        List<AgentTraceLogService.TraceLogEntry> entries = traceLogService.queryByTraceId(traceId);
+        if (entries.isEmpty()) {
+            return ApiResponse.error("NOT_FOUND", "trace not found: " + traceId);
+        }
+        return ApiResponse.ok(entries);
     }
 }

@@ -76,6 +76,10 @@ class ScheduleEventControllerTest {
                 11L,
                 LocalDateTime.of(2026, 7, 2, 12, 0),
                 "FAILED",
+                "CRON",
+                null,
+                null,
+                null,
                 1,
                 LocalDateTime.of(2026, 7, 2, 12, 45),
                 LocalDateTime.of(2026, 7, 2, 12, 44),
@@ -84,7 +88,7 @@ class ScheduleEventControllerTest {
                 null,
                 LocalDateTime.of(2026, 7, 2, 12, 40),
                 LocalDateTime.of(2026, 7, 2, 12, 44));
-        Mockito.when(adminService.listIssueEvents(List.of("FAILED", "ABANDONED"), 7L, 11L, 1, 20))
+        Mockito.when(adminService.listEventsWithFilter(List.of("FAILED", "ABANDONED"), 7L, 11L, null, 1, 20))
                 .thenReturn(PageResponse.of(List.of(event), 1, 1, 20));
 
         mockMvc.perform(authenticated(get("/api/spaces/7/schedule-events")

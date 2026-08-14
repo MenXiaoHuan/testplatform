@@ -199,9 +199,27 @@ async function handleSizeChange(size: number) {
           />
         </template>
       </el-table-column>
-      <el-table-column prop="name" label="仓库名称" min-width="200" />
-      <el-table-column prop="gitUrl" label="Git 地址" min-width="280" />
-      <el-table-column prop="defaultBranch" label="默认分支" width="140" />
+      <el-table-column label="仓库名称" min-width="200">
+        <template #default="{ row }">
+          <el-tooltip :content="row.name" placement="top" :show-after="300" effect="dark">
+            <span class="cell-tooltip">{{ row.name }}</span>
+          </el-tooltip>
+        </template>
+      </el-table-column>
+      <el-table-column label="Git 地址" min-width="280">
+        <template #default="{ row }">
+          <el-tooltip :content="row.gitUrl" placement="top" :show-after="300" effect="dark">
+            <span class="cell-tooltip cell-tooltip--mono">{{ row.gitUrl }}</span>
+          </el-tooltip>
+        </template>
+      </el-table-column>
+      <el-table-column label="默认分支" width="140">
+        <template #default="{ row }">
+          <el-tooltip :content="row.defaultBranch" placement="top" :show-after="300" effect="dark">
+            <span class="cell-tooltip cell-tooltip--mono">{{ row.defaultBranch }}</span>
+          </el-tooltip>
+        </template>
+      </el-table-column>
       <el-table-column label="操作" width="220" fixed="right">
         <template #default="{ row }">
           <div class="table-actions">
@@ -318,6 +336,20 @@ async function handleSizeChange(size: number) {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.cell-tooltip {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.cell-tooltip--mono {
+  font-family: 'JetBrains Mono', Consolas, monospace;
+  font-size: 12px;
 }
 
 .table-actions {

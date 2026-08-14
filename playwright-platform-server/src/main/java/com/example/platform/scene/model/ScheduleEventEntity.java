@@ -8,8 +8,12 @@ public class ScheduleEventEntity {
     private Long sceneId;
     private LocalDateTime plannedFireAt;
     private String status;
+    private String scheduleType;
+    private String traceId;
+    private String sessionId;
     private Long taskId;
     private String triggerReason;
+    private String userMessage;
     private String errorMessage;
     private String failureCategory;
     private Integer retryCount;
@@ -28,10 +32,18 @@ public class ScheduleEventEntity {
     public void setPlannedFireAt(LocalDateTime plannedFireAt) { this.plannedFireAt = plannedFireAt; }
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
+    public String getScheduleType() { return scheduleType; }
+    public void setScheduleType(String scheduleType) { this.scheduleType = scheduleType; }
+    public String getTraceId() { return traceId; }
+    public void setTraceId(String traceId) { this.traceId = traceId; }
+    public String getSessionId() { return sessionId; }
+    public void setSessionId(String sessionId) { this.sessionId = sessionId; }
     public Long getTaskId() { return taskId; }
     public void setTaskId(Long taskId) { this.taskId = taskId; }
     public String getTriggerReason() { return triggerReason; }
     public void setTriggerReason(String triggerReason) { this.triggerReason = triggerReason; }
+    public String getUserMessage() { return userMessage; }
+    public void setUserMessage(String userMessage) { this.userMessage = userMessage; }
     public String getErrorMessage() { return errorMessage; }
     public void setErrorMessage(String errorMessage) { this.errorMessage = errorMessage; }
     public String getFailureCategory() { return failureCategory; }
