@@ -13,6 +13,16 @@ import org.springframework.ai.chat.messages.Message;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * 系统提示词 Hook —— 在 ReactAgent 执行前注入系统提示词。
+ *
+ * <p>位置：{@link HookPosition#BEFORE_AGENT}，order=-200 保证最先执行。
+ *
+ * <p>作用：把 {@link com.example.platform.ai.config.SystemPromptConfig} 加载的 AGENT.md 内容
+ * 作为指令消息追加到消息列表末尾，让 LLM 在每次推理前都能看到系统提示词。
+ *
+ * <p>构建器模式 {@link Builder} 便于在 {@code ReactAgentConfig} 中链式构造。
+ */
 @HookPositions(HookPosition.BEFORE_AGENT)
 public class SystemPromptHook extends MessagesAgentHook implements Prioritized {
 

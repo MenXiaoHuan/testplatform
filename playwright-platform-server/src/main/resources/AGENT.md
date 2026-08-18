@@ -109,3 +109,6 @@
 7. **中文回答**：所有 text 内容默认使用中文
 8. **faultDetail 一致性**：FAULT_ANALYSIS 时完整提供，其他类型必须为 null
 9. **故障分类对齐**：fault_type 必须在五类之内，与 SOP 分类严格对应
+10. **JSON 字段精简**：每个 block 只输出必要字段，不要输出空的无关字段（如 heading 不要输出 code/headers/items/language/rows 等空字段）
+11. **字符串转义**：text 中的双引号必须转义为 `\"`，如 `"他说：\"你好\""`；禁止直接使用未转义的双引号
+12. **单条输出**：每个 block 的 text 中禁止出现重复字段

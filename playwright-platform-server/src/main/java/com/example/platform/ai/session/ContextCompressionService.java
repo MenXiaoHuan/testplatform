@@ -15,6 +15,27 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
+/**
+ * 上下文压缩服务 —— 当会话 token 数或消息数超过阈值时，对历史消息做摘要压缩。
+ *
+ * <p>触发条件（满足任一即触发）：
+ * <ul>
+ *   <li>预估 token 数 > {@code maxTokens * compressionThreshold}（默认 0.8）</li>
+ *   <li>消息数 > {@code maxMessages}（默认 50）</li>
+ * </ul>
+ *
+ * <p>压缩策略：
+ * <ul>
+ *   <li>{@link #applySmartCompression} —— 智能压缩：保留最近 N 条原文 + 对更早消息做 LLM 摘要</li>
+ *   <li>{@link #applyAggressiveCompression} —— 激进压缩：当超过 maxTokens 时触发，只保留最近 N 条 user/assistant</li>
+ *   <li>{@link #truncateMessagesToFit} —— 兜底：从最近往前保留到 80% maxTokens</li>
+ * </ul>
+ *
+ * <p>LLM 摘要失败/超时（30s）/未启用时，回退到规则摘要 {@link #generateStructuredSummary}。
+ *
+ * <p>配置项：platform.ai.context.{max-tokens, max-messages, compression-threshold,
+ * keep-recent-messages, max-message-content-length, use-llm-summary}
+ */
 @Service
 public class ContextCompressionService {
 

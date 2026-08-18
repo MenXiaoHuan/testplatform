@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { createTraceShareUrl } from '../../api/task'
 import { useTaskStore } from '../../stores/task'
@@ -269,6 +269,13 @@ function analyzeWithAI() {
   }
   const sceneId = task.value?.sceneId ?? undefined
   aiStore.open(spaceId.value, { taskId, sceneId })
+  const status = task.value?.status ?? ''
+  const prompt = status === 'FAILED' || status === 'TIMEOUT'
+    ? `请分析任务 #${taskId} 的执行结果，帮我找出失败原因并给出修复建议`
+    : `请分析任务 #${taskId} 的执行结果，帮我总结关键发现和改进建议`
+  nextTick(() => {
+    void aiStore.sendMessage(prompt)
+  })
 }
 
 function backToPrevious() {

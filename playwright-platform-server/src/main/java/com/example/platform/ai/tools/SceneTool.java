@@ -11,6 +11,15 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 import java.util.stream.Collectors;
 
+/**
+ * 测试场景工具 —— 让 LLM 列出场景或获取单个场景详情。
+ *
+ * <p>两个 @Tool：
+ * <ul>
+ *   <li>{@link #listScenes} —— 列出当前空间最多 50 个场景，可按 repoId 过滤</li>
+ *   <li>{@link #getSceneDetail} —— 按 ID 获取单个场景全部字段</li>
+ * </ul>
+ */
 @Component
 public class SceneTool {
 

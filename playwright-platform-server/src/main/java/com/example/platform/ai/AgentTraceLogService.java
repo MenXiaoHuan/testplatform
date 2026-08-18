@@ -13,6 +13,24 @@ import java.time.Instant;
 import java.util.*;
 import java.util.stream.Collectors;
 
+/**
+ * Agent 链路追踪日志服务 —— 把每次 Agent 调用的完整执行链路写入 Redis 持久化。
+ *
+ * <p>存储结构：
+ * <ul>
+ *   <li>Redis List {@code agent:trace:{traceId}} —— 该 trace 的所有日志条目（时间升序），TTL 90 天</li>
+ *   <li>Redis ZSet {@code agent:trace:index} —— 所有 traceId 按时间戳排序的索引，便于查询最近 N 条，上限 1 万条</li>
+ * </ul>
+ *
+ * <p>核心 API：
+ * <ul>
+ *   <li>{@link #log} —— 追加一条日志（含 metadata，自动截断到 20 万字符）</li>
+ *   <li>{@link #queryByTraceId} —— 查询某条 trace 的完整时间线</li>
+ *   <li>{@link #queryRecentTraces} —— 查询最近的 trace 摘要列表</li>
+ * </ul>
+ *
+ * <p>使用场景：前端「调度事件列表」、{@link TraceQueryTool}（让 LLM 自查链路）、后端排障。
+ */
 @Service
 public class AgentTraceLogService {
 

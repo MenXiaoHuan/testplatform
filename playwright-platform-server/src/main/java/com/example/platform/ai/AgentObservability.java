@@ -10,6 +10,18 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
+/**
+ * Agent 可观测性组件 —— 在会话维度记录调用次数、错误次数、工具调用、Token 用量。
+ *
+ * <p>核心职责：
+ * <ul>
+ *   <li>记录每次 Agent 调用、错误、工具调用、Token 消耗</li>
+ *   <li>提供全局统计 {@link #getGlobalStats()} 与会话级统计 {@link #getSessionStats(String)}</li>
+ *   <li>会话结束时打印汇总日志并清理内存（{@link #recordConversationEnd}）</li>
+ * </ul>
+ *
+ * <p>线程安全：所有计数器使用 {@link AtomicLong}，所有 Map 使用 {@link ConcurrentHashMap}。
+ */
 @Component
 public class AgentObservability {
 

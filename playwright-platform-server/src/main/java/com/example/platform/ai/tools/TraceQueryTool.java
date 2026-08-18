@@ -11,6 +11,16 @@ import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
 
+/**
+ * Trace 查询工具 —— 让 LLM 自查 Agent 调用链路，便于回答「上次为什么这样」类问题。
+ *
+ * <p>三个 @Tool：
+ * <ul>
+ *   <li>{@link #queryTrace} —— 按 traceId 查询完整时间线，含阶段/级别/耗时摘要</li>
+ *   <li>{@link #listRecentTraces} —— 列出最近 N 条 trace 摘要（默认 10，上限 50）</li>
+ *   <li>{@link #getTraceStats} —— 返回存储统计</li>
+ * </ul>
+ */
 @Component
 public class TraceQueryTool {
 

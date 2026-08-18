@@ -10,6 +10,24 @@ import java.time.Instant;
 import java.util.concurrent.*;
 import java.util.function.Supplier;
 
+/**
+ * Agent 调用管理器 —— 统一封装 Agent/LLM 调用的超时控制、重试策略与线程池。
+ *
+ * <p>核心职责：
+ * <ul>
+ *   <li>{@link #executeWithTimeout(Supplier)} —— 单次调用，超时自动取消并返回失败结果</li>
+ *   <li>{@link #executeWithRetry(Supplier)} —— 带指数退避重试，默认 2 次重试，间隔翻倍</li>
+ *   <li>内部维护一个 4-8 核心线程、60s 空闲回收的线程池，{@link ThreadPoolExecutor.CallerRunsPolicy} 背压</li>
+ *   <li>跨线程透传 {@link AgentTraceContext} 的 traceId，保证链路追踪不丢失</li>
+ * </ul>
+ *
+ * <p>配置项（application.yml 中 platform.ai.call.*）：
+ * <ul>
+ *   <li>timeout-seconds 默认 60s</li>
+ *   <li>max-retries 默认 2</li>
+ *   <li>retry-delay-ms 默认 1000ms，按 attempt 指数增长</li>
+ * </ul>
+ */
 @Component
 public class AgentCallManager {
 

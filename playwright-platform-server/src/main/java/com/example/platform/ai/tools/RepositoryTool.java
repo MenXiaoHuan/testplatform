@@ -11,6 +11,15 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 import java.util.stream.Collectors;
 
+/**
+ * 测试仓库工具 —— 让 LLM 在当前空间内按关键字搜索仓库或按 ID 获取仓库详情。
+ *
+ * <p>两个 @Tool：
+ * <ul>
+ *   <li>{@link #searchRepository} —— 按名称关键字模糊匹配，返回最多 20 条</li>
+ *   <li>{@link #getRepository} —— 按 ID 获取单个仓库</li>
+ * </ul>
+ */
 @Component
 public class RepositoryTool {
 

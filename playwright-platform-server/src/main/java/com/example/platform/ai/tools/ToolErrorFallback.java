@@ -8,6 +8,18 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
+/**
+ * 工具错误兜底服务 —— 在工具调用失败时给出友好反馈，并对工具使用情况做健康度分析。
+ *
+ * <p>核心 API：
+ * <ul>
+ *   <li>{@link #analyzeToolUsage} —— 分析本次对话的工具使用：未知工具、过度调用（>=5 次）</li>
+ *   <li>{@link #getToolErrorFeedback} —— 同一工具连续失败 3 次后给 LLM 更强的引导反馈</li>
+ *   <li>{@link #resetFailureCount} / {@link #resetAllFailures} —— 重置失败计数</li>
+ * </ul>
+ *
+ * <p>失败计数使用 {@link ConcurrentHashMap} + {@link AtomicInteger} 保证线程安全。
+ */
 @Service
 public class ToolErrorFallback {
 

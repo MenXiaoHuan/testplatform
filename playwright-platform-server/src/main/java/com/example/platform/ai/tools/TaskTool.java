@@ -11,6 +11,15 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 import java.util.stream.Collectors;
 
+/**
+ * 测试任务工具 —— 让 LLM 列出任务或获取单个任务详情。
+ *
+ * <p>两个 @Tool：
+ * <ul>
+ *   <li>{@link #listTasks} —— 列出当前空间最多 20 个任务，可按 sceneId 过滤</li>
+ *   <li>{@link #getTask} —— 按 ID 获取单个任务，含状态、结果、阶段日志预览</li>
+ * </ul>
+ */
 @Component
 public class TaskTool {
 

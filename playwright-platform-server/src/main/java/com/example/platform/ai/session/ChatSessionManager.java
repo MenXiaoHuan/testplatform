@@ -13,12 +13,31 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
+/**
+ * 会话管理器 —— 基于 Caffeine 缓存维护会话与终止状态。
+ *
+ * <p>两个缓存：
+ * <ul>
+ *   <li>{@code sessionCache} —— 会话本体，30 分钟过期，上限 1 万条</li>
+ *   <li>{@code terminatedSessions} —— 被主动终止的会话标记，30 分钟过期，用于让 AgentService
+ *       在流式输出循环中检查是否应停止</li>
+ * </ul>
+ *
+ * <p>核心 API：
+ * <ul>
+ *   <li>{@link #getOrCreateSession} —— 获取或创建会话</li>
+ *   <li>{@link #appendMessage} / {@link #appendMessages} —— 追加消息</li>
+ *   <li>{@link #markTerminated} / {@link #isTerminated} —— 会话终止标记与检查</li>
+ *   <li>{@link #clearSession} —— 清空会话</li>
+ * </ul>
+ */
 @Component
 public class ChatSessionManager {
 
     private static final Logger log = LoggerFactory.getLogger(ChatSessionManager.class);
 
     private final Cache<String, ChatSession> sessionCache;
+    private final Cache<String, Boolean> terminatedSessions;
 
     public ChatSessionManager() {
         this.sessionCache = Caffeine.newBuilder()
@@ -27,6 +46,10 @@ public class ChatSessionManager {
                 .removalListener((key, value, cause) -> {
                     log.debug("Session removed: sessionId={}, cause={}", key, cause);
                 })
+                .build();
+        this.terminatedSessions = Caffeine.newBuilder()
+                .expireAfterWrite(30, TimeUnit.MINUTES)
+                .maximumSize(10_000)
                 .build();
     }
 
@@ -116,5 +139,22 @@ public class ChatSessionManager {
 
     public boolean sessionExists(String sessionId) {
         return sessionCache.getIfPresent(sessionId) != null;
+    }
+
+    public void markTerminated(String sessionId) {
+        if (sessionId != null && !sessionId.isBlank()) {
+            terminatedSessions.put(sessionId, Boolean.TRUE);
+            log.info("Session marked as terminated: sessionId={}", sessionId);
+        }
+    }
+
+    public boolean isTerminated(String sessionId) {
+        return sessionId != null && Boolean.TRUE.equals(terminatedSessions.getIfPresent(sessionId));
+    }
+
+    public void clearTerminated(String sessionId) {
+        if (sessionId != null && !sessionId.isBlank()) {
+            terminatedSessions.invalidate(sessionId);
+        }
     }
 }

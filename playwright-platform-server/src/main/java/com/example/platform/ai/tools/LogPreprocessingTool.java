@@ -10,6 +10,11 @@ import org.springframework.stereotype.Component;
 
 import java.util.List;
 
+/**
+ * 日志分析工具 —— 让 LLM 按需拉取某任务的阶段日志和失败用例，提取错误摘要。
+ *
+ * <p>输出：任务状态、结果消息、各阶段日志预览中含 error/fail/exception 的行、失败用例列表（最多 5 条）。
+ */
 @Component
 public class LogPreprocessingTool {
 

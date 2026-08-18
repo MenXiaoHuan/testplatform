@@ -15,6 +15,14 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * 模型调用链路切面 —— 拦截 {@code ChatModel.call(Prompt)} 调用，记录开始/完成/失败三类日志。
+ *
+ * <p>记录内容：模型类名、消息角色列表、首条消息预览、估算输入 token 数、实际 prompt/completion token 数、
+ * 生成文本预览、调用耗时。所有日志写入 {@link AgentTraceLogService}，traceId 来自 {@link AgentTraceContext}。
+ *
+ * <p>token 用量同步给 {@link AgentObservability} 做会话级统计。
+ */
 @Aspect
 @Component
 public class ModelCallTraceAspect {

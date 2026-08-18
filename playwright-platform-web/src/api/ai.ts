@@ -132,6 +132,10 @@ export const clearChatSession = async (sessionId: string) => {
   return del(`/ai/session/${sessionId}`)
 }
 
+export const terminateChatSession = async (sessionId: string) => {
+  return post(`/ai/session/${sessionId}/terminate`)
+}
+
 /** 单条 trace 日志条目，对应后端 AgentTraceLogService.TraceLogEntry。 */
 export interface TraceLogEntry {
   id: string

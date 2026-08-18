@@ -19,6 +19,19 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.support.GenericApplicationContext;
 import org.springframework.retry.support.RetryTemplate;
 
+/**
+ * DeepSeek ChatModel 配置 —— 装配 DeepSeek API、ChatOptions、ToolCallingManager、ChatModel。
+ *
+ * <p>所有 Bean 都加 {@link ConditionalOnMissingBean}，允许外部覆盖。
+ *
+ * <p>关键 Bean：
+ * <ul>
+ *   <li>{@link DeepSeekApi} —— HTTP 客户端，apiKey/baseUrl 来自配置</li>
+ *   <li>{@link DeepSeekChatOptions} —— 模型名与温度</li>
+ *   <li>{@link ToolCallingManager} —— 基于 Spring Bean 解析 @Tool 方法，异常不重抛</li>
+ *   <li>{@link ChatModel} —— 最终的 DeepSeekChatModel，注入上面所有依赖</li>
+ * </ul>
+ */
 @Configuration
 public class DeepSeekChatModelConfig {
 

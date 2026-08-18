@@ -16,6 +16,22 @@ import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+/**
+ * Agent 对话控制器 —— 对外暴露 AI 对话相关的 HTTP 与 SSE 接口。
+ *
+ * <p>接口分组：
+ * <ul>
+ *   <li>{@code POST /api/ai/chat} —— 同步对话（一次性返回完整响应）</li>
+ *   <li>{@code POST /api/ai/chat/stream} —— SSE 流式对话（meta → chunk → complete/error）</li>
+ *   <li>{@code DELETE /api/ai/session/{id}} —— 清空会话</li>
+ *   <li>{@code POST /api/ai/session/{id}/terminate} —— 主动终止会话（标记后端停止发送 chunk）</li>
+ *   <li>{@code GET /api/ai/session/{id}/status} —— 查询会话终止状态</li>
+ *   <li>{@code GET /api/ai/sessions/count} —— 当前活跃会话数</li>
+ *   <li>{@code GET /api/ai/trace} / {@code /api/ai/trace/{traceId}} —— trace 链路查询</li>
+ * </ul>
+ *
+ * <p>SSE 使用虚拟线程池执行，超时 300s。
+ */
 @RestController
 @RequestMapping("/api/ai")
 public class AgentController {
@@ -153,6 +169,24 @@ public class AgentController {
         return ApiResponse.ok(Map.of(
                 "sessionId", sessionId,
                 "status", "cleared"
+        ));
+    }
+
+    @PostMapping("/session/{sessionId}/terminate")
+    public ApiResponse<Map<String, Object>> terminateSession(@PathVariable String sessionId) {
+        agentService.terminateSession(sessionId);
+        return ApiResponse.ok(Map.of(
+                "sessionId", sessionId,
+                "status", "terminated"
+        ));
+    }
+
+    @GetMapping("/session/{sessionId}/status")
+    public ApiResponse<Map<String, Object>> getSessionStatus(@PathVariable String sessionId) {
+        boolean terminated = agentService.isSessionTerminated(sessionId);
+        return ApiResponse.ok(Map.of(
+                "sessionId", sessionId,
+                "terminated", terminated
         ));
     }
 

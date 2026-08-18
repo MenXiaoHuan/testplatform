@@ -13,6 +13,14 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+/**
+ * 工具调用链路切面 —— 拦截所有标注 {@code @Tool} 的方法，记录开始/完成/失败三类日志。
+ *
+ * <p>记录内容：工具名、入参完整文本、返回结果完整文本、调用耗时、异常类型与消息。
+ * 入参和返回结果不在此处截断，由 {@link AgentTraceLogService} 统一在写入 Redis 时按上限截断。
+ *
+ * <p>用途：让 LLM 通过 {@link TraceQueryTool} 自查工具调用链路，也便于后端排障。
+ */
 @Aspect
 @Component
 public class ToolTraceAspect {

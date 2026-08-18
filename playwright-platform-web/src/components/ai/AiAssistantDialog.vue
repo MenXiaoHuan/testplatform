@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import hljs from 'highlight.js'
@@ -104,8 +104,57 @@ const showUserAvatar = computed(() => currentUserAvatar.value && !avatarLoadErro
 const lastMessage = computed(() => messages.value[messages.value.length - 1])
 const isStreaming = computed(() => {
   const last = lastMessage.value
-  return last?.streaming === true
+  return last?.streaming === true && last.content.length > 0
 })
+
+const isThinking = computed(() => {
+  const last = lastMessage.value
+  return aiStore.loading && last?.streaming === true && last.content.length === 0
+})
+
+const transitioning = ref(false)
+let transitionTimer: ReturnType<typeof setTimeout> | null = null
+
+const throttledHtml = ref('')
+let renderRafId: number | null = null
+let pendingContent = ''
+
+function scheduleRender(content: string) {
+  pendingContent = content
+  if (renderRafId !== null) return
+  renderRafId = requestAnimationFrame(() => {
+    renderRafId = null
+    throttledHtml.value = renderContent(pendingContent)
+  })
+}
+
+watch(
+  () => lastMessage.value?.content ?? '',
+  (val) => {
+    if (lastMessage.value?.streaming) {
+      scheduleRender(val ?? '')
+    } else {
+      throttledHtml.value = renderContent(val ?? '')
+    }
+  },
+  { immediate: true },
+)
+
+watch(
+  () => lastMessage.value?.streaming,
+  (streaming, wasStreaming) => {
+    if (wasStreaming === true && streaming === false) {
+      const hasSections = lastMessage.value?.sections && lastMessage.value.sections.length > 0
+      if (hasSections) {
+        transitioning.value = true
+        if (transitionTimer) clearTimeout(transitionTimer)
+        transitionTimer = setTimeout(() => {
+          transitioning.value = false
+        }, 350)
+      }
+    }
+  },
+)
 
 const quickActions = computed(() => {
   return [
@@ -115,16 +164,29 @@ const quickActions = computed(() => {
   ]
 })
 
+let scrollRafId: number | null = null
+let scrollBehavior: ScrollBehavior = 'auto'
+
 async function scrollToBottom() {
   await nextTick()
   if (messagesContainerRef.value) {
-    messagesContainerRef.value.scrollTop = messagesContainerRef.value.scrollHeight
+    const target = messagesContainerRef.value.scrollHeight
+    if (scrollRafId !== null) return
+    scrollRafId = requestAnimationFrame(() => {
+      scrollRafId = null
+      messagesContainerRef.value?.scrollTo({
+        top: target,
+        behavior: scrollBehavior,
+      })
+      scrollBehavior = 'auto'
+    })
   }
 }
 
 watch(
   () => messages.value.length,
   () => {
+    scrollBehavior = 'auto'
     scrollToBottom()
   },
 )
@@ -132,12 +194,23 @@ watch(
 watch(
   () => lastMessage.value?.content?.length,
   () => {
+    if (isStreaming.value) {
+      scrollBehavior = 'smooth'
+    } else {
+      scrollBehavior = 'auto'
+    }
     scrollToBottom()
   },
 )
 
 onMounted(() => {
   scrollToBottom()
+})
+
+onBeforeUnmount(() => {
+  if (transitionTimer) clearTimeout(transitionTimer)
+  if (renderRafId !== null) cancelAnimationFrame(renderRafId)
+  if (scrollRafId !== null) cancelAnimationFrame(scrollRafId)
 })
 
 async function handleSend() {
@@ -368,14 +441,30 @@ function copyTraceId(traceId?: string) {
                 class="ai-message__body"
                 :class="{
                   'ai-message__body--streaming': msg.streaming,
-                  'ai-message__body--fade-in': !msg.streaming && msg.sections && msg.sections.length > 0,
+                  'ai-message__body--transitioning': transitioning,
                 }"
               >
-                <template v-if="msg.streaming">
-                  <div v-html="renderContent(msg.content)"></div>
-                  <span class="ai-cursor">|</span>
-                </template>
-                <template v-else-if="msg.sections && msg.sections.length > 0">
+                <div
+                  v-show="msg.streaming || transitioning"
+                  class="ai-message__layer ai-message__layer--streaming"
+                  :class="{ 'ai-message__layer--fading': !msg.streaming && transitioning }"
+                >
+                  <div v-if="msg.content.length === 0 && msg.streaming" class="ai-thinking-block">
+                    <span class="ai-thinking-block__text">思考中</span>
+                    <span class="ai-thinking-block__dots">
+                      <span></span><span></span><span></span>
+                    </span>
+                  </div>
+                  <template v-else>
+                    <div v-html="throttledHtml"></div>
+                    <span class="ai-cursor" :class="{ 'ai-cursor--fade': !msg.streaming }">|</span>
+                  </template>
+                </div>
+                <div
+                  v-show="(!msg.streaming || transitioning) && msg.sections && msg.sections.length > 0"
+                  class="ai-message__layer ai-message__layer--sections"
+                  :class="{ 'ai-message__layer--entering': transitioning && msg.streaming }"
+                >
                   <template v-for="(block, i) in msg.sections" :key="i">
                     <h1 v-if="block.type === 'heading' && block.level === 1" class="ai-sec-heading ai-sec-h1">{{ block.text }}</h1>
                     <h2 v-else-if="block.type === 'heading' && block.level === 2" class="ai-sec-heading ai-sec-h2">{{ block.text }}</h2>
@@ -414,10 +503,21 @@ function copyTraceId(traceId?: string) {
                       </tbody>
                     </table>
                   </template>
-                </template>
-                <template v-else>
+                </div>
+                <div
+                  v-show="!msg.streaming && !(msg.sections && msg.sections.length > 0)"
+                  class="ai-message__layer"
+                >
                   <div v-html="renderContent(msg.content)"></div>
-                </template>
+                </div>
+              </div>
+              <div v-else-if="msg.terminated" class="ai-message__terminated">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="10"/>
+                  <line x1="15" y1="9" x2="9" y2="15"/>
+                  <line x1="9" y1="9" x2="15" y2="15"/>
+                </svg>
+                <span>已中止生成</span>
               </div>
               <div v-else class="ai-message__body ai-message__body--empty">
                 <div class="ai-typing-indicator">
@@ -462,7 +562,7 @@ function copyTraceId(traceId?: string) {
                 </div>
               </div>
 
-              <div v-if="(!msg.streaming && (isToolUsageMessage(msg) || msg.traceId || msg.processingTime))" class="ai-message__tools">
+              <div v-if="(!msg.streaming && (isToolUsageMessage(msg) || msg.traceId || msg.processingTime))" class="ai-message__tools ai-tools-reveal">
                 <template v-if="isToolUsageMessage(msg)">
                   <el-tag
                     v-for="tool in msg.usedTools"
@@ -514,39 +614,42 @@ function copyTraceId(traceId?: string) {
 
       <footer class="ai-dialog__input-area">
         <div class="ai-dialog__input-wrapper">
-          <textarea
-            v-model="inputText"
-            class="ai-dialog__input"
-            placeholder="输入你的问题，例如：分析任务 #123 的错误根因"
-            :disabled="sending"
-            @keydown="handleKeydown"
-          />
-          <el-button
-            v-if="isStreaming"
-            type="danger"
-            class="ai-dialog__stop"
-            size="small"
-            @click="handleStopStreaming"
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-              <rect x="4" y="4" width="16" height="16" rx="2" ry="2"/>
-            </svg>
-          </el-button>
-          <el-button
-            v-else
-            type="primary"
-            class="ai-dialog__send"
-            :disabled="!inputText.trim() || sending"
-            :loading="sending"
-            @click="handleSend"
-          >
-            <svg v-if="!sending" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="22" y1="2" x2="11" y2="13"/>
-              <polygon points="22 2 15 22 11 13 2 9 22 2"/>
-            </svg>
-          </el-button>
+          <div class="ai-dialog__input-row">
+            <textarea
+              v-model="inputText"
+              class="ai-dialog__input"
+              placeholder="输入你的问题，例如：分析任务 #123 的错误根因"
+              :disabled="sending"
+              @keydown="handleKeydown"
+            />
+          </div>
+          <div class="ai-dialog__input-footer">
+            <span class="ai-dialog__hint">AI 回答基于当前空间数据生成，仅供参考</span>
+            <el-button
+              v-if="isStreaming || isThinking"
+              type="danger"
+              class="ai-dialog__stop"
+              size="small"
+              @click="handleStopStreaming"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                <rect x="4" y="4" width="16" height="16" rx="2" ry="2"/>
+              </svg>
+            </el-button>
+            <el-button
+              v-else
+              type="primary"
+              class="ai-dialog__send"
+              :disabled="!inputText.trim() || sending"
+              @click="handleSend"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="22" y1="2" x2="11" y2="13"/>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+              </svg>
+            </el-button>
+          </div>
         </div>
-        <p class="ai-dialog__hint">AI 回答基于当前空间数据生成，仅供参考</p>
       </footer>
     </div>
   </div>
@@ -569,9 +672,9 @@ function copyTraceId(traceId?: string) {
 }
 
 .ai-dialog {
-  width: 440px;
+  width: 560px;
   max-width: calc(100vw - 48px);
-  height: min(640px, calc(100vh - 48px));
+  height: min(760px, calc(100vh - 48px));
   display: flex;
   flex-direction: column;
   background: #ffffff;
@@ -764,12 +867,12 @@ function copyTraceId(traceId?: string) {
 }
 
 .ai-message--user .ai-message__body {
-  text-align: right;
+  text-align: left;
 }
 
 .ai-message--user .ai-message__body :deep(p),
 .ai-message--user .ai-message__body :deep(li) {
-  text-align: right;
+  text-align: left;
 }
 
 .ai-message__header {
@@ -802,10 +905,30 @@ function copyTraceId(traceId?: string) {
   overflow-wrap: anywhere;
   max-width: 340px;
   box-sizing: border-box;
+  position: relative;
 }
 
-.ai-message__body > div {
+.ai-message__body > .ai-message__layer > div {
   display: contents;
+}
+
+.ai-message__body--streaming > .ai-message__layer--sections {
+  display: none;
+}
+
+.ai-message__body:not(.ai-message__body--streaming):not(.ai-message__body--transitioning) > .ai-message__layer--streaming {
+  display: none;
+}
+
+.ai-message__body--transitioning > .ai-message__layer--sections {
+  position: absolute;
+  inset: 0;
+  padding: 8px 12px;
+  overflow: hidden;
+}
+
+.ai-message__body--transitioning > .ai-message__layer--streaming {
+  opacity: 1;
 }
 
 .ai-message__body :deep(h1),
@@ -814,21 +937,21 @@ function copyTraceId(traceId?: string) {
 .ai-message__body :deep(h4),
 .ai-message__body :deep(h5),
 .ai-message__body :deep(h6) {
-  margin: 14px 0 8px;
+  margin: 12px 0 6px;
   font-weight: 700;
   line-height: 1.35;
   color: #0f172a;
 }
 
-.ai-message__body :deep(h1) { font-size: 18px; }
-.ai-message__body :deep(h2) { font-size: 16px; }
-.ai-message__body :deep(h3) { font-size: 15px; }
+.ai-message__body :deep(h1) { font-size: 16px; }
+.ai-message__body :deep(h2) { font-size: 15px; }
+.ai-message__body :deep(h3) { font-size: 14px; }
 .ai-message__body :deep(h4) { font-size: 14px; }
 .ai-message__body :deep(h5) { font-size: 13px; }
 .ai-message__body :deep(h6) { font-size: 12px; }
 
 .ai-message__body :deep(p) {
-  margin: 0;
+  margin: 4px 0;
   line-height: 1.6;
 }
 
@@ -838,10 +961,10 @@ function copyTraceId(traceId?: string) {
 
 .ai-message__body :deep(ul),
 .ai-message__body :deep(ol) {
-  margin: 8px 0 10px;
+  margin: 6px 0 8px;
   padding-left: 0;
   list-style-position: outside;
-  line-height: 1.75;
+  line-height: 1.7;
 }
 
 .ai-message__body :deep(ul) {
@@ -855,7 +978,7 @@ function copyTraceId(traceId?: string) {
 }
 
 .ai-message__body :deep(li) {
-  margin: 4px 0;
+  margin: 3px 0;
   padding-left: 0.3em;
   line-height: 1.7;
 }
@@ -891,7 +1014,7 @@ function copyTraceId(traceId?: string) {
 }
 
 .ai-message__body :deep(pre) {
-  margin: 10px 0;
+  margin: 8px 0;
   padding: 14px 16px;
   border-radius: 12px;
   background: #1e293b;
@@ -913,13 +1036,13 @@ function copyTraceId(traceId?: string) {
 }
 
 .ai-message__body :deep(blockquote) {
-  margin: 10px 0;
-  padding: 10px 14px;
+  margin: 8px 0;
+  padding: 8px 12px;
   border-left: 3px solid #14b8a6;
   background: rgba(20, 184, 166, 0.06);
-  border-radius: 0 10px 10px 0;
+  border-radius: 0 8px 8px 0;
   color: #475569;
-  line-height: 1.7;
+  line-height: 1.6;
 }
 
 .ai-message__body :deep(a) {
@@ -942,7 +1065,7 @@ function copyTraceId(traceId?: string) {
   width: 100%;
   max-width: 100%;
   border-collapse: collapse;
-  margin: 10px 0;
+  margin: 8px 0;
   font-size: 12.5px;
   display: block;
   overflow-x: auto;
@@ -953,7 +1076,7 @@ function copyTraceId(traceId?: string) {
 
 .ai-message__body :deep(th),
 .ai-message__body :deep(td) {
-  padding: 8px 12px;
+  padding: 7px 10px;
   border: 1px solid #e2e8f0;
   text-align: left;
   line-height: 1.5;
@@ -1001,6 +1124,24 @@ function copyTraceId(traceId?: string) {
   margin-top: 4px;
   overflow: visible;
   flex-shrink: 0;
+}
+
+.ai-tools-reveal > * {
+  opacity: 0;
+  animation: ai-tool-pop 300ms ease-out forwards;
+}
+.ai-tools-reveal > *:nth-child(1) { animation-delay: 200ms; }
+.ai-tools-reveal > *:nth-child(2) { animation-delay: 260ms; }
+.ai-tools-reveal > *:nth-child(3) { animation-delay: 320ms; }
+.ai-tools-reveal > *:nth-child(4) { animation-delay: 380ms; }
+.ai-tools-reveal > *:nth-child(5) { animation-delay: 440ms; }
+.ai-tools-reveal > *:nth-child(6) { animation-delay: 500ms; }
+.ai-tools-reveal > *:nth-child(7) { animation-delay: 560ms; }
+.ai-tools-reveal > *:nth-child(8) { animation-delay: 620ms; }
+
+@keyframes ai-tool-pop {
+  from { opacity: 0; transform: translateY(3px) scale(0.95); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 .ai-message--user .ai-message__tools {
@@ -1144,11 +1285,20 @@ function copyTraceId(traceId?: string) {
   position: relative;
 }
 
-.ai-message__body--fade-in {
-  animation: ai-fade-in 0.35s ease-out;
+.ai-message__body--transitioning .ai-message__layer--streaming {
+  animation: ai-stream-fade-out 350ms ease-out forwards;
 }
 
-@keyframes ai-fade-in {
+.ai-message__body--transitioning .ai-message__layer--sections {
+  animation: ai-section-fade-in 350ms ease-out forwards;
+}
+
+@keyframes ai-stream-fade-out {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+
+@keyframes ai-section-fade-in {
   from { opacity: 0; transform: translateY(4px); }
   to   { opacity: 1; transform: translateY(0); }
 }
@@ -1160,12 +1310,96 @@ function copyTraceId(traceId?: string) {
   min-height: 24px;
 }
 
+.ai-message__terminated {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  margin-top: 4px;
+  background: #fee2e2;
+  color: #b91c1c;
+  font-size: 12px;
+  border-radius: 10px;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.ai-message__terminated svg {
+  flex-shrink: 0;
+}
+
+.ai-message__layer {
+  width: 100%;
+  min-width: 0;
+}
+
 .ai-cursor {
   display: inline-block;
   margin-left: 2px;
   color: #14b8a6;
   font-weight: 700;
   animation: blink 0.8s step-end infinite;
+  transition: opacity 200ms ease;
+}
+
+.ai-cursor--fade {
+  opacity: 0;
+  animation: none;
+}
+
+.ai-thinking-block {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: linear-gradient(135deg, #f0fdfa 0%, #ecfdf5 100%);
+  border-radius: 10px;
+  border: 1px solid #ccfbf1;
+  margin: 4px 0;
+}
+
+.ai-thinking-block__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: #14b8a6;
+  color: #ffffff;
+  animation: ai-thinking-pulse 2s ease-in-out infinite;
+}
+
+.ai-thinking-block__text {
+  font-size: 13px;
+  font-weight: 500;
+  color: #0f766e;
+}
+
+.ai-thinking-block__dots {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.ai-thinking-block__dots span {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #14b8a6;
+  animation: ai-thinking-dots 1.4s infinite;
+}
+
+.ai-thinking-block__dots span:nth-child(2) { animation-delay: 0.2s; }
+.ai-thinking-block__dots span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes ai-thinking-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(0.92); opacity: 0.85; }
+}
+
+@keyframes ai-thinking-dots {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+  30% { transform: translateY(-4px); opacity: 1; }
 }
 
 @keyframes blink {
@@ -1213,60 +1447,112 @@ function copyTraceId(traceId?: string) {
 
 .ai-dialog__input-wrapper {
   display: flex;
-  gap: 8px;
-  align-items: flex-end;
+  flex-direction: column;
+  gap: 0;
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 12px;
+  padding: 8px 8px 6px;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.ai-dialog__input-wrapper:focus-within {
+  border-color: #14b8a6;
+  box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.12);
+}
+
+.ai-dialog__input-row {
+  display: flex;
 }
 
 .ai-dialog__input {
   flex: 1 1 auto;
   resize: none;
-  padding: 10px 14px;
-  border: 1px solid #d1d5db;
-  border-radius: 12px;
-  background: #ffffff;
+  padding: 6px 6px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
   color: #0f172a;
   font-size: 13px;
   line-height: 1.5;
-  min-height: 40px;
+  min-height: 32px;
   max-height: 120px;
   font-family: inherit;
   outline: none;
-  transition: border-color 160ms ease, box-shadow 160ms ease;
+  transition: background-color 160ms ease;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.ai-dialog__input::-webkit-scrollbar {
+  display: none;
 }
 
 .ai-dialog__input::placeholder {
   color: #94a3b8;
 }
 
-.ai-dialog__input:focus {
-  border-color: #14b8a6;
-  box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.12);
+.ai-dialog__input:disabled {
+  cursor: not-allowed;
+}
+
+.ai-dialog__input-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-top: 4px;
+  position: relative;
+  min-height: 32px;
+}
+
+.ai-dialog__hint {
+  font-size: 10px;
+  color: #94a3b8;
+  text-align: center;
+}
+
+.ai-dialog__thinking-indicator {
+  position: absolute;
+  right: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: #14b8a6;
+  font-weight: 500;
+}
+
+.ai-spinner {
+  animation: ai-spin 0.8s linear infinite;
+}
+
+@keyframes ai-spin {
+  to { transform: rotate(360deg); }
 }
 
 .ai-dialog__send {
-  width: 40px;
-  height: 40px;
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 32px;
+  height: 32px;
   padding: 0;
-  border-radius: 12px;
+  border-radius: 8px;
   flex-shrink: 0;
 }
 
 .ai-dialog__stop {
-  width: 40px;
-  height: 40px;
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 32px;
+  height: 32px;
   padding: 0;
-  border-radius: 12px;
+  border-radius: 8px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-}
-
-.ai-dialog__hint {
-  margin: 8px 0 0;
-  font-size: 11px;
-  color: #94a3b8;
-  text-align: center;
 }
 
 @media (max-width: 520px) {

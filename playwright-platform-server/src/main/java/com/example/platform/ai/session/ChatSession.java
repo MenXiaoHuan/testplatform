@@ -4,6 +4,18 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * 对话会话 record —— 不可变，所有变更通过 {@code with*} 方法返回新实例。
+ *
+ * @param sessionId         会话 ID
+ * @param messages          消息列表
+ * @param systemPrompt      系统提示词
+ * @param createdAt         创建时间
+ * @param lastAccessedAt    最近访问时间
+ * @param estimatedTokens   预估 token 数（中文 1.5x、英文 0.25x 估算）
+ *
+ * <p>token 估算见 {@link #estimateTextTokens}，用于触发 {@link ContextCompressionService} 压缩。
+ */
 public record ChatSession(
         String sessionId,
         List<ChatMessage> messages,

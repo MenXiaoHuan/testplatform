@@ -20,6 +20,18 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.ResourceLoader;
 
+/**
+ * ReactAgent 配置 —— 装配智能助手 Agent。
+ *
+ * <p>构建步骤：
+ * <ol>
+ *   <li>从 AGENT.md 加载基础系统提示词</li>
+ *   <li>追加技能索引（仅 name+description，不加载正文，节省 token）</li>
+ *   <li>注册 7 个 @Tool 方法工具（仓库/场景/任务/日志/trace/技能加载）</li>
+ *   <li>设置输出类型为 {@link ChatAssistantResult}（结构化 JSON）</li>
+ *   <li>挂载 {@link SystemPromptHook}（注入系统提示词）和 {@link ModelCallLimitHook}（最多 20 次模型调用）</li>
+ * </ol>
+ */
 @Configuration
 public class ReactAgentConfig {
 

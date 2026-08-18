@@ -4,6 +4,21 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 
 import java.util.List;
 
+/**
+ * Agent 输出结构 —— 模型期望输出的 JSON 顶层结构（对应系统提示词中约定的格式）。
+ *
+ * <p>字段：
+ * <ul>
+ *   <li>{@code traceId}        —— 链路追踪 ID，空则自动生成 UUID</li>
+ *   <li>{@code usedTools}      —— Agent 调用的工具名列表</li>
+ *   <li>{@code confidence}     —— 置信度 LOW/MEDIUM/HIGH</li>
+ *   <li>{@code responseType}   —— 响应类型（ROOT_CAUSE/SUMMARY/UNKNOWN 等）</li>
+ *   <li>{@code faultDetail}   —— 故障诊断详情，仅故障分析类响应非空</li>
+ *   <li>{@code sections}      —— 结构化内容块数组，前端按块渲染</li>
+ * </ul>
+ *
+ * <p>{@link #deriveResponse()} 把 sections 拼成 markdown 纯文本（用于同步接口返回）。
+ */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record ChatAssistantResult(
         String traceId,

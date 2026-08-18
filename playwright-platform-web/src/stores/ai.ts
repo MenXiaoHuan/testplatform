@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { streamChatMessage, clearChatSession, type ChatRequestPayload } from '../api/ai'
+import { streamChatMessage, clearChatSession, terminateChatSession, type ChatRequestPayload } from '../api/ai'
 
 export interface ContentBlock {
   type: 'heading' | 'paragraph' | 'list' | 'code' | 'quote' | 'table'
@@ -25,6 +25,7 @@ export interface ChatMessage {
   confidence?: string | null
   processingTime?: string
   streaming?: boolean
+  terminated?: boolean
   sections?: ContentBlock[]
 }
 
@@ -151,8 +152,12 @@ export const useAiStore = defineStore('ai', {
         const lastMsg = this.messages[this.messages.length - 1]
         if (lastMsg && lastMsg.streaming) {
           lastMsg.streaming = false
+          lastMsg.terminated = true
         }
         this.loading = false
+        if (this.sessionId) {
+          terminateChatSession(this.sessionId).catch(() => {})
+        }
       }
     },
     async clearConversation() {
