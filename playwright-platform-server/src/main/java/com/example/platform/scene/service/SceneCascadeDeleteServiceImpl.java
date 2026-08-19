@@ -16,6 +16,21 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * 场景级联删除服务实现类 —— 场景删除时清理所有关联数据与对象存储文件。
+ *
+ * <p>删除顺序：先删对象存储文件 → 再删数据库记录（制品、阶段日志、用例结果、调度事件、任务、场景）。
+ *
+ * <p>核心职责：
+ * <ul>
+ *   <li>{@link #deleteSceneGraph} —— 级联删除场景及其所有关联数据</li>
+ *   <li>{@link #deleteArtifactObjects} —— 删除制品关联的对象存储文件</li>
+ *   <li>{@link #deleteStageLogObjects} —— 删除阶段日志关联的对象存储文件</li>
+ * </ul>
+ *
+ * <p>依赖：{@link SceneMapper}、{@link ScheduleEventMapper}、{@link SceneScheduleStateMapper}、
+ * {@link com.example.platform.task.mapper.TaskMapper}、{@link ObjectStorageService}。
+ */
 @Service
 public class SceneCascadeDeleteServiceImpl implements SceneCascadeDeleteService {
     private final SceneMapper sceneMapper;
@@ -73,6 +88,7 @@ public class SceneCascadeDeleteServiceImpl implements SceneCascadeDeleteService 
         sceneMapper.deleteById(sceneId);
     }
 
+    /** 删除指定任务 ID 列表关联的制品对象存储文件。 */
     private void deleteArtifactObjects(List<Long> taskIds) {
         if (taskIds.isEmpty()) {
             return;
@@ -85,6 +101,7 @@ public class SceneCascadeDeleteServiceImpl implements SceneCascadeDeleteService 
         }
     }
 
+    /** 删除指定任务 ID 列表关联的阶段日志对象存储文件。 */
     private void deleteStageLogObjects(List<Long> taskIds) {
         if (taskIds.isEmpty()) {
             return;

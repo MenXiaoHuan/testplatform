@@ -6,7 +6,9 @@ import java.util.Optional;
 public interface AuthService {
     LoginResult login(String username, String encryptedPassword);
 
-    LoginResult register(String username, String nickname, String encryptedPassword);
+    LoginResult register(String username, String encryptedPassword);
+
+    LoginUser setupProfile(String sessionId, String nickname);
 
     Optional<AuthSession> findSession(String sessionId);
 
@@ -24,7 +26,8 @@ public interface AuthService {
             String username,
             String nickname,
             String avatarObjectKey,
-            Long lastSpaceId) {
+            Long lastSpaceId,
+            boolean needsSetup) {
     }
 
     record LoginUser(
@@ -32,6 +35,7 @@ public interface AuthService {
             String username,
             String nickname,
             String avatarObjectKey,
-            Long lastSpaceId) {
+            Long lastSpaceId,
+            boolean needsSetup) {
     }
 }

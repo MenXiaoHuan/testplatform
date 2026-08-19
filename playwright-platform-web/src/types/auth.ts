@@ -10,8 +10,11 @@ export interface LoginPayload {
 
 export interface RegisterPayload {
   username: string
-  nickname: string
   encryptedPassword: string
+}
+
+export interface SetupProfilePayload {
+  nickname: string
 }
 
 export interface LoginForm {
@@ -21,7 +24,6 @@ export interface LoginForm {
 
 export interface RegisterForm {
   username: string
-  nickname: string
   password: string
   confirmPassword: string
 }
@@ -36,4 +38,5 @@ export interface AuthUser {
   nickname: string
   avatarUrl: string | null
   lastSpaceId: number | null
+  needsSetup: boolean
 }

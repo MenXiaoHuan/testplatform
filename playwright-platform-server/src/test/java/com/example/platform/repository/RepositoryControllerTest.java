@@ -311,7 +311,8 @@ class RepositoryControllerTest {
                         "平台管理员",
                         "avatars/admin.png",
                         7L,
-                        LocalDateTime.now().plusDays(14))));
+                        LocalDateTime.now().plusDays(14),
+                        false)));
         return builder.cookie(new jakarta.servlet.http.Cookie("platform_session", "session-1"));
     }
 }

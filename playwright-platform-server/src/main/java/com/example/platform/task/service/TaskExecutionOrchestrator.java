@@ -27,11 +27,20 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Coordinates the full task lifecycle after a task has been accepted for execution.
+ * 任务执行编排器 —— 协调任务接受执行后的完整生命周期。
  *
- * <p>This class calls external systems such as Git, shell/Docker runners, the
- * filesystem, and object storage. It must not be wrapped in a single transaction;
- * database mutations are delegated to {@link TaskExecutionMutationService}.
+ * <p>核心职责：
+ * <ul>
+ *   <li>{@link #executeTask()} —— 执行任务的完整流程（准备→安装→测试→归档）</li>
+ *   <li>调用外部系统：Git、Shell/Docker 执行器、文件系统、对象存储</li>
+ *   <li>各阶段日志归档和错误记录</li>
+ *   <li>任务完成后的结果解析和持久化</li>
+ * </ul>
+ *
+ * <p>依赖：{@link TaskMapper}、{@link SceneMapper}、{@link RunnerExecutionService}、
+ *         {@link TaskArtifactArchiveService}、{@link TaskCaseResultParseService}、{@link TaskExecutionMutationService}
+ *
+ * <p>说明：此类涉及外部系统调用，不能用单个事务包裹；数据库变更委托给 {@link TaskExecutionMutationService}。
  */
 final class TaskExecutionOrchestrator {
     private static final Logger log = LoggerFactory.getLogger(TaskExecutionOrchestrator.class);
@@ -77,6 +86,9 @@ final class TaskExecutionOrchestrator {
         this.applicationErrorSummaryService = applicationErrorSummaryService;
     }
 
+/**
+     * 执行任务的完整流程：准备工作区 → 安装依赖 → 运行测试 → 归档结果
+     */
       TaskEntity executeTask(TaskEntity task, TestRepositoryEntity repository, SceneEntity scene) {
           int installStatus = 1;
           int runStatus = 1;

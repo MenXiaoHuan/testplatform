@@ -18,6 +18,20 @@ import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * 任务恢复服务 —— 处理服务重启后的任务状态恢复。
+ *
+ * <p>核心职责：
+ * <ul>
+ *   <li>{@link #recoverOnStartup()} —— 应用启动时自动恢复过期任务</li>
+ *   <li>{@link #recoverStaleTasks()} —— 查找并恢复 QUEUED/RUNNING 状态的任务</li>
+ *   <li>RUNNING 任务标记为 FAILED 或 CANCELED</li>
+ *   <li>QUEUED 且未取消的任务重新派发执行</li>
+ *   <li>刷新关联场景的摘要信息</li>
+ * </ul>
+ *
+ * <p>依赖：{@link TaskMapper}、{@link SceneMapper}、{@link TaskServiceImpl}、{@link DetailCacheService}
+ */
 @Service
 public class TaskRecoveryService {
     private static final Logger log = LoggerFactory.getLogger(TaskRecoveryService.class);

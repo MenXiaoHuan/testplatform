@@ -48,11 +48,24 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.HttpStatus;
 
 /**
- * Application service for task commands and task read models.
+ * 任务服务实现类 —— 编排任务的创建、执行、监控、结果归档全流程。
  *
- * <p>Creation and cancellation are short write transactions. Actual execution is
- * dispatched to {@code taskExecutionExecutor} so web request threads are not
- * blocked by Playwright or artifact archiving work.
+ * <p>核心职责：
+ * <ul>
+ *   <li>{@link #createAndStart()} —— 创建任务并异步启动执行</li>
+ *   <li>{@link #createAndRun()} —— 创建任务并同步执行</li>
+ *   <li>{@link #cancelTask()} —— 取消正在执行的任务</li>
+ *   <li>{@link #list()} —— 分页查询任务列表</li>
+ *   <li>{@link #getDetail()} —— 获取任务详情</li>
+ *   <li>{@link #downloadArtifact()} —— 下载制品文件</li>
+ *   <li>{@link #downloadStageLog()} —— 下载阶段日志</li>
+ * </ul>
+ *
+ * <p>依赖：{@link TaskMapper}、{@link SceneMapper}、{@link RunnerExecutionService}、
+ *         {@link TaskExecutionOrchestrator}、{@link TaskQueryViewService}、{@link DetailCacheService}
+ *
+ * <p>说明：创建和取消操作为短写事务，实际执行通过 {@code taskExecutionExecutor} 异步派发，
+ *         避免阻塞 Web 请求线程。
  */
 @Service
 public class TaskServiceImpl implements TaskService {
@@ -451,6 +464,9 @@ public class TaskServiceImpl implements TaskService {
                 minioEndpoint);
     }
 
+    /**
+     * 创建任务并异步启动执行
+     */
     @Override
     public TaskEntity createAndStart(Long sceneId) {
         TaskEntity createdTask = taskCreationService.createTask(sceneId, "MANUAL", "manual-run", null);
@@ -466,6 +482,9 @@ public class TaskServiceImpl implements TaskService {
         return createAndStart(sceneId);
     }
 
+    /**
+     * 创建任务并立即同步执行
+     */
     @Override
     public TaskEntity createAndRun(Long sceneId) {
         TaskEntity createdTask = taskCreationService.createTask(sceneId, "MANUAL", "manual-run", null);
@@ -494,6 +513,12 @@ public class TaskServiceImpl implements TaskService {
         return taskExecutionOrchestrator.executeTask(task, repository, scene);
     }
 
+    /**
+     * 调度已存在的任务执行（异步）
+     *
+     * @param taskId 任务ID
+     * @param failFastOnReject 当执行器队列已满时是否快速失败
+     */
     public void dispatchExistingTask(Long taskId, boolean failFastOnReject) {
         try {
             taskExecutionExecutor.execute(TaskLogContext.wrap(() -> runCreatedTask(taskId)));
@@ -813,6 +838,9 @@ public class TaskServiceImpl implements TaskService {
                 stageLog.getSize());
     }
 
+    /**
+     * 下载制品或阶段日志文件，构建 HTTP 响应
+     */
     private ResponseEntity<Resource> buildStorageDownloadResponse(
             String bucket,
             String objectKey,

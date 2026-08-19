@@ -10,6 +10,8 @@ import com.example.platform.ai.output.OutputFormatFallbackService;
 import com.example.platform.ai.session.*;
 import com.example.platform.ai.skill.SkillIndexLoader;
 import com.example.platform.ai.tools.ToolErrorFallback;
+import com.example.platform.auth.context.AuthContextHolder;
+import com.example.platform.space.service.SpaceAuthorizationService;
 import com.example.platform.scene.service.ScheduleEventService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -55,6 +57,7 @@ public class AgentService {
     private final AgentTraceLogService traceLogService;
     private final SkillIndexLoader skillIndexLoader;
     private final ScheduleEventService scheduleEventService;
+    private final SpaceAuthorizationService spaceAuthorizationService;
     private final String systemPrompt;
 
     public AgentService(
@@ -69,6 +72,7 @@ public class AgentService {
             AgentTraceLogService traceLogService,
             SkillIndexLoader skillIndexLoader,
             ScheduleEventService scheduleEventService,
+            SpaceAuthorizationService spaceAuthorizationService,
             SystemPromptConfig systemPromptConfig,
             ResourceLoader resourceLoader,
             @Value("${platform.ai.system-prompt-path:classpath:AGENT.md}") String systemPromptPath) {
@@ -83,6 +87,7 @@ public class AgentService {
         this.traceLogService = traceLogService;
         this.skillIndexLoader = skillIndexLoader;
         this.scheduleEventService = scheduleEventService;
+        this.spaceAuthorizationService = spaceAuthorizationService;
         this.systemPrompt = systemPromptConfig.loadSystemPrompt(resourceLoader, systemPromptPath);
     }
 
@@ -126,6 +131,12 @@ public class AgentService {
         final boolean[] success = {false};
 
         try {
+            // 空间成员校验：确保当前用户是指定空间的成员
+            Long spaceId = request.spaceId();
+            if (spaceId != null) {
+                spaceAuthorizationService.requireReadableSpace(spaceId, AuthContextHolder.require());
+            }
+
             InputSanitizer.SanitizeResult sanitizeResult = inputSanitizer.sanitize(request.message());
             if (!sanitizeResult.valid()) {
                 log.warn("[TRACE:{}] Input sanitization failed: sessionId={}, reason={}",
@@ -443,6 +454,12 @@ public class AgentService {
         final boolean[] success = {false};
 
         try {
+            // 空间成员校验：确保当前用户是指定空间的成员
+            Long spaceId = request.spaceId();
+            if (spaceId != null) {
+                spaceAuthorizationService.requireReadableSpace(spaceId, AuthContextHolder.require());
+            }
+
             InputSanitizer.SanitizeResult sanitizeResult = inputSanitizer.sanitize(request.message());
             if (!sanitizeResult.valid()) {
                 log.warn("[TRACE:{}] Input sanitization failed: sessionId={}, reason={}",

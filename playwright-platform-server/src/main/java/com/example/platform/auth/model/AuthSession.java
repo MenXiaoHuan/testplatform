@@ -9,5 +9,6 @@ public record AuthSession(
         String nickname,
         String avatarObjectKey,
         Long lastSpaceId,
-        LocalDateTime expiresAt) {
+        LocalDateTime expiresAt,
+        boolean needsSetup) {
 }

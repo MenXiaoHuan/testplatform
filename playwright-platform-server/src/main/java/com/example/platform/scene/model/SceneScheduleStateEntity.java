@@ -2,6 +2,19 @@ package com.example.platform.scene.model;
 
 import java.time.LocalDateTime;
 
+/**
+ * 场景调度状态实体 —— 对应 scene_schedule_state 表，存储每个场景的调度跟踪信息与租约。
+ *
+ * <p>核心字段：
+ * <ul>
+ *   <li>sceneId：场景 ID（主键）</li>
+ *   <li>lastPlannedFireAt：上次计划触发时间</li>
+ *   <li>lastTriggeredAt：上次实际触发时间</li>
+ *   <li>lastTaskId：上次触发创建的任务 ID</li>
+ *   <li>leaseOwner / leaseUntil：调度租约（多实例并发控制）</li>
+ *   <li>version：乐观锁版本号</li>
+ * </ul>
+ */
 public class SceneScheduleStateEntity {
     private Long sceneId;
 

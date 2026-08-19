@@ -10,16 +10,26 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 /**
- * Defines the dedicated executor used for long-running task execution.
+ * 任务执行配置类 —— 定义用于长时间任务执行的专用线程池。
  *
- * <p>HTTP request threads should only enqueue work; Playwright installation,
- * test execution, log capture, and artifact archiving run on this pool.
+ * <p>HTTP 请求线程只负责入队工作；Playwright 安装、测试执行、日志采集和工件归档
+ * 都在此线程池中运行，避免阻塞 Web 请求处理。
+ *
+ * <p>核心职责：
+ * <ul>
+ *   <li>{@link #taskExecutionExecutor(TaskExecutionProperties)} —— 创建配置化的任务执行线程池 Bean</li>
+ * </ul>
+ *
+ * <p>依赖：{@link TaskExecutionProperties}（线程池参数配置）。
  */
 @Configuration
 @EnableConfigurationProperties(TaskExecutionProperties.class)
 public class TaskExecutionConfig {
     private static final Logger log = LoggerFactory.getLogger(TaskExecutionConfig.class);
 
+    /**
+     * 创建任务执行专用线程池，配置核心线程数、最大线程数、队列容量、拒绝策略等。
+     */
     @Bean(name = "taskExecutionExecutor")
     public ThreadPoolTaskExecutor taskExecutionExecutor(TaskExecutionProperties properties) {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
@@ -28,6 +38,7 @@ public class TaskExecutionConfig {
         executor.setQueueCapacity(properties.getQueueCapacity());
         executor.setKeepAliveSeconds(properties.getKeepAliveSeconds());
         executor.setThreadNamePrefix("task-execution-");
+        // 自定义拒绝策略：记录详细日志后抛出异常
         executor.setRejectedExecutionHandler((task, threadPool) -> {
             int queueSize = threadPool.getQueue() != null ? threadPool.getQueue().size() : -1;
             log.error(

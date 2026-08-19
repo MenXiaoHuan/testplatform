@@ -2,6 +2,20 @@ package com.example.platform.space.model;
 
 import java.time.LocalDateTime;
 
+/**
+ * 空间成员实体类，对应数据库中的 space_member 表。
+ * 表示用户与空间之间的成员关系，包含角色和状态信息。
+ *
+ * <p>核心职责：
+ * <ul>
+ *   <li>存储空间ID和用户ID的关联关系</li>
+ *   <li>记录成员角色（如 ADMIN、OPERATOR、VIEWER）</li>
+ *   <li>记录成员状态（如 ACTIVE、INACTIVE）</li>
+ *   <li>追踪加入时间和创建/更新时间</li>
+ * </ul>
+ *
+ * <p>依赖说明：无外部依赖。
+ */
 public class SpaceMemberEntity {
     private Long id;
     private Long spaceId;

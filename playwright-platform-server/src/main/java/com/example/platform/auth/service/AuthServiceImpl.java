@@ -23,6 +23,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class AuthServiceImpl implements AuthService {
+    private static final int MAX_NICKNAME_LENGTH = 10;
+
     private final AuthProperties authProperties;
     private final AuthKeyProvider keyProvider;
     private final PlatformUserMapper platformUserMapper;
@@ -74,45 +76,46 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     @Transactional
-    public LoginResult register(String username, String nickname, String encryptedPassword) {
+    public LoginResult register(String username, String encryptedPassword) {
         String normalizedUsername = normalizeRequiredValue(username, "请输入用户名");
-        String normalizedNickname = normalizeRequiredValue(nickname, "请输入昵称");
         ensureUsernameAvailable(normalizedUsername);
-        ensureNicknameAvailable(normalizedNickname, null);
 
         String rawPassword = keyProvider.decrypt(encryptedPassword);
         validatePassword(rawPassword);
 
         PlatformUserEntity user = new PlatformUserEntity();
         user.setUsername(normalizedUsername);
-        user.setNickname(normalizedNickname);
+        user.setNickname(null);
         user.setPasswordHash(passwordEncoder.encode(rawPassword));
         user.setAvatarObjectKey(null);
         user.setEnabled(true);
         user.setLastSpaceId(null);
         platformUserMapper.insert(user);
 
-        String spaceName = resolvePersonalSpaceName(user);
-        ensureSpaceNameAvailable(spaceName);
-
-        SpaceEntity space = new SpaceEntity();
-        space.setName(spaceName);
-        space.setDescription(null);
-        space.setOwnerUserId(user.getId());
-        space.setCreatedBy(user.getId());
-        spaceMapper.insert(space);
-
-        SpaceMemberEntity member = new SpaceMemberEntity();
-        member.setSpaceId(space.getId());
-        member.setUserId(user.getId());
-        member.setRole("ADMIN");
-        member.setStatus("ACTIVE");
-        member.setJoinedAt(nowSupplier.get());
-        spaceMemberMapper.insert(member);
-
-        platformUserMapper.updateLastSpaceId(user.getId(), space.getId());
-        user.setLastSpaceId(space.getId());
         return createLoginResult(user);
+    }
+
+    @Override
+    @Transactional
+    public LoginUser setupProfile(String sessionId, String nickname) {
+        AuthSession session = findSession(sessionId)
+                .orElseThrow(() -> new BusinessException("UNAUTHORIZED", "请先登录"));
+
+        String normalizedNickname = normalizeNickname(nickname);
+        ensureNicknameAvailable(normalizedNickname, session.userId());
+
+        platformUserMapper.updateNickname(session.userId(), normalizedNickname);
+
+        SpaceEntity space = createPersonalSpace(session.userId(), normalizedNickname);
+        platformUserMapper.updateLastSpaceId(session.userId(), space.getId());
+
+        return new LoginUser(
+                session.userId(),
+                session.username(),
+                normalizedNickname,
+                session.avatarObjectKey(),
+                space.getId(),
+                false);
     }
 
     @Override
@@ -130,14 +133,16 @@ public class AuthServiceImpl implements AuthService {
         }
         LocalDateTime refreshedExpiresAt = nowSupplier.get().plusDays(authProperties.getSlidingDays());
         userSessionMapper.updateExpiresAt(sessionId, refreshedExpiresAt);
+        boolean needsSetup = needsSetup(session.nickname(), session.lastSpaceId());
         return Optional.of(new AuthSession(
                 session.sessionId(),
                 session.userId(),
                 session.username(),
-                resolveNickname(session.nickname(), session.username()),
+                session.nickname(),
                 session.avatarObjectKey(),
                 session.lastSpaceId(),
-                refreshedExpiresAt));
+                refreshedExpiresAt,
+                needsSetup));
     }
 
     @Override
@@ -148,21 +153,23 @@ public class AuthServiceImpl implements AuthService {
                         session.username(),
                         session.nickname(),
                         session.avatarObjectKey(),
-                        session.lastSpaceId()));
+                        session.lastSpaceId(),
+                        session.needsSetup()));
     }
 
     @Override
     public Optional<LoginUser> updateNickname(String sessionId, String nickname) {
         return findSession(sessionId).map(session -> {
-            String resolvedNickname = resolveNickname(nickname, session.username());
-            ensureNicknameAvailable(resolvedNickname, session.userId());
-            platformUserMapper.updateNickname(session.userId(), resolvedNickname);
+            String normalizedNickname = normalizeNickname(nickname);
+            ensureNicknameAvailable(normalizedNickname, session.userId());
+            platformUserMapper.updateNickname(session.userId(), normalizedNickname);
             return new LoginUser(
                     session.userId(),
                     session.username(),
-                    resolvedNickname,
+                    normalizedNickname,
                     session.avatarObjectKey(),
-                    session.lastSpaceId());
+                    session.lastSpaceId(),
+                    false);
         });
     }
 
@@ -175,7 +182,8 @@ public class AuthServiceImpl implements AuthService {
                     session.username(),
                     session.nickname(),
                     avatarObjectKey,
-                    session.lastSpaceId());
+                    session.lastSpaceId(),
+                    session.needsSetup());
         });
     }
 
@@ -187,11 +195,19 @@ public class AuthServiceImpl implements AuthService {
         userSessionMapper.deleteBySessionId(sessionId);
     }
 
-    private String resolveNickname(String nickname, String username) {
+    private boolean needsSetup(String nickname, Long lastSpaceId) {
+        return (nickname == null || nickname.isBlank()) || lastSpaceId == null;
+    }
+
+    private String normalizeNickname(String nickname) {
         if (nickname == null || nickname.isBlank()) {
-            return username == null || username.isBlank() ? "未命名用户" : username.trim();
+            throw new BusinessException("BAD_REQUEST", "请输入昵称");
         }
-        return nickname.trim();
+        String trimmed = nickname.trim();
+        if (trimmed.length() > MAX_NICKNAME_LENGTH) {
+            throw new BusinessException("BAD_REQUEST", "昵称不能超过" + MAX_NICKNAME_LENGTH + "个字符");
+        }
+        return trimmed;
     }
 
     private LoginResult createLoginResult(PlatformUserEntity user) {
@@ -202,13 +218,37 @@ public class AuthServiceImpl implements AuthService {
         session.setUserId(user.getId());
         session.setExpiresAt(expiresAt);
         userSessionMapper.insert(session);
+        boolean needsSetup = needsSetup(user.getNickname(), user.getLastSpaceId());
         return new LoginResult(
                 session.getSessionId(),
                 user.getId(),
                 user.getUsername(),
-                resolveNickname(user.getNickname(), user.getUsername()),
+                user.getNickname(),
                 user.getAvatarObjectKey(),
-                user.getLastSpaceId());
+                user.getLastSpaceId(),
+                needsSetup);
+    }
+
+    private SpaceEntity createPersonalSpace(Long userId, String nickname) {
+        String spaceName = nickname + "的测试空间";
+        ensureSpaceNameAvailable(spaceName);
+
+        SpaceEntity space = new SpaceEntity();
+        space.setName(spaceName);
+        space.setDescription(null);
+        space.setOwnerUserId(userId);
+        space.setCreatedBy(userId);
+        spaceMapper.insert(space);
+
+        SpaceMemberEntity member = new SpaceMemberEntity();
+        member.setSpaceId(space.getId());
+        member.setUserId(userId);
+        member.setRole("ADMIN");
+        member.setStatus("ACTIVE");
+        member.setJoinedAt(nowSupplier.get());
+        spaceMemberMapper.insert(member);
+
+        return space;
     }
 
     private String normalizeRequiredValue(String value, String missingMessage) {
@@ -245,11 +285,7 @@ public class AuthServiceImpl implements AuthService {
 
     private void ensureSpaceNameAvailable(String name) {
         if (spaceMapper.findByName(name).isPresent()) {
-            throw new BusinessException("SPACE_NAME_ALREADY_EXISTS", "系统为你生成个人空间时发现名称冲突，请修改昵称后重试");
+            throw new BusinessException("SPACE_NAME_ALREADY_EXISTS", "空间名称冲突，请修改昵称后重试");
         }
-    }
-
-    private String resolvePersonalSpaceName(PlatformUserEntity user) {
-        return resolveNickname(user.getNickname(), user.getUsername());
     }
 }

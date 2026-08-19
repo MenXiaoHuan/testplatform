@@ -2,39 +2,68 @@ package com.example.platform.task.model;
 
 import java.time.LocalDateTime;
 
+/**
+ * 任务阶段日志实体类。
+ *
+ * <p>核心职责：
+ * <ul>
+ *   <li>映射 task_stage_log 数据库表</li>
+ *   <li>存储任务执行各阶段的日志信息</li>
+ *   <li>包含日志文件的存储位置、执行结果、预览文本等</li>
+ * </ul>
+ *
+ * <p>依赖：{@link LocalDateTime}
+ */
 public class TaskStageLogEntity {
+    /** 阶段日志ID */
     private Long id;
 
+    /** 所属任务ID */
     private Long taskId;
 
+    /** 阶段名称：PREPARING、INSTALLING、TESTING、ARCHIVING 等 */
     private String stage;
 
+    /** 流类型：stdout、stderr、combined */
     private String streamType;
 
+    /** 对象键（存储路径） */
     private String objectKey;
 
+    /** 内容类型（MIME类型） */
     private String contentType;
 
+    /** 文件大小（字节） */
     private Long size;
 
+    /** 日志行数 */
     private Integer lineCount;
 
+    /** 预览文本（日志前N行） */
     private String previewText;
 
+    /** 创建时间 */
     private LocalDateTime createdAt;
 
+    /** 执行耗时（毫秒） */
     private Long durationMs;
 
+    /** 退出码 */
     private Integer exitCode;
 
+    /** 阶段状态 */
     private String stageStatus;
 
+    /** 执行命令 */
     private String command;
 
+    /** 开始时间 */
     private LocalDateTime startedAt;
 
+    /** 结束时间 */
     private LocalDateTime endedAt;
 
+    /** 错误消息 */
     private String errorMessage;
 
     public Long getId() { return id; }

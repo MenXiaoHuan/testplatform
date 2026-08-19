@@ -2,6 +2,18 @@ package com.example.platform.space.dto;
 
 import java.time.LocalDateTime;
 
+/**
+ * 空间访问申请投影类，用于 MyBatis 查询结果映射。
+ * 包含申请人的用户名、昵称、头像等关联信息。
+ *
+ * <p>核心职责：
+ * <ul>
+ *   <li>映射空间访问申请及其关联用户信息的查询结果</li>
+ *   <li>提供 getter/setter 方法供 MyBatis 和业务层使用</li>
+ * </ul>
+ *
+ * <p>依赖说明：无外部依赖。
+ */
 public class SpaceAccessRequestProjection {
     private Long id;
     private Long spaceId;

@@ -16,7 +16,6 @@ const loginForm = reactive({
 const registerMode = ref(false)
 const registerForm = reactive({
   username: '',
-  nickname: '',
   password: '',
   confirmPassword: '',
 })
@@ -27,7 +26,7 @@ async function submit() {
   loading.value = true
   try {
     if (registerMode.value) {
-      if (!registerForm.username.trim() || !registerForm.nickname.trim() || !registerForm.password || !registerForm.confirmPassword) {
+      if (!registerForm.username.trim() || !registerForm.password || !registerForm.confirmPassword) {
         showAppToast('请完整填写注册信息', 'warning')
         return
       }
@@ -41,11 +40,14 @@ async function submit() {
       }
       const user = await authStore.register({
         username: registerForm.username.trim(),
-        nickname: registerForm.nickname.trim(),
         password: registerForm.password,
         confirmPassword: registerForm.confirmPassword,
       })
-      await router.push(user?.lastSpaceId ? `/spaces/${user.lastSpaceId}/repos` : '/home')
+      if (user?.needsSetup) {
+        await router.push('/setup-nickname')
+      } else {
+        await router.push(user?.lastSpaceId ? `/spaces/${user.lastSpaceId}/repos` : '/home')
+      }
       return
     }
 
@@ -54,10 +56,14 @@ async function submit() {
       return
     }
 
-    await authStore.login({
+    const user = await authStore.login({
       username: loginForm.username.trim(),
       password: loginForm.password,
     })
+    if (user?.needsSetup) {
+      await router.push('/setup-nickname')
+      return
+    }
     const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/home'
     await router.push(redirect || '/home')
   } catch (error) {
@@ -100,19 +106,16 @@ function toggleMode() {
 
       <section class="login-right">
         <div class="login-card">
-          <div class="login-card__header">
-            <p class="login-card__eyebrow">Account Sign In</p>
-            <h2>{{ registerMode ? '注册账号' : '欢迎回来' }}</h2>
-            <p>{{ registerMode ? '创建账号后系统会自动创建个人空间，并直接带你进入空间首页。' : '输入账号信息，立即进入你的测试协作空间。' }}</p>
-          </div>
+            <div class="login-card__header">
+              <p class="login-card__eyebrow">Account Sign In</p>
+              <h2>{{ registerMode ? '注册账号' : '欢迎回来' }}</h2>
+              <p>{{ registerMode ? '创建账号后请设置昵称，系统会自动为你创建个人测试空间。' : '输入账号信息，立即进入你的测试协作空间。' }}</p>
+            </div>
 
-          <el-form class="login-form" label-position="top" @submit.prevent="submit">
+            <el-form class="login-form" label-position="top" @submit.prevent="submit">
             <template v-if="registerMode">
               <el-form-item label="用户名">
                 <el-input v-model="registerForm.username" placeholder="请输入用户名" />
-              </el-form-item>
-              <el-form-item label="昵称">
-                <el-input v-model="registerForm.nickname" placeholder="请输入昵称" />
               </el-form-item>
               <el-form-item label="密码">
                 <el-input v-model="registerForm.password" type="password" show-password placeholder="请输入密码" />

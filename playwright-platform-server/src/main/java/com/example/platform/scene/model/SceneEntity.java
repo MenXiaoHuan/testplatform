@@ -2,6 +2,18 @@ package com.example.platform.scene.model;
 
 import java.time.LocalDateTime;
 
+/**
+ * 场景实体 —— 对应 scene 表，存储测试场景的配置信息与调度元数据。
+ *
+ * <p>核心字段：
+ * <ul>
+ *   <li>基础信息：id、spaceId（空间隔离）、repoId（关联仓库）、name、description</li>
+ *   <li>测试配置：branch、testSelectorType、testSelectorValue、matchValue、projectName、browser</li>
+ *   <li>运行配置：envJson（环境变量 JSON）、runCommand（自定义运行命令）</li>
+ *   <li>调度配置：scheduleEnabled、cronExpression、nextRunAt</li>
+ *   <li>运行状态：lastRunAt、lastTaskStatus</li>
+ * </ul>
+ */
 public class SceneEntity {
     private Long id;
 

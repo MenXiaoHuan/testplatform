@@ -19,7 +19,19 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Coordinates scene CRUD, schedule metadata, and scene detail-cache lifecycle.
+ * 场景服务实现类 —— 协调场景 CRUD、调度元数据管理与详情缓存生命周期。
+ *
+ * <p>核心职责：
+ * <ul>
+ *   <li>场景创建与更新：含选择器规范化、名称唯一性校验、仓库有效性校验、cron 表达式解析</li>
+ *   <li>详情缓存：通过 {@link DetailCacheService} 缓存场景详情，变更时自动失效</li>
+ *   <li>定时调度触发：{@link #triggerScheduledScenes} —— Spring 定时任务，扫描并触发到期场景</li>
+ *   <li>分页查询：支持按空间隔离的分页查询，转换为卡片响应 DTO</li>
+ * </ul>
+ *
+ * <p>依赖：{@link SceneMapper}、{@link TestRepositoryMapper}、
+ * {@link SceneCascadeDeleteService}、{@link SceneSchedulerService}、
+ * {@link DetailCacheService}、{@link ObjectMapper}。
  */
 @Service
 public class SceneServiceImpl implements SceneService {
@@ -65,6 +77,7 @@ public class SceneServiceImpl implements SceneService {
         this(sceneMapper, repositoryMapper, sceneCascadeDeleteService, objectMapper, null);
     }
 
+    /** 创建场景，校验空间、仓库、名称唯一性等。 */
     @Override
     @Transactional
     public SceneEntity create(SceneEntity entity) {
@@ -79,6 +92,7 @@ public class SceneServiceImpl implements SceneService {
         return normalized;
     }
 
+    /** 分页查询场景卡片列表。 */
     @Override
     public PageResponse<SceneCardResponse> listCards(Long spaceId, int page, int size) {
         validateSpaceId(spaceId);
@@ -93,6 +107,7 @@ public class SceneServiceImpl implements SceneService {
                 .map(this::toCard);
     }
 
+    /** 根据 ID 获取场景详情。 */
     @Override
     public SceneEntity get(Long spaceId, Long id) {
         validateSpaceId(spaceId);
@@ -100,6 +115,7 @@ public class SceneServiceImpl implements SceneService {
                 .orElseThrow(() -> new IllegalArgumentException("Scene not found: " + id));
     }
 
+    /** 更新场景信息，包含选择器规范化、名称唯一性校验、cron 重新解析。 */
     @Override
     @Transactional
     public SceneEntity update(Long spaceId, Long id, SceneEntity entity) {
@@ -132,6 +148,7 @@ public class SceneServiceImpl implements SceneService {
         return existing;
     }
 
+    /** 删除场景（级联删除所有关联数据）。 */
     @Override
     @Transactional
     public void delete(Long spaceId, Long id) {
@@ -141,6 +158,7 @@ public class SceneServiceImpl implements SceneService {
         invalidateDetail(spaceId, id);
     }
 
+    /** 按仓库 ID 删除所有关联场景。 */
     @Override
     public void deleteAllByRepoId(Long repoId) {
         sceneMapper.deleteAllByRepoId(repoId);
@@ -160,6 +178,7 @@ public class SceneServiceImpl implements SceneService {
         }
     }
 
+    /** 每 60 秒扫描一次到期的调度场景并触发执行。 */
     @Scheduled(fixedDelay = 60000)
     public void triggerScheduledScenes() {
         if (sceneSchedulerService == null) {
@@ -174,6 +193,7 @@ public class SceneServiceImpl implements SceneService {
         sceneSchedulerService.triggerDueScenes(java.time.LocalDateTime.now());
     }
 
+    /** 规范化选择器字段：同步 matchValue/testSelectorValue，并设置默认选择器类型。 */
     private SceneEntity normalizeSelector(SceneEntity entity) {
         String matchValue = entity.getMatchValue();
         String selectorValue = entity.getTestSelectorValue();
@@ -199,6 +219,7 @@ public class SceneServiceImpl implements SceneService {
         return entity;
     }
 
+    /** 根据 cron 表达式计算下次运行时间。 */
     private LocalDateTime resolveNextRunAt(SceneEntity entity) {
         return sceneScheduleTimeResolver.resolveNextRunAt(
                 entity.getScheduleEnabled(),
@@ -206,6 +227,7 @@ public class SceneServiceImpl implements SceneService {
                 LocalDateTime.now());
     }
 
+    /** 校验仓库是否存在且已启用。 */
     private void validateRepository(Long spaceId, Long repoId) {
         if (repoId == null || repoId <= 0) {
             throw new IllegalArgumentException("请选择有效的所属仓库");
@@ -217,6 +239,7 @@ public class SceneServiceImpl implements SceneService {
         }
     }
 
+    /** 校验空间 ID 有效性。 */
     private void validateSpaceId(Long spaceId) {
         if (spaceId == null || spaceId <= 0) {
             throw new IllegalArgumentException("Space not found");
@@ -227,6 +250,7 @@ public class SceneServiceImpl implements SceneService {
         return "scene:%d".formatted(spaceId);
     }
 
+    /** 将实体转换为卡片响应 DTO。 */
     private SceneCardResponse toCard(SceneEntity scene) {
         return new SceneCardResponse(
                 scene.getId(),

@@ -74,6 +74,7 @@ class ScheduleEventControllerTest {
         ScheduleEventIssueResponse event = new ScheduleEventIssueResponse(
                 7L,
                 11L,
+                null,  // sceneName
                 LocalDateTime.of(2026, 7, 2, 12, 0),
                 "FAILED",
                 "CRON",
@@ -85,10 +86,10 @@ class ScheduleEventControllerTest {
                 LocalDateTime.of(2026, 7, 2, 12, 44),
                 "cron:0 */5 * * * *",
                 "system busy",
-                null,
+                null,  // taskId
                 LocalDateTime.of(2026, 7, 2, 12, 40),
                 LocalDateTime.of(2026, 7, 2, 12, 44));
-        Mockito.when(adminService.listEventsWithFilter(List.of("FAILED", "ABANDONED"), 7L, 11L, null, 1, 20))
+        Mockito.when(adminService.listEventsV2(7L, 11L, null, null, null, 1, 20))
                 .thenReturn(PageResponse.of(List.of(event), 1, 1, 20));
 
         mockMvc.perform(authenticated(get("/api/spaces/7/schedule-events")
@@ -137,7 +138,8 @@ class ScheduleEventControllerTest {
                         "平台管理员",
                         "avatars/admin.png",
                         7L,
-                        LocalDateTime.now().plusDays(14))));
+                        LocalDateTime.now().plusDays(14),
+                        false)));
         return builder.cookie(new jakarta.servlet.http.Cookie("platform_session", "session-1"));
     }
 }

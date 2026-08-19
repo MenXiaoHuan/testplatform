@@ -12,14 +12,34 @@ import org.apache.ibatis.annotations.ResultMap;
 import org.apache.ibatis.annotations.Results;
 import org.apache.ibatis.annotations.Select;
 
+/**
+ * 任务阶段日志数据访问接口（MyBatis Mapper）。
+ *
+ * <p>核心职责：
+ * <ul>
+ *   <li>提供任务阶段日志表的 CRUD 操作</li>
+ *   <li>支持按任务ID查询阶段日志</li>
+ *   <li>支持批量按任务ID删除阶段日志</li>
+ * </ul>
+ *
+ * <p>依赖：{@link TaskStageLogEntity}
+ */
 @Mapper
 public interface TaskStageLogMapper {
+
+    /** 阶段日志表列名常量 */
     String STAGE_LOG_COLUMNS = """
             id, task_id, stage, stream_type, object_key, content_type,
             size, line_count, duration_ms, exit_code, stage_status, command,
             started_at, ended_at, error_message, preview_text, created_at
             """;
 
+    /**
+     * 插入阶段日志记录
+     *
+     * @param entity 阶段日志实体
+     * @return 影响行数
+     */
     @Insert("""
             insert into task_stage_log (
                 task_id, stage, stream_type, object_key, content_type,
@@ -34,6 +54,12 @@ public interface TaskStageLogMapper {
     @Options(useGeneratedKeys = true, keyProperty = "id")
     int insert(TaskStageLogEntity entity);
 
+    /**
+     * 根据任务ID查询所有阶段日志（按ID升序）
+     *
+     * @param taskId 任务ID
+     * @return 阶段日志列表
+     */
     @Select("""
             select
             """ + STAGE_LOG_COLUMNS + """
@@ -62,6 +88,12 @@ public interface TaskStageLogMapper {
     })
     List<TaskStageLogEntity> findAllByTaskIdOrderByIdAsc(@Param("taskId") Long taskId);
 
+    /**
+     * 根据任务ID列表批量查询阶段日志
+     *
+     * @param taskIds 任务ID列表
+     * @return 阶段日志列表
+     */
     @Select("""
             <script>
             select
@@ -83,6 +115,12 @@ public interface TaskStageLogMapper {
     @ResultMap("TaskStageLogResultMap")
     List<TaskStageLogEntity> findAllByTaskIdIn(@Param("taskIds") List<Long> taskIds);
 
+    /**
+     * 根据任务ID列表批量删除阶段日志
+     *
+     * @param taskIds 任务ID列表
+     * @return 影响行数
+     */
     @Delete("""
             <script>
             delete from task_stage_log

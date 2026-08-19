@@ -51,7 +51,8 @@ public class ModelCallTraceAspect {
         requestMeta.put("model", joinPoint.getTarget().getClass().getSimpleName());
         requestMeta.put("messageCount", prompt.getInstructions().size());
         requestMeta.put("messageRoles", extractRoles(prompt.getInstructions()));
-        requestMeta.put("firstMessagePreview", previewFirstMessage(prompt.getInstructions()));
+        requestMeta.put("firstMessageFull", getFirstMessageText(prompt.getInstructions()));
+        requestMeta.put("promptFull", buildPromptFullText(prompt.getInstructions()));
         int estimatedInputTokens = estimatePromptTokens(prompt);
         requestMeta.put("estimatedInputTokens", estimatedInputTokens);
 
@@ -71,11 +72,30 @@ public class ModelCallTraceAspect {
             int completionTokens = 0;
             int totalTokens = 0;
             String generationText = "";
+            String toolCallsJson = "";
 
             if (response != null) {
                 if (response.getResults() != null && !response.getResults().isEmpty()) {
                     var generation = response.getResults().get(0);
                     generationText = generation.getOutput() != null ? generation.getOutput().getText() : "";
+                    // 记录 tool_calls 信息
+                    if (generation.getOutput() != null && generation.getOutput().getToolCalls() != null) {
+                        var toolCalls = generation.getOutput().getToolCalls();
+                        if (!toolCalls.isEmpty()) {
+                            StringBuilder tcSb = new StringBuilder("[");
+                            for (int i = 0; i < toolCalls.size(); i++) {
+                                if (i > 0) tcSb.append(",");
+                                var tc = toolCalls.get(i);
+                                tcSb.append("{\"name\":\"").append(tc.name()).append("\"");
+                                if (tc.arguments() != null) {
+                                    tcSb.append(",\"arguments\":").append(tc.arguments());
+                                }
+                                tcSb.append("}");
+                            }
+                            tcSb.append("]");
+                            toolCallsJson = tcSb.toString();
+                        }
+                    }
                 }
 
                 if (response.getMetadata() != null && response.getMetadata().getUsage() != null) {
@@ -93,8 +113,11 @@ public class ModelCallTraceAspect {
             responseMeta.put("completionTokens", completionTokens);
             responseMeta.put("totalTokens", totalTokens);
             responseMeta.put("generationLength", generationText.length());
-            responseMeta.put("generationPreview", truncate(generationText, 500));
             responseMeta.put("generationFull", generationText);
+            if (!toolCallsJson.isEmpty()) {
+                responseMeta.put("toolCalls", toolCallsJson);
+                responseMeta.put("toolCallCount", countToolCalls(toolCallsJson));
+            }
             responseMeta.put("estimatedInputTokens", estimatedInputTokens);
             responseMeta.put("tokenDiffVsEstimate", totalTokens - estimatedInputTokens);
 
@@ -135,10 +158,44 @@ public class ModelCallTraceAspect {
         return sb.toString();
     }
 
-    private String previewFirstMessage(List<Message> messages) {
+    /**
+     * 获取第一条消息的完整文本
+     */
+    private String getFirstMessageText(List<Message> messages) {
         if (messages == null || messages.isEmpty()) return "";
         String text = messages.get(0).getText();
-        return truncate(text, 300);
+        return text != null ? text : "";
+    }
+
+    /**
+     * 构建完整的 prompt 文本，包含所有消息的角色和内容
+     */
+    private String buildPromptFullText(List<Message> messages) {
+        if (messages == null || messages.isEmpty()) return "";
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < messages.size(); i++) {
+            Message msg = messages.get(i);
+            sb.append("[")
+              .append(msg.getMessageType())
+              .append("]\n")
+              .append(msg.getText() != null ? msg.getText() : "")
+              .append("\n---\n");
+        }
+        return sb.toString();
+    }
+
+    /**
+     * 计算 tool_calls 数量
+     */
+    private int countToolCalls(String toolCallsJson) {
+        if (toolCallsJson == null || toolCallsJson.isEmpty()) return 0;
+        int count = 0;
+        int idx = 0;
+        while ((idx = toolCallsJson.indexOf("\"name\"", idx)) != -1) {
+            count++;
+            idx++;
+        }
+        return count;
     }
 
     private int estimatePromptTokens(Prompt prompt) {
@@ -163,10 +220,5 @@ public class ModelCallTraceAspect {
             }
         }
         return Math.max(1, (int) (chineseChars * 1.5 + otherChars * 0.25));
-    }
-
-    private String truncate(String text, int maxLength) {
-        if (text == null || text.length() <= maxLength) return text;
-        return text.substring(0, maxLength) + "...[truncated]";
     }
 }

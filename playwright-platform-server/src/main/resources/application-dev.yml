@@ -1,11 +1,18 @@
+# === Spring Boot 开发环境配置 ===
 spring:
+  # === 数据源配置（开发环境 MySQL 数据库） ===
   datasource:
     url: ${PLATFORM_DB_URL}
     username: ${PLATFORM_DB_USERNAME}
     password: ${PLATFORM_DB_PASSWORD}
+
+# === 平台开发环境配置 ===
 platform:
+  # === 测试运行器配置 ===
   runner:
     mode: ${PLATFORM_RUNNER_MODE:local}
+
+  # === 对象存储配置（开发环境 MinIO） ===
   storage:
     minio:
       endpoint: ${PLATFORM_MINIO_ENDPOINT}

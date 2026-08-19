@@ -85,7 +85,7 @@ class AuthControllerTest {
         Mockito.when(objectStorageService.createPresignedGetUrl(Mockito.anyString(), Mockito.eq("avatars/admin.png")))
                 .thenReturn("http://localhost:10000/qa-report/avatars/admin.png?X-Amz-Signature=demo");
         Mockito.when(authService.login("admin", "ciphertext"))
-                .thenReturn(new AuthService.LoginResult("session-1", 1L, "admin", "平台管理员", "avatars/admin.png", 8L));
+                .thenReturn(new AuthService.LoginResult("session-1", 1L, "admin", "平台管理员", "avatars/admin.png", 8L, false));
 
         mockMvc.perform(post("/api/auth/login")
                         .contentType("application/json")
@@ -100,31 +100,30 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.data.username").value("admin"))
                 .andExpect(jsonPath("$.data.nickname").value("平台管理员"))
                 .andExpect(jsonPath("$.data.avatarObjectKey").value("http://localhost:10000/qa-report/avatars/admin.png?X-Amz-Signature=demo"))
-                .andExpect(jsonPath("$.data.lastSpaceId").value(8L));
+                .andExpect(jsonPath("$.data.lastSpaceId").value(8L))
+                .andExpect(jsonPath("$.data.needsSetup").value(false));
     }
 
     @Test
-    void shouldRegisterAndSetCookie() throws Exception {
+    void shouldRegisterAndRequireProfileSetup() throws Exception {
         Mockito.when(authProperties.getCookieName()).thenReturn("platform_session");
         Mockito.when(authProperties.getSlidingDays()).thenReturn(14);
-        Mockito.when(authService.register("zhangsan", "张三", "ciphertext"))
-                .thenReturn(new AuthService.LoginResult("session-2", 2L, "zhangsan", "张三", null, 12L));
+        Mockito.when(authService.register("zhangsan", "ciphertext"))
+                .thenReturn(new AuthService.LoginResult("session-2", 2L, "zhangsan", null, null, null, true));
 
         mockMvc.perform(post("/api/auth/register")
                         .contentType("application/json")
                         .content("""
                                 {
                                   "username": "zhangsan",
-                                  "nickname": "张三",
                                   "encryptedPassword": "ciphertext"
                                 }
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(cookie().exists("platform_session"))
                 .andExpect(jsonPath("$.data.username").value("zhangsan"))
-                .andExpect(jsonPath("$.data.nickname").value("张三"))
-                .andExpect(jsonPath("$.data.avatarObjectKey").isEmpty())
-                .andExpect(jsonPath("$.data.lastSpaceId").value(12L));
+                .andExpect(jsonPath("$.data.needsSetup").value(true))
+                .andExpect(jsonPath("$.data.lastSpaceId").isEmpty());
     }
 
     @Test
@@ -133,20 +132,21 @@ class AuthControllerTest {
         Mockito.when(objectStorageService.createPresignedGetUrl(Mockito.anyString(), Mockito.eq("avatars/admin.png")))
                 .thenReturn("http://localhost:10000/qa-report/avatars/admin.png?X-Amz-Signature=demo");
         Mockito.when(authService.currentUser("session-1"))
-                .thenReturn(java.util.Optional.of(new AuthService.LoginUser(1L, "admin", "平台管理员", "avatars/admin.png", 8L)));
+                .thenReturn(java.util.Optional.of(new AuthService.LoginUser(1L, "admin", "平台管理员", "avatars/admin.png", 8L, false)));
 
         mockMvc.perform(get("/api/auth/me").cookie(new jakarta.servlet.http.Cookie("platform_session", "session-1")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.username").value("admin"))
                 .andExpect(jsonPath("$.data.nickname").value("平台管理员"))
-                .andExpect(jsonPath("$.data.avatarObjectKey").value("http://localhost:10000/qa-report/avatars/admin.png?X-Amz-Signature=demo"));
+                .andExpect(jsonPath("$.data.avatarObjectKey").value("http://localhost:10000/qa-report/avatars/admin.png?X-Amz-Signature=demo"))
+                .andExpect(jsonPath("$.data.needsSetup").value(false));
     }
 
     @Test
     void shouldUpdateNicknameFromSessionCookie() throws Exception {
         Mockito.when(authProperties.getCookieName()).thenReturn("platform_session");
         Mockito.when(authService.updateNickname("session-1", "新昵称"))
-                .thenReturn(java.util.Optional.of(new AuthService.LoginUser(1L, "admin", "新昵称", "avatars/admin.png", 8L)));
+                .thenReturn(java.util.Optional.of(new AuthService.LoginUser(1L, "admin", "新昵称", "avatars/admin.png", 8L, false)));
         Mockito.when(objectStorageService.createPresignedGetUrl(Mockito.anyString(), Mockito.eq("avatars/admin.png")))
                 .thenReturn("http://localhost:10000/qa-report/avatars/admin.png?X-Amz-Signature=demo");
 
@@ -168,7 +168,7 @@ class AuthControllerTest {
     void shouldUploadAvatarThroughBackendAndReturnProfile() throws Exception {
         Mockito.when(authProperties.getCookieName()).thenReturn("platform_session");
         Mockito.when(authService.currentUser("session-1"))
-                .thenReturn(java.util.Optional.of(new AuthService.LoginUser(1L, "admin", "平台管理员", "avatars/admin.png", 8L)));
+                .thenReturn(java.util.Optional.of(new AuthService.LoginUser(1L, "admin", "平台管理员", "avatars/admin.png", 8L, false)));
         Mockito.when(objectStorageService.uploadFile(Mockito.anyString(), Mockito.anyString(), Mockito.any()))
                 .thenReturn("http://localhost:10000/qa-report/avatars/users/1/avatar.png");
         Mockito.when(objectStorageService.createPresignedGetUrl(Mockito.anyString(), Mockito.contains("avatars/users/1/")))
@@ -179,7 +179,8 @@ class AuthControllerTest {
                         "admin",
                         "平台管理员",
                         "avatars/users/1/avatar.png",
-                        8L)));
+                        8L,
+                        false)));
 
         MockMultipartFile file = new MockMultipartFile("file", "avatar.png", "image/png", "avatar".getBytes());
 

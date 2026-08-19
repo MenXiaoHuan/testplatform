@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import hljs from 'highlight.js'
@@ -8,6 +9,9 @@ import { useAiStore, type ChatMessage } from '../../stores/ai'
 import { useSpaceStore } from '../../stores/space'
 import { useAuthStore } from '../../stores/auth'
 import { showAppToast } from '../../utils/ui-feedback'
+import { getTask } from '../../api/task'
+import { getScene } from '../../api/scene'
+import { getRepository } from '../../api/repository'
 
 marked.setOptions({
   gfm: true,
@@ -62,14 +66,102 @@ function protectTablesAndEscape(text: string): string {
 
 function sanitize(html: string): string {
   return DOMPurify.sanitize(html, {
-    ADD_ATTR: ['target'],
+    ADD_ATTR: ['target', 'data-type', 'data-id', 'title', 'class'],
+    ADD_TAGS: [],
   })
+}
+
+const ENTITY_REF_RE = /#([isr])(\d+)/g
+
+const entityCache = new Map<string, string>()
+const entityLoading = new Set<string>()
+
+const router = useRouter()
+
+function resolveEntityRefs(text: string): string {
+  return text.replace(ENTITY_REF_RE, (match, type: string, id: string) => {
+    const kind = type === 'i' ? 'task' : type === 's' ? 'scene' : 'repo'
+    const cacheKey = `${kind}:${id}`
+    const cached = entityCache.get(cacheKey)
+    const label = cached ?? `${kind === 'task' ? '任务' : kind === 'scene' ? '场景' : '仓库'} #${id}`
+
+    const href = buildEntityHref(kind, id)
+    const title = cached ? cached : `正在加载 ${label}...`
+
+    if (!cached && !entityLoading.has(cacheKey)) {
+      entityLoading.add(cacheKey)
+      fetchEntityName(kind, id).then((name) => {
+        entityCache.set(cacheKey, name)
+        entityLoading.delete(cacheKey)
+      }).catch(() => {
+        entityLoading.delete(cacheKey)
+      })
+    }
+
+    return `<a href="${href}" class="ai-entity-ref" data-type="${kind}" data-id="${id}" title="${title}">${label}</a>`
+  })
+}
+
+function buildEntityHref(kind: string, id: string): string {
+  const spaceId = spaceStore.currentSpaceId
+  if (kind === 'task') {
+    return `/spaces/${spaceId}/tasks/${id}`
+  } else if (kind === 'scene') {
+    return `/spaces/${spaceId}/scenes/${id}/tasks`
+  } else {
+    return `/spaces/${spaceId}/repos`
+  }
+}
+
+async function fetchEntityName(kind: string, id: string): Promise<string> {
+  const spaceId = spaceStore.currentSpaceId
+  const numId = Number(id)
+  try {
+    if (kind === 'task') {
+      const task = await getTask(spaceId, numId)
+      const name = task?.sceneName ? `${task.sceneName} #${id}` : `任务 #${id}`
+      queueMicrotask(() => {
+        updateEntityLinks('task', id, name)
+      })
+      return name
+    } else if (kind === 'scene') {
+      const scene = await getScene(spaceId, numId)
+      return scene?.name ? `${scene.name} #${id}` : `场景 #${id}`
+    } else {
+      const repo = await getRepository(spaceId, numId)
+      return repo?.name ? `${repo.name}` : `仓库 #${id}`
+    }
+  } catch {
+    return `${kind === 'task' ? '任务' : kind === 'scene' ? '场景' : '仓库'} #${id}`
+  }
+}
+
+function updateEntityLinks(kind: string, id: string, name: string) {
+  const el = document.querySelector(`.ai-entity-ref[data-type="${kind}"][data-id="${id}"]`)
+  if (el) {
+    el.textContent = name
+    el.setAttribute('title', name)
+  }
+}
+
+function handleEntityClick(event: MouseEvent) {
+  const target = event.target as HTMLElement
+  const link = target.closest('.ai-entity-ref') as HTMLElement | null
+  if (!link) return
+  event.preventDefault()
+  const type = link.dataset.type
+  const id = link.dataset.id
+  if (type && id) {
+    const href = buildEntityHref(type, id)
+    router.push(href)
+  }
 }
 
 function renderInline(text?: string | null): string {
   if (!text) return ''
   try {
-    return sanitize(marked.parseInline(text) as string)
+    const resolved = resolveEntityRefs(text)
+    return sanitize(marked.parseInline(resolved) as string)
   } catch {
     return text
   }
@@ -112,9 +204,6 @@ const isThinking = computed(() => {
   return aiStore.loading && last?.streaming === true && last.content.length === 0
 })
 
-const transitioning = ref(false)
-let transitionTimer: ReturnType<typeof setTimeout> | null = null
-
 const throttledHtml = ref('')
 let renderRafId: number | null = null
 let pendingContent = ''
@@ -140,25 +229,9 @@ watch(
   { immediate: true },
 )
 
-watch(
-  () => lastMessage.value?.streaming,
-  (streaming, wasStreaming) => {
-    if (wasStreaming === true && streaming === false) {
-      const hasSections = lastMessage.value?.sections && lastMessage.value.sections.length > 0
-      if (hasSections) {
-        transitioning.value = true
-        if (transitionTimer) clearTimeout(transitionTimer)
-        transitionTimer = setTimeout(() => {
-          transitioning.value = false
-        }, 350)
-      }
-    }
-  },
-)
-
 const quickActions = computed(() => {
   return [
-    { label: '平台介绍', prompt: '请介绍一下这个平台的整体架构、技术栈和主要功能' },
+    { label: '平台业务介绍', prompt: '请介绍一下这个平台的整体架构、技术栈和主要功能' },
     { label: '列出已有仓库', prompt: '请列出当前空间下所有代码仓库及其状态' },
     { label: '列出已有场景', prompt: '请列出当前空间下所有测试场景及其执行模式' },
   ]
@@ -208,7 +281,6 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
-  if (transitionTimer) clearTimeout(transitionTimer)
   if (renderRafId !== null) cancelAnimationFrame(renderRafId)
   if (scrollRafId !== null) cancelAnimationFrame(scrollRafId)
 })
@@ -255,12 +327,31 @@ function formatTime(timestamp: number) {
 function renderContent(content: string): string {
   if (!content) return ''
   try {
-    const safe = protectTablesAndEscape(content)
+    const stabilized = fixIncompleteMarkdown(content)
+    const resolved = resolveEntityRefs(stabilized)
+    const safe = protectTablesAndEscape(resolved)
     const html = marked.parse(safe) as string
     return sanitize(html)
   } catch {
     return content.replace(/\n/g, '<br>')
   }
+}
+
+function fixIncompleteMarkdown(content: string): string {
+  const boldCount = (content.match(/\*\*/g) || []).length
+  const italicCount = (content.match(/(?<!\*)\*(?!\*)/g) || []).length
+  const backtickCount = (content.match(/`/g) || []).length
+  const strikeCount = (content.match(/~~/g) || []).length
+  const codeFenceCount = (content.match(/```/g) || []).length
+
+  let result = content
+  if (codeFenceCount % 2 !== 0) result += '\n```'
+  if (strikeCount % 2 !== 0) result += '~~'
+  if (boldCount % 2 !== 0) result += '**'
+  if (italicCount % 2 !== 0) result += '*'
+  if (backtickCount % 2 !== 0) result += '`'
+
+  return result
 }
 
 function copyCode(code: string, event: MouseEvent) {
@@ -357,7 +448,7 @@ function copyTraceId(traceId?: string) {
         </div>
       </header>
 
-      <div ref="messagesContainerRef" class="ai-dialog__messages">
+      <div ref="messagesContainerRef" class="ai-dialog__messages" @click="handleEntityClick">
         <div v-if="messages.length === 0" class="ai-dialog__welcome">
           <div class="ai-dialog__welcome-icon">
             <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -439,32 +530,17 @@ function copyTraceId(traceId?: string) {
               <div
                 v-if="msg.content || msg.streaming || (msg.sections && msg.sections.length > 0)"
                 class="ai-message__body"
-                :class="{
-                  'ai-message__body--streaming': msg.streaming,
-                  'ai-message__body--transitioning': transitioning,
-                }"
+                :class="{ 'ai-message__body--streaming': msg.streaming }"
               >
-                <div
-                  v-show="msg.streaming || transitioning"
-                  class="ai-message__layer ai-message__layer--streaming"
-                  :class="{ 'ai-message__layer--fading': !msg.streaming && transitioning }"
-                >
-                  <div v-if="msg.content.length === 0 && msg.streaming" class="ai-thinking-block">
-                    <span class="ai-thinking-block__text">思考中</span>
-                    <span class="ai-thinking-block__dots">
-                      <span></span><span></span><span></span>
-                    </span>
-                  </div>
-                  <template v-else>
-                    <div v-html="throttledHtml"></div>
-                    <span class="ai-cursor" :class="{ 'ai-cursor--fade': !msg.streaming }">|</span>
-                  </template>
+                <!-- 思考中状态：还没有内容 -->
+                <div v-if="msg.content.length === 0 && msg.streaming" class="ai-thinking-block">
+                  <span class="ai-thinking-block__text">思考中</span>
+                  <span class="ai-thinking-block__dots">
+                    <span></span><span></span><span></span>
+                  </span>
                 </div>
-                <div
-                  v-show="(!msg.streaming || transitioning) && msg.sections && msg.sections.length > 0"
-                  class="ai-message__layer ai-message__layer--sections"
-                  :class="{ 'ai-message__layer--entering': transitioning && msg.streaming }"
-                >
+                <!-- 有 sections 时：直接用 sections 渲染，streaming 时也一样，避免跳跃 -->
+                <template v-else-if="msg.sections && msg.sections.length > 0">
                   <template v-for="(block, i) in msg.sections" :key="i">
                     <h1 v-if="block.type === 'heading' && block.level === 1" class="ai-sec-heading ai-sec-h1">{{ block.text }}</h1>
                     <h2 v-else-if="block.type === 'heading' && block.level === 2" class="ai-sec-heading ai-sec-h2">{{ block.text }}</h2>
@@ -503,13 +579,13 @@ function copyTraceId(traceId?: string) {
                       </tbody>
                     </table>
                   </template>
-                </div>
-                <div
-                  v-show="!msg.streaming && !(msg.sections && msg.sections.length > 0)"
-                  class="ai-message__layer"
-                >
-                  <div v-html="renderContent(msg.content)"></div>
-                </div>
+                  <span v-if="msg.streaming" class="ai-cursor">|</span>
+                </template>
+                <!-- 无 sections 时：用 markdown HTML 渲染 -->
+                <template v-else>
+                  <div v-html="msg.streaming ? throttledHtml : renderContent(msg.content)"></div>
+                  <span v-if="msg.streaming" class="ai-cursor">|</span>
+                </template>
               </div>
               <div v-else-if="msg.terminated" class="ai-message__terminated">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -903,7 +979,7 @@ function copyTraceId(traceId?: string) {
   line-height: 1.65;
   word-break: break-word;
   overflow-wrap: anywhere;
-  max-width: 340px;
+  max-width: 85%;
   box-sizing: border-box;
   position: relative;
 }
@@ -1115,6 +1191,36 @@ function copyTraceId(traceId?: string) {
   background: #fef2f2;
   color: #991b1b;
   border: 1px solid #fecaca;
+}
+
+.ai-entity-ref {
+  display: inline-block;
+  padding: 1px 6px;
+  margin: 0 1px;
+  border-radius: 4px;
+  background: rgba(20, 184, 166, 0.1);
+  color: #0d9488;
+  font-weight: 500;
+  font-size: 0.92em;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+  border: 1px solid rgba(20, 184, 166, 0.2);
+}
+
+.ai-entity-ref:hover {
+  background: rgba(20, 184, 166, 0.2);
+  color: #0f766e;
+}
+
+.ai-message--user .ai-entity-ref {
+  background: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.ai-message--user .ai-entity-ref:hover {
+  background: rgba(255, 255, 255, 0.35);
 }
 
 .ai-message__tools {

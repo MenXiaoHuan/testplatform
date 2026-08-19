@@ -16,14 +16,22 @@ import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
 /**
- * Annotation-based MyBatis mapper for task execution state.
+ * 任务数据访问接口（MyBatis Mapper）。
  *
- * <p>The task pipeline persists each state transition through short service
- * transactions; this mapper provides the SQL used by those transitions and
- * by task read models.
+ * <p>核心职责：
+ * <ul>
+ *   <li>提供任务表的 CRUD 操作</li>
+ *   <li>支持多种查询维度：按ID、场景ID、空间ID、仓库ID、状态等</li>
+ *   <li>支持分页查询和计数查询</li>
+ *   <li>支持按场景ID删除所有关联任务</li>
+ * </ul>
+ *
+ * <p>依赖：{@link TaskEntity}
  */
 @Mapper
 public interface TaskMapper {
+
+    /** 任务表列名常量 */
     String TASK_COLUMNS = """
             id, space_id, scene_id, repo_id, status, current_stage, result_code, result_message,
             cancel_requested, cancel_requested_at, cancel_requested_by, trigger_type,
@@ -33,6 +41,12 @@ public interface TaskMapper {
             resolved_run_command, created_at, updated_at
             """;
 
+    /**
+     * 插入任务记录
+     *
+     * @param entity 任务实体
+     * @return 影响行数
+     */
     @Insert("""
             insert into task (
                 space_id, scene_id, repo_id, status, current_stage, result_code, result_message,
@@ -53,6 +67,12 @@ public interface TaskMapper {
     @Options(useGeneratedKeys = true, keyProperty = "id")
     int insert(TaskEntity entity);
 
+    /**
+     * 更新任务记录
+     *
+     * @param entity 任务实体
+     * @return 影响行数
+     */
     @Update("""
             update task
             set space_id = #{spaceId},
@@ -86,6 +106,12 @@ public interface TaskMapper {
             """)
     int update(TaskEntity entity);
 
+    /**
+     * 根据ID查询任务
+     *
+     * @param id 任务ID
+     * @return 任务实体
+     */
     @Select("""
             select
             """ + TASK_COLUMNS + """
@@ -126,6 +152,13 @@ public interface TaskMapper {
     })
     Optional<TaskEntity> findById(@Param("id") Long id);
 
+    /**
+     * 根据ID和空间ID查询任务
+     *
+     * @param id 任务ID
+     * @param spaceId 空间ID
+     * @return 任务实体
+     */
     @Select("""
             select
             """ + TASK_COLUMNS + """
@@ -136,6 +169,13 @@ public interface TaskMapper {
     @ResultMap("TaskResultMap")
     Optional<TaskEntity> findByIdAndSpaceId(@Param("id") Long id, @Param("spaceId") Long spaceId);
 
+    /**
+     * 分页查询所有任务
+     *
+     * @param limit 每页数量
+     * @param offset 偏移量
+     * @return 任务列表
+     */
     @Select("""
             select
             """ + TASK_COLUMNS + """
@@ -146,9 +186,22 @@ public interface TaskMapper {
     @ResultMap("TaskResultMap")
     List<TaskEntity> findPage(@Param("limit") int limit, @Param("offset") int offset);
 
+    /**
+     * 统计所有任务数量
+     *
+     * @return 任务总数
+     */
     @Select("select count(1) from task")
     long countAll();
 
+    /**
+     * 根据空间ID分页查询任务
+     *
+     * @param spaceId 空间ID
+     * @param limit 每页数量
+     * @param offset 偏移量
+     * @return 任务列表
+     */
     @Select("""
             select
             """ + TASK_COLUMNS + """
@@ -160,6 +213,12 @@ public interface TaskMapper {
     @ResultMap("TaskResultMap")
     List<TaskEntity> findPageBySpaceId(@Param("spaceId") Long spaceId, @Param("limit") int limit, @Param("offset") int offset);
 
+    /**
+     * 统计指定空间的任务数量
+     *
+     * @param spaceId 空间ID
+     * @return 任务数量
+     */
     @Select("""
             select count(1)
             from task
@@ -167,6 +226,14 @@ public interface TaskMapper {
             """)
     long countBySpaceId(@Param("spaceId") Long spaceId);
 
+    /**
+     * 根据场景ID分页查询任务
+     *
+     * @param sceneId 场景ID
+     * @param limit 每页数量
+     * @param offset 偏移量
+     * @return 任务列表
+     */
     @Select("""
             select
             """ + TASK_COLUMNS + """
@@ -179,6 +246,12 @@ public interface TaskMapper {
     List<TaskEntity> findBySceneIdPage(@Param("sceneId") Long sceneId, @Param("limit") int limit,
             @Param("offset") int offset);
 
+    /**
+     * 统计指定场景的任务数量
+     *
+     * @param sceneId 场景ID
+     * @return 任务数量
+     */
     @Select("""
             select count(1)
             from task
@@ -186,6 +259,15 @@ public interface TaskMapper {
             """)
     long countBySceneId(@Param("sceneId") Long sceneId);
 
+    /**
+     * 根据场景ID和空间ID分页查询任务
+     *
+     * @param sceneId 场景ID
+     * @param spaceId 空间ID
+     * @param limit 每页数量
+     * @param offset 偏移量
+     * @return 任务列表
+     */
     @Select("""
             select
             """ + TASK_COLUMNS + """
@@ -201,6 +283,13 @@ public interface TaskMapper {
                                                  @Param("limit") int limit,
                                                  @Param("offset") int offset);
 
+    /**
+     * 统计指定场景和空间的任务数量
+     *
+     * @param sceneId 场景ID
+     * @param spaceId 空间ID
+     * @return 任务数量
+     */
     @Select("""
             select count(1)
             from task
@@ -209,6 +298,12 @@ public interface TaskMapper {
             """)
     long countBySceneIdAndSpaceId(@Param("sceneId") Long sceneId, @Param("spaceId") Long spaceId);
 
+    /**
+     * 根据场景ID查询所有任务（按创建时间降序）
+     *
+     * @param sceneId 场景ID
+     * @return 任务列表
+     */
     @Select("""
             select
             """ + TASK_COLUMNS + """
@@ -219,6 +314,12 @@ public interface TaskMapper {
     @ResultMap("TaskResultMap")
     List<TaskEntity> findAllBySceneIdOrderByCreatedAtDescIdDesc(@Param("sceneId") Long sceneId);
 
+    /**
+     * 根据状态列表查询所有任务
+     *
+     * @param statuses 状态列表
+     * @return 任务列表
+     */
     @Select("""
             <script>
             select
@@ -240,6 +341,11 @@ public interface TaskMapper {
     @ResultMap("TaskResultMap")
     List<TaskEntity> findAllByStatusInOrderByCreatedAtAscIdAsc(@Param("statuses") Collection<String> statuses);
 
+    /**
+     * 查询所有任务（按创建时间降序）
+     *
+     * @return 任务列表
+     */
     @Select("""
             select
             """ + TASK_COLUMNS + """
@@ -249,6 +355,12 @@ public interface TaskMapper {
     @ResultMap("TaskResultMap")
     List<TaskEntity> findAllByOrderByCreatedAtDescIdDesc();
 
+    /**
+     * 根据仓库ID查询所有任务（按ID升序）
+     *
+     * @param repoId 仓库ID
+     * @return 任务列表
+     */
     @Select("""
             select
             """ + TASK_COLUMNS + """
@@ -259,6 +371,12 @@ public interface TaskMapper {
     @ResultMap("TaskResultMap")
     List<TaskEntity> findAllByRepoIdOrderByIdAsc(@Param("repoId") Long repoId);
 
+    /**
+     * 根据场景ID查询所有任务（按ID升序）
+     *
+     * @param sceneId 场景ID
+     * @return 任务列表
+     */
     @Select("""
             select
             """ + TASK_COLUMNS + """
@@ -269,6 +387,12 @@ public interface TaskMapper {
     @ResultMap("TaskResultMap")
     List<TaskEntity> findAllBySceneIdOrderByIdAsc(@Param("sceneId") Long sceneId);
 
+    /**
+     * 根据场景ID查询最新的一条任务
+     *
+     * @param sceneId 场景ID
+     * @return 最新任务
+     */
     @Select("""
             select
             """ + TASK_COLUMNS + """
@@ -280,6 +404,13 @@ public interface TaskMapper {
     @ResultMap("TaskResultMap")
     Optional<TaskEntity> findFirstBySceneIdOrderByCreatedAtDescIdDesc(@Param("sceneId") Long sceneId);
 
+    /**
+     * 检查场景是否存在指定状态的任务
+     *
+     * @param sceneId 场景ID
+     * @param statuses 状态列表
+     * @return 是否存在
+     */
     @Select("""
             <script>
             select count(1) > 0
@@ -299,12 +430,24 @@ public interface TaskMapper {
     boolean existsBySceneIdAndStatusIn(@Param("sceneId") Long sceneId,
             @Param("statuses") Collection<String> statuses);
 
+    /**
+     * 根据仓库ID删除所有任务
+     *
+     * @param repoId 仓库ID
+     * @return 影响行数
+     */
     @Delete("""
             delete from task
             where repo_id = #{repoId}
             """)
     int deleteAllByRepoId(@Param("repoId") Long repoId);
 
+    /**
+     * 根据场景ID删除所有任务
+     *
+     * @param sceneId 场景ID
+     * @return 影响行数
+     */
     @Delete("""
             delete from task
             where scene_id = #{sceneId}

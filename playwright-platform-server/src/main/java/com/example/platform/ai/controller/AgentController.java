@@ -4,7 +4,10 @@ import com.example.platform.ai.AgentTraceLogService;
 import com.example.platform.ai.dto.ChatRequest;
 import com.example.platform.ai.dto.ChatResponse;
 import com.example.platform.ai.service.AgentService;
+import com.example.platform.auth.context.AuthContext;
+import com.example.platform.auth.context.AuthContextHolder;
 import com.example.platform.common.ApiResponse;
+import com.example.platform.space.service.SpaceAuthorizationService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
@@ -39,11 +42,13 @@ public class AgentController {
     private static final Logger log = LoggerFactory.getLogger(AgentController.class);
     private final AgentService agentService;
     private final AgentTraceLogService traceLogService;
+    private final SpaceAuthorizationService spaceAuthorizationService;
     private final ExecutorService executorService;
 
-    public AgentController(AgentService agentService, AgentTraceLogService traceLogService) {
+    public AgentController(AgentService agentService, AgentTraceLogService traceLogService, SpaceAuthorizationService spaceAuthorizationService) {
         this.agentService = agentService;
         this.traceLogService = traceLogService;
+        this.spaceAuthorizationService = spaceAuthorizationService;
         this.executorService = Executors.newVirtualThreadPerTaskExecutor();
     }
 
@@ -66,8 +71,33 @@ public class AgentController {
     public SseEmitter streamChat(@RequestBody ChatRequest request) {
         SseEmitter emitter = new SseEmitter(300_000L);
 
+        // 在主线程中先完成空间成员校验（ThreadLocal 在线程池异步线程中会丢失）
+        try {
+            Long spaceId = request.spaceId();
+            if (spaceId != null) {
+                spaceAuthorizationService.requireReadableSpace(spaceId, AuthContextHolder.require());
+            }
+        } catch (Exception e) {
+            log.warn("Space authorization check failed: spaceId={}, error={}", request.spaceId(), e.getMessage());
+            try {
+                emitter.send(SseEmitter.event()
+                        .name("error")
+                        .data(Map.of("error", e.getMessage())));
+            } catch (Exception ignored) {}
+            emitter.completeWithError(e);
+            return emitter;
+        }
+
+        // 保存当前 AuthContext 供异步线程使用
+        AuthContext authContext = AuthContextHolder.get();
+
         executorService.execute(() -> {
             try {
+                // 在异步线程中恢复 AuthContext
+                if (authContext != null) {
+                    AuthContextHolder.set(authContext);
+                }
+
                 agentService.chatStream(request, new AgentService.StreamCallback() {
                     @Override
                     public void onMeta(String traceId, java.util.List<String> usedTools, String confidence, String responseType, java.util.List<com.example.platform.ai.output.ContentBlock> sections) {

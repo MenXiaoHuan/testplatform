@@ -9,6 +9,18 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * 准备阶段日志记录器 —— 用于在任务执行的准备阶段（如 Playwright 安装、依赖检查等）
+ * 实时记录日志信息到临时文件。
+ *
+ * <p>核心职责：
+ * <ul>
+ *   <li>{@link #create()} —— 创建临时日志文件</li>
+ *   <li>{@link #write(String)} —— 按行写入带时间戳的日志</li>
+ *   <li>{@link #logFile()} —— 返回日志文件路径供后续归档</li>
+ *   <li>{@link #lineCount()} —— 返回已写入的日志行数</li>
+ * </ul>
+ */
 final class PreparationStageLog {
     private final Path logFile;
     private int lineCount;
@@ -17,6 +29,9 @@ final class PreparationStageLog {
         this.logFile = logFile;
     }
 
+    /**
+     * 创建一个新的准备阶段日志实例，使用临时文件存储日志内容。
+     */
     static PreparationStageLog create() {
         try {
             return new PreparationStageLog(Files.createTempFile("task-preparing-", ".log"));
@@ -25,6 +40,9 @@ final class PreparationStageLog {
         }
     }
 
+    /**
+     * 写入日志消息，自动为每一行添加时间戳前缀，跳过空行。
+     */
     void write(String message) {
         if (message == null || message.isBlank()) {
             return;
@@ -52,10 +70,16 @@ final class PreparationStageLog {
         }
     }
 
+    /**
+     * 返回日志文件路径。
+     */
     Path logFile() {
         return logFile;
     }
 
+    /**
+     * 返回已写入的日志行数。
+     */
     int lineCount() {
         return lineCount;
     }

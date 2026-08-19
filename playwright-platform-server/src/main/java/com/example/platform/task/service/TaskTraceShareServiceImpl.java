@@ -26,18 +26,36 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+/**
+ * 任务 Trace 分享服务实现 —— 实现带 HMAC-SHA256 签名的临时分享链接生成与验证下载。
+ *
+ * <p>核心职责：
+ * <ul>
+ *   <li>{@link #createTraceShare(Long, Long, Long)} —— 验证任务归属 → 确认工件类型 → 生成签名令牌</li>
+ *   <li>{@link #downloadSharedTrace(String)} —— 验证令牌签名与有效期 → 返回文件下载流</li>
+ *   <li>{@link #signToken(Long, Long, Instant)} / {@link #verifyToken(String)} —— 令牌签名与校验</li>
+ * </ul>
+ *
+ * <p>依赖：{@link TaskMapper}、{@link ArtifactMapper}、{@link ObjectStorageService}、
+ * 签名密钥和令牌有效期配置。
+ */
 @Service
 public class TaskTraceShareServiceImpl implements TaskTraceShareService {
+    /** 公开下载路径，前端通过此路径携带 token 下载 Trace 文件 */
     static final String TRACE_SHARE_DOWNLOAD_PATH = "/api/public/traces/download";
+    /** 可分享的工件类型 */
     private static final String TRACE_ARTIFACT_TYPE = "TRACE";
 
     private final TaskMapper taskMapper;
     private final ArtifactMapper artifactMapper;
     private final ObjectStorageService objectStorageService;
     private final String storageBucket;
+    /** HMAC-SHA256 签名密钥 */
     private final String traceShareSecret;
+    /** 令牌有效期 */
     private final Duration traceShareTtl;
     private final Clock clock;
+    /** URL 安全的 Base64 编码器/解码器 */
     private final Base64.Encoder urlEncoder = Base64.getUrlEncoder().withoutPadding();
     private final Base64.Decoder urlDecoder = Base64.getUrlDecoder();
 
@@ -72,12 +90,16 @@ public class TaskTraceShareServiceImpl implements TaskTraceShareService {
         this.objectStorageService = objectStorageService;
         this.storageBucket = storageBucket;
         this.traceShareSecret = requireSecret(traceShareSecret);
+        // 默认有效期 5 分钟
         this.traceShareTtl = traceShareTtl == null || traceShareTtl.isZero() || traceShareTtl.isNegative()
                 ? Duration.ofMinutes(5)
                 : traceShareTtl;
         this.clock = clock == null ? Clock.systemUTC() : clock;
     }
 
+    /**
+     * 创建 Trace 分享：验证任务归属、确认工件为 TRACE 类型、生成带签名的临时下载令牌。
+     */
     @Override
     public TaskTraceShareResponse createTraceShare(Long spaceId, Long taskId, Long artifactId) {
         requireTaskInSpace(spaceId, taskId);
@@ -89,6 +111,9 @@ public class TaskTraceShareServiceImpl implements TaskTraceShareService {
                 expiresAt);
     }
 
+    /**
+     * 下载分享的 Trace 文件：验证令牌有效性（签名 + 过期时间），确认任务和工件存在后返回文件流。
+     */
     @Override
     public ResponseEntity<Resource> downloadSharedTrace(String token) {
         TraceSharePayload payload = verifyToken(token);
@@ -102,11 +127,17 @@ public class TaskTraceShareServiceImpl implements TaskTraceShareService {
                 traceArtifact.getSize());
     }
 
+    /**
+     * 验证任务属于指定空间。
+     */
     private TaskEntity requireTaskInSpace(Long spaceId, Long taskId) {
         return taskMapper.findByIdAndSpaceId(taskId, spaceId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Task not found"));
     }
 
+    /**
+     * 验证工件存在且为 TRACE 类型。
+     */
     private ArtifactEntity requireTraceArtifact(Long taskId, Long artifactId) {
         ArtifactEntity artifact = artifactMapper.findAllByTaskIdOrderByIdAsc(taskId).stream()
                 .filter(item -> artifactId.equals(item.getId()))
@@ -118,6 +149,9 @@ public class TaskTraceShareServiceImpl implements TaskTraceShareService {
         return artifact;
     }
 
+    /**
+     * 签名令牌：将 taskId、artifactId、过期时间编码后附加 HMAC-SHA256 签名。
+     */
     private String signToken(Long taskId, Long artifactId, Instant expiresAt) {
         String payload = "%d:%d:%d".formatted(taskId, artifactId, expiresAt.getEpochSecond());
         byte[] signature = sign(payload);
@@ -126,6 +160,9 @@ public class TaskTraceShareServiceImpl implements TaskTraceShareService {
                 + urlEncoder.encodeToString(signature);
     }
 
+    /**
+     * 验证令牌：校验签名正确性和过期时间有效性。
+     */
     private TraceSharePayload verifyToken(String token) {
         if (token == null || token.isBlank()) {
             throw invalidToken();
@@ -137,9 +174,11 @@ public class TaskTraceShareServiceImpl implements TaskTraceShareService {
         }
 
         try {
+            // 解码载荷和签名
             String payload = new String(urlDecoder.decode(parts[0]), StandardCharsets.UTF_8);
             byte[] providedSignature = urlDecoder.decode(parts[1]);
             byte[] expectedSignature = sign(payload);
+            // 使用常量时间比较防止时序攻击
             if (!MessageDigest.isEqual(providedSignature, expectedSignature)) {
                 throw invalidToken();
             }
@@ -152,6 +191,7 @@ public class TaskTraceShareServiceImpl implements TaskTraceShareService {
             Long taskId = Long.parseLong(payloadParts[0]);
             Long artifactId = Long.parseLong(payloadParts[1]);
             Instant expiresAt = Instant.ofEpochSecond(Long.parseLong(payloadParts[2]));
+            // 检查是否过期
             if (!clock.instant().isBefore(expiresAt)) {
                 throw invalidToken();
             }
@@ -161,6 +201,9 @@ public class TaskTraceShareServiceImpl implements TaskTraceShareService {
         }
     }
 
+    /**
+     * 使用 HMAC-SHA256 对载荷进行签名。
+     */
     private byte[] sign(String payload) {
         try {
             Mac mac = Mac.getInstance("HmacSHA256");
@@ -171,6 +214,9 @@ public class TaskTraceShareServiceImpl implements TaskTraceShareService {
         }
     }
 
+    /**
+     * 构建文件下载响应，从对象存储获取文件流并设置合适的 Content-Type 和文件名。
+     */
     private ResponseEntity<Resource> buildStorageDownloadResponse(
             String bucket,
             String objectKey,
@@ -206,6 +252,9 @@ public class TaskTraceShareServiceImpl implements TaskTraceShareService {
         return response.body(resource);
     }
 
+    /**
+     * 从对象存储键中提取文件名（最后一个斜杠后的部分）。
+     */
     private String extractFilename(String objectKey) {
         int slashIndex = objectKey.lastIndexOf('/');
         if (slashIndex < 0 || slashIndex == objectKey.length() - 1) {
@@ -214,6 +263,9 @@ public class TaskTraceShareServiceImpl implements TaskTraceShareService {
         return objectKey.substring(slashIndex + 1);
     }
 
+    /**
+     * 验证签名密钥不为空。
+     */
     private String requireSecret(String secret) {
         if (secret == null || secret.isBlank()) {
             throw new IllegalStateException("Trace share secret must not be blank");
@@ -221,10 +273,16 @@ public class TaskTraceShareServiceImpl implements TaskTraceShareService {
         return secret;
     }
 
+    /**
+     * 构造无效令牌异常响应。
+     */
     private ResponseStatusException invalidToken() {
         return new ResponseStatusException(HttpStatus.UNAUTHORIZED, "invalid trace share token");
     }
 
+    /**
+     * 令牌载荷记录：包含任务 ID、工件 ID 和过期时间。
+     */
     private record TraceSharePayload(Long taskId, Long artifactId, Instant expiresAt) {
     }
 }

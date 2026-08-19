@@ -13,8 +13,34 @@ import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
+/**
+ * 空间成员数据访问接口，提供空间成员的 CRUD 操作。
+ *
+ * <p>核心职责：
+ * <ul>
+ *   <li>新增空间成员记录</li>
+ *   <li>查询指定空间中指定用户的活跃成员记录</li>
+ *   <li>查询指定空间的所有成员</li>
+ *   <li>更新成员状态</li>
+ *   <li>更新成员角色</li>
+ *   <li>删除指定空间的所有成员</li>
+ * </ul>
+ *
+ * <p>依赖说明：
+ * <ul>
+ *   <li>{@link SpaceMemberEntity} - 空间成员实体类</li>
+ *   <li>MyBatis - ORM 框架</li>
+ * </ul>
+ */
 @Mapper
 public interface SpaceMemberMapper {
+    
+    /**
+     * 插入新成员记录
+     *
+     * @param entity 空间成员实体
+     * @return 受影响的行数
+     */
     @Insert("""
             insert into space_member (
                 space_id, user_id, role, status, joined_at
@@ -25,6 +51,13 @@ public interface SpaceMemberMapper {
     @Options(useGeneratedKeys = true, keyProperty = "id")
     int insert(SpaceMemberEntity entity);
 
+    /**
+     * 查询指定空间中指定用户的活跃成员记录
+     *
+     * @param spaceId 空间ID
+     * @param userId 用户ID
+     * @return 空间成员实体（可选）
+     */
     @Select("""
             select id, space_id, user_id, role, status, joined_at, created_at, updated_at
             from space_member
@@ -45,6 +78,12 @@ public interface SpaceMemberMapper {
     })
     Optional<SpaceMemberEntity> findActiveBySpaceIdAndUserId(Long spaceId, Long userId);
 
+    /**
+     * 查询指定空间的所有成员
+     *
+     * @param spaceId 空间ID
+     * @return 空间成员实体列表
+     */
     @Select("""
             select id, space_id, user_id, role, status, joined_at, created_at, updated_at
             from space_member
@@ -54,6 +93,14 @@ public interface SpaceMemberMapper {
     @org.apache.ibatis.annotations.ResultMap("SpaceMemberResultMap")
     List<SpaceMemberEntity> findBySpaceId(Long spaceId);
 
+    /**
+     * 更新成员状态
+     *
+     * @param spaceId 空间ID
+     * @param userId 用户ID
+     * @param status 新状态
+     * @return 受影响的行数
+     */
     @Update("""
             update space_member
             set status = #{status}
@@ -62,6 +109,14 @@ public interface SpaceMemberMapper {
             """)
     int updateStatus(@Param("spaceId") Long spaceId, @Param("userId") Long userId, @Param("status") String status);
 
+    /**
+     * 更新成员角色
+     *
+     * @param spaceId 空间ID
+     * @param userId 用户ID
+     * @param role 新角色
+     * @return 受影响的行数
+     */
     @Update("""
             update space_member
             set role = #{role}
@@ -70,6 +125,12 @@ public interface SpaceMemberMapper {
             """)
     int updateRole(@Param("spaceId") Long spaceId, @Param("userId") Long userId, @Param("role") String role);
 
+    /**
+     * 删除指定空间的所有成员
+     *
+     * @param spaceId 空间ID
+     * @return 受影响的行数
+     */
     @Delete("""
             delete from space_member
             where space_id = #{spaceId}

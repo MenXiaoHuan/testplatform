@@ -8,6 +8,17 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * 场景调度租约服务实现类 —— 基于乐观锁实现多实例调度的并发控制。
+ *
+ * <p>核心职责：
+ * <ul>
+ *   <li>{@link #tryAcquire} —— 尝试获取场景调度租约（2 分钟有效期），确保同一场景不会被多实例重复触发</li>
+ *   <li>{@link #markTriggered} —— 标记场景已触发</li>
+ * </ul>
+ *
+ * <p>依赖：{@link SceneScheduleStateMapper}、{@link SchedulerInstanceIdProvider}。
+ */
 @Service
 public class SceneScheduleLeaseServiceImpl implements SceneScheduleLeaseService {
     private final SceneScheduleStateMapper mapper;
@@ -20,6 +31,7 @@ public class SceneScheduleLeaseServiceImpl implements SceneScheduleLeaseService 
         this.instanceIdProvider = instanceIdProvider;
     }
 
+    /** 尝试获取场景调度租约（2 分钟有效期），确保同一场景不会被多实例重复触发。 */
     @Override
     @Transactional
     public boolean tryAcquire(Long sceneId, LocalDateTime plannedFireAt) {
@@ -37,6 +49,7 @@ public class SceneScheduleLeaseServiceImpl implements SceneScheduleLeaseService 
         return mapper.tryAcquire(sceneId, plannedFireAt, instanceId, leaseUntil) > 0;
     }
 
+    /** 标记场景已触发，更新触发时间与关联任务 ID。 */
     @Override
     @Transactional
     public void markTriggered(Long sceneId, LocalDateTime plannedFireAt, Long taskId, LocalDateTime triggeredAt) {

@@ -5,6 +5,7 @@ import com.example.platform.scene.model.ScheduleEventEntity;
 import com.example.platform.scene.service.ScheduleEventServiceImpl;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DuplicateKeyException;
@@ -254,6 +255,21 @@ class ScheduleEventServiceImplTest {
         @Override
         public int updateStatus(Long id, String status, String errorMessage, String failureCategory, LocalDateTime lastErrorAt) {
             throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public List<ScheduleEventEntity> findEventsPageV2(Long spaceId, Long sceneId, String scheduleType, String sceneNameLike, String traceId, int limit, int offset) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public long countEventsV2(Long spaceId, Long sceneId, String scheduleType, String sceneNameLike, String traceId) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public List<Map<String, Object>> findSceneNamesForIds(List<Long> ids) {
+            return List.of();
         }
     }
 }

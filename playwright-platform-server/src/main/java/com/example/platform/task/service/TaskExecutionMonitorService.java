@@ -9,6 +9,17 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Service;
 
+/**
+ * 任务执行监控服务 —— 定期记录任务执行线程池的运行状态，用于运维监控。
+ *
+ * <p>核心职责：
+ * <ul>
+ *   <li>{@link #logExecutorStats()} —— 定时（默认 30 秒）输出线程池统计日志</li>
+ *   <li>{@link #snapshot()} —— 获取线程池当前状态快照</li>
+ * </ul>
+ *
+ * <p>依赖：{@link ThreadPoolTaskExecutor}（任务执行线程池）。
+ */
 @Service
 public class TaskExecutionMonitorService {
     private static final Logger log = LoggerFactory.getLogger(TaskExecutionMonitorService.class);
@@ -19,6 +30,9 @@ public class TaskExecutionMonitorService {
         this.taskExecutionExecutor = taskExecutionExecutor;
     }
 
+    /**
+     * 定时记录线程池统计信息，当无活跃任务且队列为空时跳过记录。
+     */
     @Scheduled(fixedDelayString = "${platform.task.execution.monitor-log-interval-seconds:30}000")
     public void logExecutorStats() {
         Map<String, Number> snapshot = snapshot();
@@ -37,6 +51,9 @@ public class TaskExecutionMonitorService {
                 snapshot.get("completedTaskCount"));
     }
 
+    /**
+     * 获取线程池当前状态快照，包含活跃线程数、池大小、队列长度等指标。
+     */
     public Map<String, Number> snapshot() {
         ThreadPoolExecutor executor = taskExecutionExecutor.getThreadPoolExecutor();
         if (executor == null) {

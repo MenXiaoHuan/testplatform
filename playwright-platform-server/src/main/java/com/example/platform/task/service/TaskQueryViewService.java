@@ -27,6 +27,21 @@ import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * 任务查询视图服务 —— 将实体转换为前端响应 DTO。
+ *
+ * <p>核心职责：
+ * <ul>
+ *   <li>{@link #toSceneTaskListResponse()} —— 转换为场景任务列表响应</li>
+ *   <li>{@link #toTaskDetailResponse()} —— 转换为任务详情响应</li>
+ *   <li>{@link #toTaskDiagnosticsResponse()} —— 转换为任务诊断响应</li>
+ *   <li>{@link #toCaseResultResponse()} —— 转换为用例结果响应</li>
+ *   <li>{@link #withAccessibleArtifactUrl()} —— 为制品添加可访问的下载URL</li>
+ * </ul>
+ *
+ * <p>依赖：{@link SceneMapper}、{@link TestRepositoryMapper}、{@link CaseResultMapper}、
+ *         {@link ObjectStorageService}、{@link ApplicationErrorSummaryService}
+ */
 final class TaskQueryViewService {
     private static final Logger log = LoggerFactory.getLogger(TaskQueryViewService.class);
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();

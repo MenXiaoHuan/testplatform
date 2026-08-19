@@ -2,6 +2,21 @@ package com.example.platform.scene.model;
 
 import java.time.LocalDateTime;
 
+/**
+ * 调度事件实体 —— 对应 schedule_event 表，记录每次调度触发（定时/手动/Agent）的完整生命周期。
+ *
+ * <p>状态流转：ACQUIRED → TASK_CREATED → COMPLETED / FAILED → RETRYING → ABANDONED
+ *
+ * <p>核心字段：
+ * <ul>
+ *   <li>基础：id、spaceId、sceneId、plannedFireAt（计划触发时间）</li>
+ *   <li>调度类型：scheduleType（CRON / AGENT / MANUAL）</li>
+ *   <li>关联：traceId、sessionId、taskId</li>
+ *   <li>状态与错误：status、errorMessage、failureCategory</li>
+ *   <li>重试：retryCount、nextRetryAt、lastErrorAt</li>
+ *   <li>Agent 调度专用：triggerReason、userMessage</li>
+ * </ul>
+ */
 public class ScheduleEventEntity {
     private Long id;
     private Long spaceId;

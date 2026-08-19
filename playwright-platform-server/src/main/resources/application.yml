@@ -1,19 +1,29 @@
+# === Spring Boot 应用配置 ===
 spring:
+  # === 应用名称 ===
   application:
     name: playwright-platform-server
+
+  # === 数据源配置（MySQL 数据库） ===
   datasource:
     url: ${PLATFORM_DB_URL}
     username: ${PLATFORM_DB_USERNAME}
     password: ${PLATFORM_DB_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
+
+  # === Redis 缓存配置 ===
   data:
     redis:
       host: ${PLATFORM_REDIS_HOST}
       port: ${PLATFORM_REDIS_PORT:6379}
       password: ${PLATFORM_REDIS_PASSWORD}
       timeout: ${PLATFORM_REDIS_TIMEOUT:2s}
+
+  # === Flyway 数据库迁移配置 ===
   flyway:
     enabled: true
+
+  # === AI 模型配置（DeepSeek） ===
   ai:
     deepseek:
       api-key: ${PLATFORM_DEEPSEEK_API_KEY:}
@@ -22,50 +32,68 @@ spring:
         options:
           model: ${PLATFORM_DEEPSEEK_MODEL:deepseek-chat}
           temperature: ${PLATFORM_DEEPSEEK_TEMPERATURE:0.7}
-  task:
-    execution:
-      core-pool-size: 2
-      max-pool-size: 4
-      queue-capacity: 50
-      keep-alive-seconds: 60
-      install-timeout-seconds: 600
-      test-timeout-seconds: 1800
-      monitor-log-interval-seconds: 30
-  runner:
-    mode: ${PLATFORM_RUNNER_MODE:local}
-    workspace-root: ${PLATFORM_RUNNER_WORKSPACE_ROOT:${java.io.tmpdir}/playwright-platform/workspaces}
-    host-workspace-root: ${PLATFORM_RUNNER_HOST_WORKSPACE_ROOT:${platform.runner.workspace-root}}
-    docker:
-      image: ${PLATFORM_RUNNER_DOCKER_IMAGE:mcr.microsoft.com/playwright:v1.44.0-jammy}
-      network: ${PLATFORM_RUNNER_DOCKER_NETWORK:bridge}
-      memory: ${PLATFORM_RUNNER_DOCKER_MEMORY:2g}
-      cpus: ${PLATFORM_RUNNER_DOCKER_CPUS:2}
-      container-workspace-root: ${PLATFORM_RUNNER_DOCKER_CONTAINER_WORKSPACE_ROOT:/workspace/task}
-      remove-container: ${PLATFORM_RUNNER_DOCKER_REMOVE_CONTAINER:true}
-  storage:
-    bucket: ${PLATFORM_STORAGE_BUCKET:qa-report}
-    minio:
-      endpoint: ${PLATFORM_MINIO_ENDPOINT}
-      public-endpoint: ${PLATFORM_MINIO_PUBLIC_ENDPOINT:${PLATFORM_MINIO_ENDPOINT}}
-      region: ${PLATFORM_MINIO_REGION:us-east-1}
-      access-key: ${PLATFORM_MINIO_ACCESS_KEY}
-      secret-key: ${PLATFORM_MINIO_SECRET_KEY}
+
+# === 任务执行服务配置 ===
+task:
+  execution:
+    core-pool-size: 2
+    max-pool-size: 4
+    queue-capacity: 50
+    keep-alive-seconds: 60
+    install-timeout-seconds: 600
+    test-timeout-seconds: 1800
+    monitor-log-interval-seconds: 30
+
+# === 测试运行器配置 ===
+runner:
+  mode: ${PLATFORM_RUNNER_MODE:local}
+  workspace-root: ${PLATFORM_RUNNER_WORKSPACE_ROOT:${java.io.tmpdir}/playwright-platform/workspaces}
+  host-workspace-root: ${PLATFORM_RUNNER_HOST_WORKSPACE_ROOT:${platform.runner.workspace-root}}
+  # === Docker 容器运行器配置 ===
+  docker:
+    image: ${PLATFORM_RUNNER_DOCKER_IMAGE:mcr.microsoft.com/playwright:v1.44.0-jammy}
+    network: ${PLATFORM_RUNNER_DOCKER_NETWORK:bridge}
+    memory: ${PLATFORM_RUNNER_DOCKER_MEMORY:2g}
+    cpus: ${PLATFORM_RUNNER_DOCKER_CPUS:2}
+    container-workspace-root: ${PLATFORM_RUNNER_DOCKER_CONTAINER_WORKSPACE_ROOT:/workspace/task}
+    remove-container: ${PLATFORM_RUNNER_DOCKER_REMOVE_CONTAINER:true}
+
+# === 对象存储配置（MinIO） ===
+storage:
+  bucket: ${PLATFORM_STORAGE_BUCKET:qa-report}
+  minio:
+    endpoint: ${PLATFORM_MINIO_ENDPOINT}
+    public-endpoint: ${PLATFORM_MINIO_PUBLIC_ENDPOINT:${PLATFORM_MINIO_ENDPOINT}}
+    region: ${PLATFORM_MINIO_REGION:us-east-1}
+    access-key: ${PLATFORM_MINIO_ACCESS_KEY}
+    secret-key: ${PLATFORM_MINIO_SECRET_KEY}
+
+# === MyBatis 配置 ===
 mybatis:
   configuration:
     map-underscore-to-camel-case: true
+
+# === 日志配置 ===
 logging:
   pattern:
     console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %5p [%thread] [requestId=%X{requestId:-}, traceId=%X{traceId:-}, taskId=%X{taskId:-}, sceneId=%X{sceneId:-}, repoId=%X{repoId:-}, stage=%X{stage:-}] %logger{36} - %msg%n"
+
+# === 服务器配置 ===
 server:
   port: ${SERVER_PORT:8080}
+  # === Tomcat 线程池配置 ===
   tomcat:
     threads:
       max: ${SERVER_TOMCAT_THREADS_MAX:200}
       min-spare: ${SERVER_TOMCAT_THREADS_MIN_SPARE:10}
     accept-count: ${SERVER_TOMCAT_ACCEPT_COUNT:100}
+
+# === 平台自定义配置 ===
 platform:
+  # === AI 智能体配置 ===
   ai:
     system-prompt-path: ${PLATFORM_AI_SYSTEM_PROMPT_PATH:classpath:AGENT.md}
+    # === AI 上下文管理配置 ===
     context:
       max-tokens: ${PLATFORM_AI_CONTEXT_MAX_TOKENS:8000}
       max-messages: ${PLATFORM_AI_CONTEXT_MAX_MESSAGES:50}
@@ -73,13 +101,17 @@ platform:
       keep-recent-messages: ${PLATFORM_AI_CONTEXT_KEEP_RECENT:3}
       max-message-content-length: ${PLATFORM_AI_CONTEXT_MAX_MSG_LENGTH:4000}
       use-llm-summary: ${PLATFORM_AI_CONTEXT_USE_LLM_SUMMARY:true}
+    # === AI 调用配置 ===
     call:
       timeout-seconds: ${PLATFORM_AI_CALL_TIMEOUT:60}
       max-retries: ${PLATFORM_AI_CALL_MAX_RETRIES:2}
       retry-delay-ms: ${PLATFORM_AI_CALL_RETRY_DELAY:1000}
+    # === AI 输入清理配置 ===
     sanitizer:
       enabled: ${PLATFORM_AI_SANITIZER_ENABLED:true}
       max-length: ${PLATFORM_AI_SANITIZER_MAX_LENGTH:10000}
+
+  # === 缓存配置 ===
   cache:
     detail-ttl: ${PLATFORM_CACHE_DETAIL_TTL:5m}
     null-ttl: ${PLATFORM_CACHE_NULL_TTL:1m}

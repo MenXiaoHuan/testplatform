@@ -66,9 +66,15 @@ public class AuthController {
 
     @PostMapping("/register")
     public ApiResponse<LoginUserResponse> register(@RequestBody RegisterRequest request, HttpServletResponse response) {
-        AuthService.LoginResult result = authService.register(request.username(), request.nickname(), request.encryptedPassword());
+        AuthService.LoginResult result = authService.register(request.username(), request.encryptedPassword());
         writeSessionCookie(response, result.sessionId());
         return ApiResponse.ok(toLoginUserResponse(result));
+    }
+
+    @PostMapping("/setup-profile")
+    public ApiResponse<LoginUserResponse> setupProfile(@RequestBody SetupProfileRequest request, HttpServletRequest httpServletRequest) {
+        AuthService.LoginUser user = authService.setupProfile(readSessionId(httpServletRequest), request.nickname());
+        return ApiResponse.ok(toLoginUserResponse(user));
     }
 
     private void writeSessionCookie(HttpServletResponse response, String sessionId) {
@@ -141,8 +147,11 @@ public class AuthController {
 
     public record RegisterRequest(
             @NotBlank String username,
-            @NotBlank String nickname,
             @NotBlank String encryptedPassword) {
+    }
+
+    public record SetupProfileRequest(
+            @NotBlank String nickname) {
     }
 
     public record LoginUserResponse(
@@ -150,7 +159,8 @@ public class AuthController {
             String username,
             String nickname,
             String avatarObjectKey,
-            Long lastSpaceId) {
+            Long lastSpaceId,
+            boolean needsSetup) {
     }
 
     public record UpdateProfileRequest(String nickname) {
@@ -191,7 +201,8 @@ public class AuthController {
                 currentUser.username(),
                 currentUser.nickname(),
                 resolveAvatarUrl(currentUser.avatarObjectKey()),
-                currentUser.lastSpaceId());
+                currentUser.lastSpaceId(),
+                currentUser.needsSetup());
     }
 
     private LoginUserResponse toLoginUserResponse(AuthService.LoginResult result) {
@@ -200,7 +211,8 @@ public class AuthController {
                 result.username(),
                 result.nickname(),
                 resolveAvatarUrl(result.avatarObjectKey()),
-                result.lastSpaceId());
+                result.lastSpaceId(),
+                result.needsSetup());
     }
 
     private void validateAvatar(MultipartFile file) {

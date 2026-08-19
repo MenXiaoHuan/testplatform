@@ -12,13 +12,33 @@ import org.apache.ibatis.annotations.ResultMap;
 import org.apache.ibatis.annotations.Results;
 import org.apache.ibatis.annotations.Select;
 
+/**
+ * 制品数据访问接口（MyBatis Mapper）。
+ *
+ * <p>核心职责：
+ * <ul>
+ *   <li>提供制品表的 CRUD 操作</li>
+ *   <li>支持按任务ID、用例结果ID查询制品</li>
+ *   <li>支持批量按任务ID删除制品</li>
+ * </ul>
+ *
+ * <p>依赖：{@link ArtifactEntity}
+ */
 @Mapper
 public interface ArtifactMapper {
+
+    /** 制品表列名常量 */
     String ARTIFACT_COLUMNS = """
             id, task_id, case_result_id, artifact_type, bucket, object_key,
             content_type, size, url
             """;
 
+    /**
+     * 插入制品记录
+     *
+     * @param entity 制品实体
+     * @return 影响行数
+     */
     @Insert("""
             insert into artifact (
                 task_id, case_result_id, artifact_type, bucket, object_key,
@@ -31,6 +51,12 @@ public interface ArtifactMapper {
     @Options(useGeneratedKeys = true, keyProperty = "id")
     int insert(ArtifactEntity entity);
 
+    /**
+     * 根据任务ID查询所有制品（按ID升序）
+     *
+     * @param taskId 任务ID
+     * @return 制品列表
+     */
     @Select("""
             select
             """ + ARTIFACT_COLUMNS + """
@@ -51,6 +77,12 @@ public interface ArtifactMapper {
     })
     List<ArtifactEntity> findAllByTaskIdOrderByIdAsc(@Param("taskId") Long taskId);
 
+    /**
+     * 根据用例结果ID查询所有制品（按ID升序）
+     *
+     * @param caseResultId 用例结果ID
+     * @return 制品列表
+     */
     @Select("""
             select
             """ + ARTIFACT_COLUMNS + """
@@ -61,6 +93,12 @@ public interface ArtifactMapper {
     @ResultMap("ArtifactResultMap")
     List<ArtifactEntity> findAllByCaseResultIdOrderByIdAsc(@Param("caseResultId") Long caseResultId);
 
+    /**
+     * 根据任务ID列表批量查询制品
+     *
+     * @param taskIds 任务ID列表
+     * @return 制品列表
+     */
     @Select("""
             <script>
             select
@@ -82,6 +120,12 @@ public interface ArtifactMapper {
     @ResultMap("ArtifactResultMap")
     List<ArtifactEntity> findAllByTaskIdIn(@Param("taskIds") List<Long> taskIds);
 
+    /**
+     * 根据任务ID列表批量删除制品
+     *
+     * @param taskIds 任务ID列表
+     * @return 影响行数
+     */
     @Delete("""
             <script>
             delete from artifact

@@ -157,7 +157,8 @@ class SpaceControllerTest {
                         "admin",
                         "平台管理员",
                         "avatars/admin.png",
-                        null,
-                        LocalDateTime.now().plusDays(14))));
+                        7L,
+                        LocalDateTime.now().plusDays(14),
+                        false)));
     }
 }

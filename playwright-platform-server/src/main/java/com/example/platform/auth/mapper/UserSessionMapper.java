@@ -26,7 +26,14 @@ public interface UserSessionMapper {
     int insert(UserSessionEntity entity);
 
     @Select("""
-            select us.session_id, pu.id as user_id, pu.username, pu.nickname, pu.avatar_object_key, pu.last_space_id, us.expires_at
+            select us.session_id,
+                   pu.id as user_id,
+                   pu.username,
+                   pu.nickname,
+                   pu.avatar_object_key,
+                   pu.last_space_id,
+                   us.expires_at,
+                   case when pu.nickname is null or pu.nickname = '' or pu.last_space_id is null then 1 else 0 end as needs_setup
             from user_session us
             join platform_user pu on pu.id = us.user_id
             where us.session_id = #{sessionId}
@@ -40,7 +47,8 @@ public interface UserSessionMapper {
             @Arg(column = "nickname", javaType = String.class, jdbcType = JdbcType.VARCHAR),
             @Arg(column = "avatar_object_key", javaType = String.class, jdbcType = JdbcType.VARCHAR),
             @Arg(column = "last_space_id", javaType = Long.class, jdbcType = JdbcType.BIGINT),
-            @Arg(column = "expires_at", javaType = LocalDateTime.class, jdbcType = JdbcType.TIMESTAMP)
+            @Arg(column = "expires_at", javaType = LocalDateTime.class, jdbcType = JdbcType.TIMESTAMP),
+            @Arg(column = "needs_setup", javaType = boolean.class, jdbcType = JdbcType.BIT)
     })
     Optional<AuthSession> findAuthSessionBySessionId(@Param("sessionId") String sessionId);
 

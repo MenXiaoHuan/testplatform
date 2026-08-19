@@ -1,13 +1,19 @@
+# === 开发环境 Dockerfile ===
+# 使用 Maven 3.9 + Eclipse Temurin JDK 21 作为基础镜像
 FROM maven:3.9-eclipse-temurin-21
 
-# Development image used by docker compose; production builds use Dockerfile.
+# 开发环境镜像，供 docker compose 使用；生产环境构建使用 Dockerfile
+# 安装 Docker CLI，以便在容器内执行 Docker 命令
 RUN apt-get update \
     && apt-get install -y --no-install-recommends docker.io \
     && rm -rf /var/lib/apt/lists/*
 
+# 设置工作目录为项目根目录
 WORKDIR /workspace
 
+# 暴露 8080 端口供应用访问
 EXPOSE 8080
 
-# Run from the bind-mounted source tree so local code changes are picked up.
+# 通过挂载的源码目录运行 Spring Boot，实现代码热更新
+# 跳过测试以加快开发启动速度
 CMD ["mvn", "spring-boot:run", "-Dmaven.test.skip=true"]

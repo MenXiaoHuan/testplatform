@@ -19,6 +19,20 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+/**
+ * 调度事件管理服务实现类 —— 面向管理员的调度事件查询与手动重试操作。
+ *
+ * <p>核心职责：
+ * <ul>
+ *   <li>{@link #listIssueEvents} —— 按状态分页查询调度事件列表</li>
+ *   <li>{@link #listEventsWithFilter} —— 通用筛选查询（支持 scheduleType 筛选）</li>
+ *   <li>{@link #listEventsV2} —— V2 版本查询：带场景名 JOIN，支持 sceneName/traceId 筛选</li>
+ *   <li>{@link #retryEvent} —— 手动重试指定调度事件，创建任务并记录审计日志</li>
+ * </ul>
+ *
+ * <p>依赖：{@link ScheduleEventService}、{@link com.example.platform.task.service.TaskService}、
+ * {@link SceneScheduleLeaseService}、{@link com.example.platform.audit.mapper.PlatformAuditLogMapper}。
+ */
 @Service
 public class ScheduleEventAdminServiceImpl implements ScheduleEventAdminService {
     private final ScheduleEventService scheduleEventService;
@@ -40,6 +54,7 @@ public class ScheduleEventAdminServiceImpl implements ScheduleEventAdminService 
         this.scheduleEventMapper = scheduleEventMapper;
     }
 
+    /** 按状态分页查询调度事件列表。 */
     @Override
     @Transactional(readOnly = true)
     public PageResponse<ScheduleEventIssueResponse> listIssueEvents(List<String> statuses, Long spaceId, Long sceneId, int page, int size) {
@@ -47,6 +62,7 @@ public class ScheduleEventAdminServiceImpl implements ScheduleEventAdminService 
                 .map(ScheduleEventIssueResponse::from);
     }
 
+    /** 通用筛选查询（支持 scheduleType 筛选）。 */
     @Override
     @Transactional(readOnly = true)
     public PageResponse<ScheduleEventIssueResponse> listEventsWithFilter(
@@ -55,6 +71,7 @@ public class ScheduleEventAdminServiceImpl implements ScheduleEventAdminService 
                 .map(ScheduleEventIssueResponse::from);
     }
 
+    /** V2 版本查询：带场景名 JOIN，支持 sceneName/traceId 筛选。 */
     @Override
     @Transactional(readOnly = true)
     public PageResponse<ScheduleEventIssueResponse> listEventsV2(
@@ -92,6 +109,7 @@ public class ScheduleEventAdminServiceImpl implements ScheduleEventAdminService 
         return PageResponse.of(items, total, normalizedPage, normalizedSize);
     }
 
+    /** 手动重试指定调度事件，创建任务并记录审计日志。 */
     @Override
     @Transactional
     public TaskRunResponse retryEvent(Long spaceId, Long eventId, ScheduleEventRetryRequest request) {
@@ -121,6 +139,7 @@ public class ScheduleEventAdminServiceImpl implements ScheduleEventAdminService 
         }
     }
 
+    /** 记录重试操作审计日志。 */
     private void recordRetryAudit(ScheduleEventEntity event, TaskEntity task, ScheduleEventRetryRequest request) {
         PlatformAuditLogEntity auditLog = new PlatformAuditLogEntity();
         auditLog.setEntityType("SCHEDULE_EVENT");

@@ -2,71 +2,116 @@ package com.example.platform.task.model;
 
 import java.time.LocalDateTime;
 
+/**
+ * 任务实体类。
+ *
+ * <p>核心职责：
+ * <ul>
+ *   <li>映射 task 数据库表</li>
+ *   <li>存储任务的完整生命周期信息</li>
+ *   <li>包含触发方式、执行配置、状态转换、结果统计等字段</li>
+ * </ul>
+ *
+ * <p>依赖：{@link LocalDateTime}
+ */
 public class TaskEntity {
+    /** 任务ID */
     private Long id;
 
+    /** 所属空间ID */
     private Long spaceId;
 
+    /** 所属场景ID */
     private Long sceneId;
 
+    /** 所属仓库ID */
     private Long repoId;
 
+    /** 任务状态：QUEUED、RUNNING、SUCCESS、FAILED、CANCELED 等 */
     private String status;
 
+    /** 触发类型：MANUAL、SCHEDULED 等 */
     private String triggerType;
 
+    /** 触发原因 */
     private String triggerReason;
 
+    /** 触发用户 */
     private String triggerUser;
 
+    /** 排队时间 */
     private LocalDateTime queuedAt;
 
+    /** 分支名称 */
     private String branch;
 
+    /** 提交SHA */
     private String commitSha;
 
+    /** 开始时间 */
     private LocalDateTime startedAt;
 
+    /** 结束时间 */
     private LocalDateTime finishedAt;
 
+    /** 执行耗时（毫秒） */
     private Long durationMs;
 
+    /** 执行器名称 */
     private String runnerName;
 
+    /** 当前执行阶段 */
     private String currentStage;
 
+    /** 结果码 */
     private String resultCode;
 
+    /** 结果消息 */
     private String resultMessage;
 
+    /** 是否已请求取消 */
     private Boolean cancelRequested = false;
 
+    /** 取消请求时间 */
     private LocalDateTime cancelRequestedAt;
 
+    /** 请求取消的用户 */
     private String cancelRequestedBy;
 
+    /** 日志URL */
     private String logUrl;
 
+    /** 解析后的分支 */
     private String resolvedBranch;
 
+    /** 解析后的浏览器 */
     private String resolvedBrowser;
 
+    /** 解析后的环境变量JSON */
     private String resolvedEnvJson;
 
+    /** 解析后的匹配值 */
     private String resolvedMatchValue;
 
+    /** 解析后的测试根目录 */
     private String resolvedTestRoot;
 
+    /** 解析后的运行命令 */
     private String resolvedRunCommand;
 
+    /** 创建时间 */
     private LocalDateTime createdAt;
 
+    /** 更新时间 */
     private LocalDateTime updatedAt;
 
+    /** 通过用例数 */
     private int passedCount;
 
+    /** 失败用例数 */
     private int failedCount;
 
+    /** 跳过用例数 */
     private int skippedCount;
 
     public Long getId() { return id; }

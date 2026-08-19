@@ -20,10 +20,25 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 /**
- * Exposes task execution, cancellation, detail, artifact, case, and log APIs.
+ * 任务控制器 —— 暴露任务执行、取消、详情、制品、用例、日志等 API。
  *
- * <p>The controller stays thin: write transactions, cache reads, and long-running
- * task dispatch are delegated to {@link TaskService}.
+ * <p>核心职责：
+ * <ul>
+ *   <li>{@link #runScene()} —— 启动场景任务执行</li>
+ *   <li>{@link #cancelTask()} —— 取消正在执行的任务</li>
+ *   <li>{@link #listTasks()} —— 分页查询任务列表</li>
+ *   <li>{@link #getTask()} —— 获取任务详情</li>
+ *   <li>{@link #listTaskArtifacts()} —— 列出任务制品</li>
+ *   <li>{@link #listTaskCases()} —— 列出任务用例结果</li>
+ *   <li>{@link #downloadArtifact()} —— 下载制品文件</li>
+ *   <li>{@link #downloadTaskLog()} —— 下载阶段日志</li>
+ *   <li>{@link #createTraceShare()} —— 创建追踪分享链接</li>
+ *   <li>{@link #downloadSharedTrace()} —— 通过分享令牌下载追踪</li>
+ * </ul>
+ *
+ * <p>依赖：{@link TaskService}、{@link TaskTraceShareService}、{@link SpaceAuthorizationService}
+ *
+ * <p>说明：控制器保持轻量，写事务、缓存读取和长任务派发委托给 {@link TaskService}。
  */
 @RestController
 public class TaskController {

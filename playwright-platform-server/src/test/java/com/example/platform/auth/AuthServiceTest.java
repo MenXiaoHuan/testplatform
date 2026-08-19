@@ -107,7 +107,7 @@ class AuthServiceTest {
     }
 
     @Test
-    void shouldRegisterUserCreatePersonalSpaceAndLoginImmediately() throws Exception {
+    void shouldRegisterUserAndRequireProfileSetup() throws Exception {
         AuthKeyProvider keyProvider = new AuthKeyProvider();
         InMemoryPlatformUserMapper userMapper = new InMemoryPlatformUserMapper();
         InMemoryUserSessionMapper sessionMapper = new InMemoryUserSessionMapper();
@@ -123,14 +123,23 @@ class AuthServiceTest {
                 spaceMemberMapper,
                 LocalDateTime::now);
 
-        AuthService.LoginResult result = service.register("zhangsan", "张三", encrypt(keyProvider.publicKey(), "secret123"));
+        // 注册阶段：不再需要昵称，返回 needsSetup=true
+        AuthService.LoginResult result = service.register("zhangsan", encrypt(keyProvider.publicKey(), "secret123"));
 
         assertThat(result.username()).isEqualTo("zhangsan");
-        assertThat(result.nickname()).isEqualTo("张三");
-        assertThat(result.lastSpaceId()).isNotNull();
-        assertThat(userMapper.findByUsername("zhangsan")).map(PlatformUserEntity::getLastSpaceId).contains(result.lastSpaceId());
-        assertThat(spaceMapper.findById(result.lastSpaceId())).map(SpaceEntity::getName).contains("张三");
-        assertThat(spaceMemberMapper.findActiveBySpaceIdAndUserId(result.lastSpaceId(), result.userId()))
+        assertThat(result.nickname()).isNull();
+        assertThat(result.lastSpaceId()).isNull();
+        assertThat(result.needsSetup()).isTrue();
+
+        // 设置昵称阶段：创建默认空间并关联成员
+        AuthService.LoginUser setupResult = service.setupProfile(result.sessionId(), "张三");
+        assertThat(setupResult.nickname()).isEqualTo("张三");
+        assertThat(setupResult.lastSpaceId()).isNotNull();
+        assertThat(setupResult.needsSetup()).isFalse();
+
+        assertThat(userMapper.findByUsername("zhangsan")).map(PlatformUserEntity::getLastSpaceId).contains(setupResult.lastSpaceId());
+        assertThat(spaceMapper.findById(setupResult.lastSpaceId())).map(SpaceEntity::getName).contains("张三的测试空间");
+        assertThat(spaceMemberMapper.findActiveBySpaceIdAndUserId(setupResult.lastSpaceId(), setupResult.id()))
                 .map(SpaceMemberEntity::getRole)
                 .contains("ADMIN");
     }
@@ -253,14 +262,19 @@ class AuthServiceTest {
                     .filter(item -> item.getSessionId().equals(sessionId))
                     .findFirst()
                     .flatMap(item -> userMapper.findById(item.getUserId())
-                            .map(user -> new AuthSession(
-                                    item.getSessionId(),
-                                    user.getId(),
-                                    user.getUsername(),
-                                    user.getNickname(),
-                                    user.getAvatarObjectKey(),
-                                    user.getLastSpaceId(),
-                                    item.getExpiresAt())));
+                            .map(user -> {
+                                boolean needsSetup = user.getNickname() == null || user.getNickname().isBlank()
+                                        || user.getLastSpaceId() == null;
+                                return new AuthSession(
+                                        item.getSessionId(),
+                                        user.getId(),
+                                        user.getUsername(),
+                                        user.getNickname(),
+                                        user.getAvatarObjectKey(),
+                                        user.getLastSpaceId(),
+                                        item.getExpiresAt(),
+                                        needsSetup);
+                            }));
         }
 
         @Override

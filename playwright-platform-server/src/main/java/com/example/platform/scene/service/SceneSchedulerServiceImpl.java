@@ -11,6 +11,20 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * 场景调度服务实现类 —— 定时触发到期场景、失败事件重试与遗留场景初始化。
+ *
+ * <p>核心职责：
+ * <ul>
+ *   <li>{@link #triggerDueScenes} —— 触发所有到期场景：先重试失败事件 → 初始化遗留场景 → 触发到期场景</li>
+ *   <li>{@link #retryFailedScheduleEvents} —— 重试失败的调度事件（最多 20 条）</li>
+ *   <li>{@link #classifyFailureCategory} —— 根据异常消息分类失败原因（可重试系统/冲突、不可重试配置/资源）</li>
+ *   <li>{@link #initializeNextRunAtForLegacyScenes} —— 为历史遗留场景初始化 next_run_at</li>
+ * </ul>
+ *
+ * <p>依赖：{@link SceneMapper}、{@link SceneScheduleLeaseService}、
+ * {@link ScheduleEventService}、{@link com.example.platform.task.service.TaskService}。
+ */
 @Service
 public class SceneSchedulerServiceImpl implements SceneSchedulerService {
     private static final Logger log = LoggerFactory.getLogger(SceneSchedulerServiceImpl.class);
@@ -33,6 +47,7 @@ public class SceneSchedulerServiceImpl implements SceneSchedulerService {
         this.taskService = taskService;
     }
 
+    /** 触发所有到期场景：重试失败事件 → 初始化遗留场景 → 触发到期场景。 */
     @Override
     @Transactional
     public void triggerDueScenes(LocalDateTime now) {
@@ -74,6 +89,7 @@ public class SceneSchedulerServiceImpl implements SceneSchedulerService {
         }
     }
 
+    /** 重试失败的调度事件（最多 20 条），成功创建任务后标记触发。 */
     private void retryFailedScheduleEvents(LocalDateTime now) {
         for (ScheduleEventEntity event : scheduleEventService.listRetryableFailedEvents(FAILED_EVENT_RETRY_LIMIT, now)) {
             Optional<ScheduleEventEntity> claimed = scheduleEventService.startRetry(event.getId());
@@ -99,6 +115,7 @@ public class SceneSchedulerServiceImpl implements SceneSchedulerService {
         }
     }
 
+    /** 根据异常消息分类失败原因：可重试系统繁忙/冲突、不可重试配置/资源问题。 */
     static String classifyFailureCategory(RuntimeException exception) {
         String message = exception.getMessage() == null ? "" : exception.getMessage().trim();
         String lowerCaseMessage = message.toLowerCase();
@@ -122,6 +139,7 @@ public class SceneSchedulerServiceImpl implements SceneSchedulerService {
         return ScheduleEventServiceImpl.FAILURE_CATEGORY_NON_RETRYABLE_RESOURCE;
     }
 
+    /** 为遗留的已启用调度场景初始化 next_run_at。 */
     private void initializeNextRunAtForLegacyScenes(LocalDateTime now) {
         for (SceneEntity scene : sceneMapper.findAllByScheduleEnabledTrueAndNextRunAtIsNullOrderByIdAsc()) {
             LocalDateTime nextRunAt = sceneScheduleTimeResolver.resolveNextRunAt(

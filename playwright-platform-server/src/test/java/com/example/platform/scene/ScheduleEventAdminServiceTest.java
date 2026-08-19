@@ -5,6 +5,7 @@ import com.example.platform.audit.mapper.PlatformAuditLogMapper;
 import com.example.platform.audit.model.PlatformAuditLogEntity;
 import com.example.platform.scene.dto.ScheduleEventIssueResponse;
 import com.example.platform.scene.dto.ScheduleEventRetryRequest;
+import com.example.platform.scene.mapper.ScheduleEventMapper;
 import com.example.platform.scene.model.ScheduleEventEntity;
 import com.example.platform.scene.service.ScheduleEventAdminServiceImpl;
 import com.example.platform.scene.service.ScheduleEventService;
@@ -14,6 +15,7 @@ import com.example.platform.task.model.TaskEntity;
 import com.example.platform.task.service.TaskService;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.server.ResponseStatusException;
@@ -36,7 +38,8 @@ class ScheduleEventAdminServiceTest {
                 scheduleEventService,
                 new FakeTaskService(),
                 new FakeSceneScheduleLeaseService(),
-                new FakePlatformAuditLogMapper());
+                new FakePlatformAuditLogMapper(),
+                new FakeScheduleEventMapper());
 
         PageResponse<ScheduleEventIssueResponse> page = service.listIssueEvents(List.of("FAILED", "ABANDONED"), 7L, 11L, 1, 20);
 
@@ -66,7 +69,8 @@ class ScheduleEventAdminServiceTest {
                 scheduleEventService,
                 taskService,
                 leaseService,
-                auditLogMapper);
+                auditLogMapper,
+                new FakeScheduleEventMapper());
 
         TaskRunResponse createdTask = service.retryEvent(7L, 7L, new ScheduleEventRetryRequest("alice", "u-1001", "manual retry after fix"));
 
@@ -101,7 +105,8 @@ class ScheduleEventAdminServiceTest {
                 scheduleEventService,
                 new FakeTaskService(),
                 new FakeSceneScheduleLeaseService(),
-                auditLogMapper);
+                auditLogMapper,
+                new FakeScheduleEventMapper());
 
         service.retryEvent(7L, 8L, new ScheduleEventRetryRequest(" ", null, null));
 
@@ -120,7 +125,8 @@ class ScheduleEventAdminServiceTest {
                 scheduleEventService,
                 new FakeTaskService(),
                 new FakeSceneScheduleLeaseService(),
-                new FakePlatformAuditLogMapper());
+                new FakePlatformAuditLogMapper(),
+                new FakeScheduleEventMapper());
 
         assertThatThrownBy(() -> service.retryEvent(7L, 7L, new ScheduleEventRetryRequest("alice", null, null)))
                 .isInstanceOf(ResponseStatusException.class)
@@ -143,7 +149,8 @@ class ScheduleEventAdminServiceTest {
                 scheduleEventService,
                 new FakeTaskService(),
                 new FakeSceneScheduleLeaseService(),
-                new FakePlatformAuditLogMapper());
+                new FakePlatformAuditLogMapper(),
+                new FakeScheduleEventMapper());
 
         assertThatThrownBy(() -> service.retryEvent(7L, 9L, new ScheduleEventRetryRequest("alice", null, null)))
                 .isInstanceOf(ResponseStatusException.class)
@@ -304,5 +311,46 @@ class ScheduleEventAdminServiceTest {
             inserted = entity;
             return 1;
         }
+    }
+
+    private static final class FakeScheduleEventMapper implements ScheduleEventMapper {
+        @Override
+        public int insert(ScheduleEventEntity entity) { throw new UnsupportedOperationException(); }
+        @Override
+        public Optional<ScheduleEventEntity> findBySceneIdAndPlannedFireAt(Long sceneId, LocalDateTime plannedFireAt) { throw new UnsupportedOperationException(); }
+        @Override
+        public Optional<ScheduleEventEntity> findById(Long id) { throw new UnsupportedOperationException(); }
+        @Override
+        public int update(ScheduleEventEntity entity) { throw new UnsupportedOperationException(); }
+        @Override
+        public int updateStatus(Long id, String status, String errorMessage, String failureCategory, LocalDateTime lastErrorAt) { throw new UnsupportedOperationException(); }
+        @Override
+        public int tryStartRetry(Long id) { throw new UnsupportedOperationException(); }
+        @Override
+        public List<ScheduleEventEntity> findRetryableFailedEvents(int limit, LocalDateTime now, int maxRetries) { throw new UnsupportedOperationException(); }
+        @Override
+        public List<ScheduleEventEntity> findEventsPageWithFilter(Long spaceId, Long sceneId, List<String> statuses, String scheduleType, int limit, int offset) { throw new UnsupportedOperationException(); }
+        @Override
+        public long countEventsWithFilter(Long spaceId, Long sceneId, List<String> statuses, String scheduleType) { throw new UnsupportedOperationException(); }
+        @Override
+        public List<ScheduleEventEntity> findEventsPageV2(Long spaceId, Long sceneId, String scheduleType, String sceneNameLike, String traceId, int limit, int offset) { throw new UnsupportedOperationException(); }
+        @Override
+        public long countEventsV2(Long spaceId, Long sceneId, String scheduleType, String sceneNameLike, String traceId) { throw new UnsupportedOperationException(); }
+        @Override
+        public List<Map<String, Object>> findSceneNamesForIds(List<Long> ids) { return List.of(); }
+        @Override
+        public long countIssueEvents(List<String> statuses, Long sceneId) { throw new UnsupportedOperationException(); }
+        @Override
+        public long countIssueEventsBySpaceId(List<String> statuses, Long spaceId) { throw new UnsupportedOperationException(); }
+        @Override
+        public long countIssueEventsBySpaceIdAndSceneId(List<String> statuses, Long spaceId, Long sceneId) { throw new UnsupportedOperationException(); }
+        @Override
+        public List<ScheduleEventEntity> findIssueEventsPage(List<String> statuses, Long sceneId, int limit, int offset) { throw new UnsupportedOperationException(); }
+        @Override
+        public List<ScheduleEventEntity> findIssueEventsPageBySpaceId(List<String> statuses, Long spaceId, int limit, int offset) { throw new UnsupportedOperationException(); }
+        @Override
+        public List<ScheduleEventEntity> findIssueEventsPageBySpaceIdAndSceneId(List<String> statuses, Long spaceId, Long sceneId, int limit, int offset) { throw new UnsupportedOperationException(); }
+        @Override
+        public int deleteAllBySceneId(Long sceneId) { throw new UnsupportedOperationException(); }
     }
 }

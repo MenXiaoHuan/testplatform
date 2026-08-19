@@ -14,6 +14,20 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+/**
+ * 用例结果解析服务实现 —— 实现从 Playwright results.json 文件中递归解析
+ * 套件、规格、测试用例的执行结果及工件绑定信息。
+ *
+ * <p>核心职责：
+ * <ul>
+ *   <li>{@link #parse(Long, Path, Path)} —— 解析 results.json 根节点，协调递归收集所有结果</li>
+ *   <li>{@link #collectSuiteResults(Long, Path, JsonNode, String, List, List)} —— 递归遍历套件树，提取用例结果与附件绑定</li>
+ *   <li>{@link #normalizeRelativePath(Path, String)} —— 将容器内路径转换为宿主机相对路径</li>
+ *   <li>{@link #mapStatus(String)} / {@link #mapArtifactType(String, String, String)} —— 状态与工件类型映射</li>
+ * </ul>
+ *
+ * <p>依赖：{@link ObjectMapper}（JSON 解析）、容器工作目录根路径配置。
+ */
 @Service
 public class TaskCaseResultParseServiceImpl implements TaskCaseResultParseService {
     private final ObjectMapper objectMapper;
@@ -31,6 +45,9 @@ public class TaskCaseResultParseServiceImpl implements TaskCaseResultParseServic
         this(objectMapper, "/workspace/task");
     }
 
+    /**
+     * 解析 Playwright results.json 文件，提取所有用例结果和工件绑定信息。
+     */
     @Override
     public ParsedTaskResults parse(Long taskId, Path resultsIndexFile, Path workspaceRoot) {
         try {
@@ -38,6 +55,7 @@ public class TaskCaseResultParseServiceImpl implements TaskCaseResultParseServic
             List<ParsedCaseResult> caseResults = new ArrayList<>();
             List<ParsedArtifactBinding> artifactBindings = new ArrayList<>();
 
+            // 遍历所有顶层套件
             for (JsonNode suite : root.path("suites")) {
                 collectSuiteResults(taskId, workspaceRoot, suite, null, caseResults, artifactBindings);
             }
@@ -48,6 +66,9 @@ public class TaskCaseResultParseServiceImpl implements TaskCaseResultParseServic
         }
     }
 
+    /**
+     * 递归收集套件结果：遍历套件下的 specs → tests → results，提取用例状态和附件信息。
+     */
     private void collectSuiteResults(
             Long taskId,
             Path workspaceRoot,
@@ -69,6 +90,7 @@ public class TaskCaseResultParseServiceImpl implements TaskCaseResultParseServic
                 if (!results.isArray() || results.isEmpty()) {
                     continue;
                 }
+                // 取最后一次执行的结果
                 JsonNode result = results.get(results.size() - 1);
                 String historyId = projectName + "::" + suiteName + "::" + storyName;
                 caseResults.add(new ParsedCaseResult(
@@ -81,6 +103,7 @@ public class TaskCaseResultParseServiceImpl implements TaskCaseResultParseServic
                         result.path("duration").asLong(),
                         projectName));
 
+                // 提取附件绑定关系
                 for (JsonNode attachment : result.path("attachments")) {
                     String rawPath = attachment.path("path").asText();
                     if (rawPath == null || rawPath.isBlank()) {
@@ -97,14 +120,19 @@ public class TaskCaseResultParseServiceImpl implements TaskCaseResultParseServic
             }
         }
 
+        // 递归处理子套件
         for (JsonNode childSuite : suite.path("suites")) {
             collectSuiteResults(taskId, workspaceRoot, childSuite, suiteName, caseResults, artifactBindings);
         }
     }
 
+    /**
+     * 将原始路径规范化为相对路径，处理容器内路径到宿主机路径的映射。
+     */
     private String normalizeRelativePath(Path workspaceRoot, String rawPath) {
         String normalizedContainerWorkspaceRoot = normalizePathString(containerWorkspaceRoot);
         String normalizedRawPath = normalizePathString(rawPath);
+        // 如果路径以容器工作目录开头，截取后面的相对部分
         if (normalizedContainerWorkspaceRoot != null
                 && !normalizedContainerWorkspaceRoot.isBlank()
                 && normalizedRawPath.startsWith(normalizedContainerWorkspaceRoot + "/")) {
@@ -119,17 +147,23 @@ public class TaskCaseResultParseServiceImpl implements TaskCaseResultParseServic
         return attachmentPath.toString().replace('\\', '/');
     }
 
+    /**
+     * 将路径转换为可比较的真实路径（解析符号链接），不可用时回退到绝对路径。
+     */
     private Path toComparablePath(Path path) {
         try {
             if (Files.exists(path)) {
                 return path.toRealPath().normalize();
             }
         } catch (IOException ignored) {
-            // Fall back to normalized absolute path when real path resolution is unavailable.
+            // 当真实路径解析不可用时，回退到规范化的绝对路径
         }
         return path.toAbsolutePath().normalize();
     }
 
+    /**
+     * 规范化路径字符串：统一使用正斜杠，移除末尾斜杠。
+     */
     private String normalizePathString(String path) {
         if (path == null || path.isBlank()) {
             return "";
@@ -141,6 +175,9 @@ public class TaskCaseResultParseServiceImpl implements TaskCaseResultParseServic
         return normalized;
     }
 
+    /**
+     * 将 Playwright 状态映射为平台标准状态。
+     */
     private String mapStatus(String status) {
         return switch (status) {
             case "passed" -> "PASSED";
@@ -150,6 +187,9 @@ public class TaskCaseResultParseServiceImpl implements TaskCaseResultParseServic
         };
     }
 
+    /**
+     * 根据文件名、内容类型和路径推断工件类型。
+     */
     private String mapArtifactType(String name, String contentType, String path) {
         String lowerName = name == null ? "" : name.toLowerCase();
         String lowerType = contentType == null ? "" : contentType.toLowerCase();

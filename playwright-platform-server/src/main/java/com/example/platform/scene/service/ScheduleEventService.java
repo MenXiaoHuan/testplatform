@@ -6,6 +6,17 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
+/**
+ * 调度事件服务接口 —— 定义调度事件的创建、状态流转、查询与 Agent 事件管理方法。
+ *
+ * <p>核心职责：
+ * <ul>
+ *   <li>事件创建：{@link #createAcquiredEvent} —— 创建已获取租约的调度事件</li>
+ *   <li>状态流转：{@link #startRetry}、{@link #markTaskCreated}、{@link #markFailed}</li>
+ *   <li>查询：{@link #get}、{@link #listRetryableFailedEvents}、{@link #listIssueEvents}、{@link #listEventsWithFilter}</li>
+ *   <li>Agent 事件：{@link #createAgentEvent}、{@link #completeAgentEvent}</li>
+ * </ul>
+ */
 public interface ScheduleEventService {
     Optional<ScheduleEventEntity> createAcquiredEvent(Long sceneId, LocalDateTime plannedFireAt, String triggerReason);
     Optional<ScheduleEventEntity> get(Long eventId);

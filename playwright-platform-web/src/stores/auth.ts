@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { fetchCurrentUser, fetchPublicKey, loginWithPassword, logoutCurrentUser, registerWithPassword, updateCurrentUserProfile, uploadCurrentUserAvatar } from '../api/auth'
+import { fetchCurrentUser, fetchPublicKey, loginWithPassword, logoutCurrentUser, registerWithPassword, setupUserProfile, updateCurrentUserProfile, uploadCurrentUserAvatar } from '../api/auth'
 import type { AuthUser, LoginForm, PublicKeyResponse, RegisterForm } from '../types/auth'
 import { encryptPassword } from '../utils/auth-crypto'
 
@@ -96,7 +96,6 @@ export const useAuthStore = defineStore('auth', {
         const encryptedPassword = await encryptPassword(form.password, publicKey.publicKeyPem)
         this.user = await registerWithPassword({
           username: form.username,
-          nickname: form.nickname,
           encryptedPassword,
         })
       } catch (error) {
@@ -107,11 +106,14 @@ export const useAuthStore = defineStore('auth', {
         const encryptedPassword = await encryptPassword(form.password, refreshedPublicKey.publicKeyPem)
         this.user = await registerWithPassword({
           username: form.username,
-          nickname: form.nickname,
           encryptedPassword,
         })
       }
       this.initialized = true
+      return this.user
+    },
+    async setupProfile(nickname: string) {
+      this.user = await setupUserProfile({ nickname })
       return this.user
     },
     async logout() {

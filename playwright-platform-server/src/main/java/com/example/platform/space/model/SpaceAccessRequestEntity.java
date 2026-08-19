@@ -2,6 +2,21 @@ package com.example.platform.space.model;
 
 import java.time.LocalDateTime;
 
+/**
+ * 空间访问申请实体类，对应数据库中的 space_access_request 表。
+ * 表示用户申请加入某个空间的请求记录，包含审批流程相关信息。
+ *
+ * <p>核心职责：
+ * <ul>
+ *   <li>存储申请人和目标空间的关联信息</li>
+ *   <li>记录申请的角色和理由</li>
+ *   <li>记录审批状态（如 PENDING、APPROVED、REJECTED）</li>
+ *   <li>记录审批结果、审批人和审批时间</li>
+ *   <li>追踪创建和更新时间</li>
+ * </ul>
+ *
+ * <p>依赖说明：无外部依赖。
+ */
 public class SpaceAccessRequestEntity {
     private Long id;
     private Long spaceId;

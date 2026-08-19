@@ -18,6 +18,11 @@ const router = createRouter({
       meta: { title: '登录', public: true },
     },
     {
+      path: '/setup-nickname',
+      component: () => import('../views/auth/SetupNicknameView.vue'),
+      meta: { title: '设置昵称', requiresAuth: true },
+    },
+    {
       path: '/home',
       component: () => import('../views/home/HomeView.vue'),
       meta: { title: '空间广场', requiresAuth: true },
@@ -96,6 +101,10 @@ router.beforeEach(async (to) => {
       path: '/login',
       query: to.fullPath && to.fullPath !== '/home' ? { redirect: to.fullPath } : {},
     }
+  }
+
+  if (authStore.user?.needsSetup && to.path !== '/setup-nickname') {
+    return '/setup-nickname'
   }
 
   if (!spaceStore.loaded) {

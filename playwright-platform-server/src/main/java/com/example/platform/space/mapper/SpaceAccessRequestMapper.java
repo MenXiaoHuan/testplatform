@@ -14,8 +14,36 @@ import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
+/**
+ * 空间访问申请数据访问接口，提供访问申请的 CRUD 操作。
+ *
+ * <p>核心职责：
+ * <ul>
+ *   <li>新增访问申请记录</li>
+ *   <li>根据ID查询访问申请</li>
+ *   <li>查询指定用户在指定空间的待处理申请</li>
+ *   <li>查询指定空间的所有访问申请</li>
+ *   <li>查询指定空间的访问申请列表（含申请人信息）</li>
+ *   <li>更新申请审批结果</li>
+ *   <li>删除指定空间的所有访问申请</li>
+ * </ul>
+ *
+ * <p>依赖说明：
+ * <ul>
+ *   <li>{@link SpaceAccessRequestEntity} - 访问申请实体类</li>
+ *   <li>{@link SpaceAccessRequestProjection} - 访问申请投影类</li>
+ *   <li>MyBatis - ORM 框架</li>
+ * </ul>
+ */
 @Mapper
 public interface SpaceAccessRequestMapper {
+    
+    /**
+     * 插入新的访问申请记录
+     *
+     * @param entity 访问申请实体
+     * @return 受影响的行数
+     */
     @Insert("""
             insert into space_access_request (
                 space_id, applicant_user_id, requested_role, reason, status
@@ -26,6 +54,12 @@ public interface SpaceAccessRequestMapper {
     @Options(useGeneratedKeys = true, keyProperty = "id")
     int insert(SpaceAccessRequestEntity entity);
 
+    /**
+     * 根据ID查询访问申请
+     *
+     * @param id 申请ID
+     * @return 访问申请实体（可选）
+     */
     @Select("""
             select id, space_id, applicant_user_id, requested_role, reason, status,
                    review_comment, reviewed_by, reviewed_at, created_at, updated_at
@@ -47,6 +81,13 @@ public interface SpaceAccessRequestMapper {
     })
     Optional<SpaceAccessRequestEntity> findById(Long id);
 
+    /**
+     * 查询指定用户在指定空间的待处理申请
+     *
+     * @param spaceId 空间ID
+     * @param applicantUserId 申请人用户ID
+     * @return 访问申请实体（可选）
+     */
     @Select("""
             select id, space_id, applicant_user_id, requested_role, reason, status,
                    review_comment, reviewed_by, reviewed_at, created_at, updated_at
@@ -60,6 +101,12 @@ public interface SpaceAccessRequestMapper {
     @org.apache.ibatis.annotations.ResultMap("SpaceAccessRequestResultMap")
     Optional<SpaceAccessRequestEntity> findPendingBySpaceIdAndApplicantUserId(Long spaceId, Long applicantUserId);
 
+    /**
+     * 查询指定空间的所有访问申请
+     *
+     * @param spaceId 空间ID
+     * @return 访问申请实体列表
+     */
     @Select("""
             select id, space_id, applicant_user_id, requested_role, reason, status,
                    review_comment, reviewed_by, reviewed_at, created_at, updated_at
@@ -70,6 +117,12 @@ public interface SpaceAccessRequestMapper {
     @org.apache.ibatis.annotations.ResultMap("SpaceAccessRequestResultMap")
     List<SpaceAccessRequestEntity> findBySpaceId(Long spaceId);
 
+    /**
+     * 查询指定空间的访问申请列表，包含申请人的用户名、昵称和头像信息
+     *
+     * @param spaceId 空间ID
+     * @return 访问申请投影列表
+     */
     @Select("""
             select sar.id,
                    sar.space_id,
@@ -108,6 +161,15 @@ public interface SpaceAccessRequestMapper {
     })
     List<SpaceAccessRequestProjection> findProjectionBySpaceId(Long spaceId);
 
+    /**
+     * 更新访问申请的审批结果
+     *
+     * @param requestId 申请ID
+     * @param status 新状态（APPROVED 或 REJECTED）
+     * @param reviewComment 审批评论
+     * @param reviewedBy 审批人用户ID
+     * @return 受影响的行数
+     */
     @Update("""
             update space_access_request
             set status = #{status},
@@ -122,6 +184,12 @@ public interface SpaceAccessRequestMapper {
             @Param("reviewComment") String reviewComment,
             @Param("reviewedBy") Long reviewedBy);
 
+    /**
+     * 删除指定空间的所有访问申请
+     *
+     * @param spaceId 空间ID
+     * @return 受影响的行数
+     */
     @Delete("""
             delete from space_access_request
             where space_id = #{spaceId}

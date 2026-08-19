@@ -1,12 +1,13 @@
 import { get, post, put } from './http'
-import type { AuthUser, LoginPayload, PublicKeyResponse, RegisterPayload, UpdateProfilePayload } from '../types/auth'
+import type { AuthUser, LoginPayload, PublicKeyResponse, RegisterPayload, SetupProfilePayload, UpdateProfilePayload } from '../types/auth'
 
 interface AuthUserResponse {
   id: number
   username: string
-  nickname: string
+  nickname: string | null
   avatarObjectKey: string | null
   lastSpaceId: number | null
+  needsSetup: boolean
 }
 
 function normalizeUser(payload: AuthUserResponse): AuthUser {
@@ -16,6 +17,7 @@ function normalizeUser(payload: AuthUserResponse): AuthUser {
     nickname: payload.nickname?.trim() || payload.username?.trim() || '未命名用户',
     avatarUrl: payload.avatarObjectKey ?? null,
     lastSpaceId: payload.lastSpaceId ?? null,
+    needsSetup: payload.needsSetup ?? false,
   }
 }
 
@@ -30,6 +32,11 @@ export const loginWithPassword = async (payload: LoginPayload) => {
 
 export const registerWithPassword = async (payload: RegisterPayload) => {
   const user = await post<AuthUserResponse>('/auth/register', payload)
+  return normalizeUser(user)
+}
+
+export const setupUserProfile = async (payload: SetupProfilePayload) => {
+  const user = await post<AuthUserResponse>('/auth/setup-profile', payload)
   return normalizeUser(user)
 }
 

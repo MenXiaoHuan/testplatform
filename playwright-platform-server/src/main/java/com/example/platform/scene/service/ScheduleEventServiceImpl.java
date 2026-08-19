@@ -11,6 +11,20 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * 调度事件服务实现类 —— 管理调度事件的创建、状态流转、重试与查询。
+ *
+ * <p>核心职责：
+ * <ul>
+ *   <li>事件创建：{@link #createAcquiredEvent} —— 创建已获取租约的调度事件（状态 ACQUIRED）</li>
+ *   <li>状态流转：{@link #startRetry} → {@link #markTaskCreated} → 成功/失败</li>
+ *   <li>失败处理：{@link #markFailed} —— 更新错误信息、决定是否可重试、设置下次重试时间</li>
+ *   <li>查询：{@link #listRetryableFailedEvents}、{@link #listIssueEvents}、{@link #listEventsWithFilter}</li>
+ *   <li>Agent 事件：{@link #createAgentEvent}、{@link #completeAgentEvent}</li>
+ * </ul>
+ *
+ * <p>依赖：{@link ScheduleEventMapper}。
+ */
 @Service
 public class ScheduleEventServiceImpl implements ScheduleEventService {
     static final String FAILURE_CATEGORY_RETRYABLE_SYSTEM = "RETRYABLE_SYSTEM";
@@ -30,6 +44,7 @@ public class ScheduleEventServiceImpl implements ScheduleEventService {
         this.retryDelaySeconds = retryDelaySeconds;
     }
 
+    /** 创建已获取租约的调度事件（状态 ACQUIRED），重复触发时返回空。 */
     @Override
     @Transactional
     public Optional<ScheduleEventEntity> createAcquiredEvent(Long sceneId, LocalDateTime plannedFireAt, String triggerReason) {
@@ -47,12 +62,14 @@ public class ScheduleEventServiceImpl implements ScheduleEventService {
         }
     }
 
+    /** 按 ID 查询调度事件。 */
     @Override
     @Transactional(readOnly = true)
     public Optional<ScheduleEventEntity> get(Long eventId) {
         return mapper.findById(eventId);
     }
 
+    /** 启动事件重试（将状态置为 RETRYING），成功后返回事件。 */
     @Override
     @Transactional
     public Optional<ScheduleEventEntity> startRetry(Long eventId) {
@@ -62,6 +79,7 @@ public class ScheduleEventServiceImpl implements ScheduleEventService {
         return mapper.findById(eventId);
     }
 
+    /** 标记调度事件已创建关联任务。 */
     @Override
     @Transactional
     public void markTaskCreated(Long eventId, Long taskId) {
@@ -72,6 +90,7 @@ public class ScheduleEventServiceImpl implements ScheduleEventService {
         mapper.update(entity);
     }
 
+    /** 标记事件失败，根据失败分类决定是否可重试，设置下次重试时间。 */
     @Override
     @Transactional
     public void markFailed(Long eventId, String errorMessage, String failureCategory) {
@@ -95,12 +114,14 @@ public class ScheduleEventServiceImpl implements ScheduleEventService {
         mapper.update(entity);
     }
 
+    /** 查询可重试的失败事件列表。 */
     @Override
     @Transactional(readOnly = true)
     public List<ScheduleEventEntity> listRetryableFailedEvents(int limit, LocalDateTime now) {
         return mapper.findRetryableFailedEvents(limit, now, maxRetries);
     }
 
+    /** 按状态分页查询调度事件列表（根据 spaceId/sceneId 自动选择查询策略）。 */
     @Override
     @Transactional(readOnly = true)
     public PageResponse<ScheduleEventEntity> listIssueEvents(List<String> statuses, Long spaceId, Long sceneId, int page, int size) {
@@ -133,6 +154,7 @@ public class ScheduleEventServiceImpl implements ScheduleEventService {
                 || FAILURE_CATEGORY_NON_RETRYABLE_RESOURCE.equals(failureCategory);
     }
 
+    /** 创建 Agent 调度事件（状态 RUNNING，类型 AGENT）。 */
     @Override
     @Transactional
     public Long createAgentEvent(Long spaceId, String traceId, String sessionId, String userMessage) {
@@ -151,6 +173,7 @@ public class ScheduleEventServiceImpl implements ScheduleEventService {
         return entity.getId();
     }
 
+    /** 更新 Agent 调度事件最终状态：成功 COMPLETED / 失败 FAILED。 */
     @Override
     @Transactional
     public void completeAgentEvent(Long eventId, boolean success, String errorMessage) {
@@ -167,6 +190,7 @@ public class ScheduleEventServiceImpl implements ScheduleEventService {
         mapper.updateStatus(eventId, status, truncatedError, success ? null : "AGENT_ERROR", LocalDateTime.now());
     }
 
+    /** 通用筛选查询（支持 scheduleType 筛选）。 */
     @Override
     @Transactional(readOnly = true)
     public PageResponse<ScheduleEventEntity> listEventsWithFilter(

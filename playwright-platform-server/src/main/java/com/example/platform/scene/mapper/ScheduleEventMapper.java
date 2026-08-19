@@ -17,6 +17,7 @@ import org.apache.ibatis.annotations.Update;
 @Mapper
 public interface ScheduleEventMapper {
 
+    /** 调度事件全字段列常量。 */
     String SELECT_COLUMNS = """
             id, space_id, scene_id, planned_fire_at, status, schedule_type, trace_id, session_id,
             task_id, trigger_reason, user_message, error_message, failure_category,
@@ -35,6 +36,7 @@ public interface ScheduleEventMapper {
             )
             """)
     @Options(useGeneratedKeys = true, keyProperty = "id")
+    /** 新增调度事件，使用自增主键回填 ID。 */
     int insert(ScheduleEventEntity entity);
 
     @Select("""
@@ -76,6 +78,7 @@ public interface ScheduleEventMapper {
             where id = #{id}
             """)
     @org.apache.ibatis.annotations.ResultMap("ScheduleEventResultMap")
+    /** 按 ID 查询调度事件。 */
     Optional<ScheduleEventEntity> findById(@Param("id") Long id);
 
     @Update("""
@@ -95,6 +98,7 @@ public interface ScheduleEventMapper {
                 last_error_at = #{lastErrorAt}
             where id = #{id}
             """)
+    /** 全量更新调度事件字段。 */
     int update(ScheduleEventEntity entity);
 
     @Update("""
@@ -105,6 +109,7 @@ public interface ScheduleEventMapper {
                 last_error_at = #{lastErrorAt}
             where id = #{id}
             """)
+    /** 更新事件状态、错误信息与失败分类。 */
     int updateStatus(@Param("id") Long id,
                      @Param("status") String status,
                      @Param("errorMessage") String errorMessage,
@@ -118,6 +123,7 @@ public interface ScheduleEventMapper {
               and task_id is null
               and status in ('FAILED', 'ABANDONED')
             """)
+    /** 尝试将失败/终止事件标记为重试中（仅当 task_id 为空时）。 */
     int tryStartRetry(@Param("id") Long id);
 
     @Select("""
@@ -134,6 +140,7 @@ public interface ScheduleEventMapper {
             limit #{limit}
             """)
     @org.apache.ibatis.annotations.ResultMap("ScheduleEventResultMap")
+    /** 查询可重试的失败事件（状态为 FAILED、task_id 为空、重试次数未达上限、下次重试时间已到）。 */
     List<ScheduleEventEntity> findRetryableFailedEvents(@Param("limit") int limit,
                                                         @Param("now") LocalDateTime now,
                                                         @Param("maxRetries") int maxRetries);
@@ -464,5 +471,6 @@ public interface ScheduleEventMapper {
             delete from schedule_event
             where scene_id = #{sceneId}
             """)
+    /** 按场景 ID 删除所有关联调度事件。 */
     int deleteAllBySceneId(@Param("sceneId") Long sceneId);
 }

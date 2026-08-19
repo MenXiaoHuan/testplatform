@@ -11,6 +11,19 @@ import org.apache.ibatis.annotations.Results;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
+/**
+ * 场景调度状态 Mapper —— 基于注解的 MyBatis 数据访问层，负责场景调度状态表的 CRUD 与租约操作。
+ *
+ * <p>核心职责：
+ * <ul>
+ *   <li>按场景 ID 查询/插入/更新调度状态：{@link #findBySceneId}、{@link #insert}、{@link #update}</li>
+ *   <li>租约竞争：{@link #tryAcquire} —— 乐观锁确保同一时间只有一个调度实例能触发场景</li>
+ *   <li>标记触发：{@link #markTriggered} —— 场景触发后更新 last_triggered_at 与 last_task_id</li>
+ *   <li>删除：{@link #deleteBySceneId}</li>
+ * </ul>
+ *
+ * <p>依赖：{@link SceneScheduleStateEntity}（实体类）。
+ */
 @Mapper
 public interface SceneScheduleStateMapper {
     @Select("""
@@ -29,6 +42,7 @@ public interface SceneScheduleStateMapper {
             @Result(property = "version", column = "version"),
             @Result(property = "updatedAt", column = "updated_at")
     })
+    /** 按场景 ID 查询调度状态。 */
     Optional<SceneScheduleStateEntity> findBySceneId(@Param("sceneId") Long sceneId);
 
     @Insert("""
@@ -40,6 +54,7 @@ public interface SceneScheduleStateMapper {
                 #{leaseOwner}, #{leaseUntil}, #{version}
             )
             """)
+    /** 新增调度状态记录。 */
     int insert(SceneScheduleStateEntity entity);
 
     @Update("""
@@ -52,6 +67,7 @@ public interface SceneScheduleStateMapper {
                 version = #{version}
             where scene_id = #{sceneId}
             """)
+    /** 全量更新调度状态。 */
     int update(SceneScheduleStateEntity entity);
 
     @Update("""
@@ -63,6 +79,7 @@ public interface SceneScheduleStateMapper {
             where scene_id = #{sceneId}
               and (last_planned_fire_at is null or last_planned_fire_at &lt; #{plannedFireAt})
             """)
+    /** 尝试获取场景调度租约（乐观锁，仅当 plannedFireAt 匹配时才更新成功）。 */
     int tryAcquire(@Param("sceneId") Long sceneId,
                    @Param("plannedFireAt") java.time.LocalDateTime plannedFireAt,
                    @Param("leaseOwner") String leaseOwner,
@@ -75,6 +92,7 @@ public interface SceneScheduleStateMapper {
             where scene_id = #{sceneId}
               and last_planned_fire_at = #{plannedFireAt}
             """)
+    /** 标记场景已触发，更新触发时间与关联任务 ID。 */
     int markTriggered(@Param("sceneId") Long sceneId,
                       @Param("plannedFireAt") java.time.LocalDateTime plannedFireAt,
                       @Param("taskId") Long taskId,
@@ -84,5 +102,6 @@ public interface SceneScheduleStateMapper {
             delete from scene_schedule_state
             where scene_id = #{sceneId}
             """)
+    /** 按场景 ID 删除调度状态。 */
     int deleteBySceneId(@Param("sceneId") Long sceneId);
 }
