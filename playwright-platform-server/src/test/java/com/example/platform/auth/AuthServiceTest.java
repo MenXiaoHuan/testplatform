@@ -148,6 +148,7 @@ class AuthServiceTest {
         AuthProperties properties = new AuthProperties();
         properties.setCookieName("platform_session");
         properties.setSlidingDays(14);
+        properties.setRegistrationEnabled(true);
         return properties;
     }
 
@@ -292,6 +293,11 @@ class AuthServiceTest {
         @Override
         public int deleteBySessionId(String sessionId) {
             return sessions.removeIf(item -> item.getSessionId().equals(sessionId)) ? 1 : 0;
+        }
+
+        @Override
+        public int deleteExpired(LocalDateTime now) {
+            return sessions.removeIf(item -> item.getExpiresAt().isBefore(now)) ? 1 : 0;
         }
     }
 

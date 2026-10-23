@@ -352,7 +352,8 @@ useTaskDetailLoader({
   onLoadError: (error) => {
     showAppToast(toErrorMessage(error, '任务详情加载失败'), 'error')
   },
-  })
+  shouldPoll: () => task.value?.status === 'QUEUED' || task.value?.status === 'RUNNING',
+})
 </script>
 
 <template>

@@ -1,5 +1,6 @@
 package com.example.platform.ai.tools;
 
+import com.example.platform.ai.AgentRequestContext;
 import com.example.platform.ai.AgentTraceLogService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,9 +43,10 @@ public class TraceQueryTool {
             return "traceId 不能为空。请提供一个有效的 traceId（UUID 格式）。";
         }
 
-        List<AgentTraceLogService.TraceLogEntry> entries = traceLogService.queryByTraceId(traceId.trim());
+        List<AgentTraceLogService.TraceLogEntry> entries =
+                traceLogService.queryByTraceId(traceId.trim(), AgentRequestContext.userId());
         if (entries.isEmpty()) {
-            return "未找到 traceId=" + traceId + " 的日志记录。该 traceId 可能已过期（保留90天）或输入有误。";
+            return "未找到 traceId=" + traceId + " 的日志记录。该 traceId 可能已过期（保留90天）、属于其他用户或输入有误。";
         }
 
         StringBuilder sb = new StringBuilder();
@@ -84,10 +86,11 @@ public class TraceQueryTool {
     @Tool(description = "List recent agent call traces with summary information. Useful for finding traceIds of recent conversations.")
     public String listRecentTraces(
             @ToolParam(description = "Maximum number of recent traces to return, default 10, max 50") Integer limit) {
-        int count = (limit != null) ? Math.min(limit, 50) : 10;
+        int count = (limit != null) ? Math.min(Math.max(limit, 1), 50) : 10;
         log.info("AI tool: listRecentTraces, limit={}", count);
 
-        List<AgentTraceLogService.TraceSummary> summaries = traceLogService.queryRecentTraces(count);
+        List<AgentTraceLogService.TraceSummary> summaries =
+                traceLogService.queryRecentTraces(AgentRequestContext.userId(), count);
         if (summaries.isEmpty()) {
             return "暂无 Agent 调用记录。";
         }

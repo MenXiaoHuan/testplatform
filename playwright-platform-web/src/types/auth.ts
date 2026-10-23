@@ -1,6 +1,7 @@
 export interface PublicKeyResponse {
   algorithm: string
   publicKeyPem: string
+  registrationEnabled?: boolean
 }
 
 export interface LoginPayload {
@@ -38,5 +39,6 @@ export interface AuthUser {
   nickname: string
   avatarUrl: string | null
   lastSpaceId: number | null
-  needsSetup: boolean
+  /** 后端总是返回；测试 fixture 可省略，默认按已初始化处理。 */
+  needsSetup?: boolean
 }

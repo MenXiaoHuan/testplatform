@@ -10,6 +10,9 @@ import com.example.platform.scene.model.SceneEntity;
  * <ul>
  *   <li>{@link #buildRunCommand(TestRepositoryEntity, SceneEntity)} —— 结合仓库的命令模板和场景的过滤条件、浏览器配置生成完整命令</li>
  * </ul>
+ *
+ * <p>命令模板支持 {@code {target}}、{@code {project}}、{@code {testRoot}} 占位符；
+ * 含占位符时完全由模板控制参数，不再自动追加。其他自定义命令也原样执行。
  */
 public interface TaskCommandBuilder {
 

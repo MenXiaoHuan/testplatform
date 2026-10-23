@@ -1,10 +1,7 @@
 package com.example.platform.runner.service;
 
-import java.io.BufferedReader;
+import com.example.platform.common.SensitiveDataRedactor;
 import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.UncheckedIOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -42,13 +39,37 @@ public class DockerRunnerCommandExecutor implements RunnerCommandExecutor {
     private final DockerCommandBuilder commandBuilder;
     private final DockerContainerNameFactory containerNameFactory;
     private final RunnerProcessLauncher processLauncher;
+    private final long maxLogBytes;
+    private final long maxTestLogBytes;
 
     public DockerRunnerCommandExecutor(
             DockerRunnerProperties dockerProperties,
             RunnerProperties runnerProperties,
             DockerCommandBuilder commandBuilder,
             DockerContainerNameFactory containerNameFactory) {
-        this(dockerProperties, runnerProperties, commandBuilder, containerNameFactory, new ProcessBuilderRunnerProcessLauncher());
+        this(dockerProperties, runnerProperties, commandBuilder, containerNameFactory,
+                new ProcessBuilderRunnerProcessLauncher(), 50L * 1024 * 1024, 200L * 1024 * 1024);
+    }
+
+    public DockerRunnerCommandExecutor(
+            DockerRunnerProperties dockerProperties,
+            RunnerProperties runnerProperties,
+            DockerCommandBuilder commandBuilder,
+            DockerContainerNameFactory containerNameFactory,
+            long maxLogBytes) {
+        this(dockerProperties, runnerProperties, commandBuilder, containerNameFactory,
+                new ProcessBuilderRunnerProcessLauncher(), maxLogBytes, 200L * 1024 * 1024);
+    }
+
+    public DockerRunnerCommandExecutor(
+            DockerRunnerProperties dockerProperties,
+            RunnerProperties runnerProperties,
+            DockerCommandBuilder commandBuilder,
+            DockerContainerNameFactory containerNameFactory,
+            long maxLogBytes,
+            long maxTestLogBytes) {
+        this(dockerProperties, runnerProperties, commandBuilder, containerNameFactory,
+                new ProcessBuilderRunnerProcessLauncher(), maxLogBytes, maxTestLogBytes);
     }
 
     DockerRunnerCommandExecutor(
@@ -57,10 +78,35 @@ public class DockerRunnerCommandExecutor implements RunnerCommandExecutor {
             DockerCommandBuilder commandBuilder,
             DockerContainerNameFactory containerNameFactory,
             RunnerProcessLauncher processLauncher) {
+        this(dockerProperties, runnerProperties, commandBuilder, containerNameFactory,
+                processLauncher, 50L * 1024 * 1024, 200L * 1024 * 1024);
+    }
+
+    DockerRunnerCommandExecutor(
+            DockerRunnerProperties dockerProperties,
+            RunnerProperties runnerProperties,
+            DockerCommandBuilder commandBuilder,
+            DockerContainerNameFactory containerNameFactory,
+            RunnerProcessLauncher processLauncher,
+            long maxLogBytes) {
+        this(dockerProperties, runnerProperties, commandBuilder, containerNameFactory,
+                processLauncher, maxLogBytes, 200L * 1024 * 1024);
+    }
+
+    DockerRunnerCommandExecutor(
+            DockerRunnerProperties dockerProperties,
+            RunnerProperties runnerProperties,
+            DockerCommandBuilder commandBuilder,
+            DockerContainerNameFactory containerNameFactory,
+            RunnerProcessLauncher processLauncher,
+            long maxLogBytes,
+            long maxTestLogBytes) {
         this.dockerProperties = dockerProperties;
         this.commandBuilder = commandBuilder;
         this.containerNameFactory = containerNameFactory;
         this.processLauncher = processLauncher;
+        this.maxLogBytes = maxLogBytes;
+        this.maxTestLogBytes = maxTestLogBytes;
     }
 
     /**
@@ -89,8 +135,13 @@ public class DockerRunnerCommandExecutor implements RunnerCommandExecutor {
             // 启动 Docker 进程
             process = processLauncher.start(dockerCommand, request.workspaceRoot(), Map.of());
             Process runningProcess = process;
-            // 启动日志捕获线程
-            logThread = new Thread(() -> captureOutput(runningProcess, logFile, lineCount), "docker-runner-log-capture");
+            boolean testStage = "TEST".equalsIgnoreCase(request.stageName())
+                    || "TESTING".equalsIgnoreCase(request.stageName());
+            long stageLogLimit = testStage ? maxTestLogBytes : maxLogBytes;
+            // 镜像不存在时 pull 日志已经写入同一个文件；追加而不是覆盖它。
+            logThread = new Thread(() -> RunnerLogCapture.capture(
+                    runningProcess, logFile, lineCount, stageLogLimit, true),
+                    "docker-runner-log-capture");
             logThread.start();
 
             // 轮询等待进程完成，同时检查取消和超时
@@ -122,9 +173,11 @@ public class DockerRunnerCommandExecutor implements RunnerCommandExecutor {
             }
             removeContainer(containerName);
             Thread.currentThread().interrupt();
-            throw new IllegalStateException("Failed to execute docker runner command: " + request.command(), exception);
+            throw new IllegalStateException("Failed to execute docker runner command: "
+                    + SensitiveDataRedactor.redact(request.command()), exception);
         } catch (IOException exception) {
-            throw new IllegalStateException("Failed to execute docker runner command: " + request.command(), exception);
+            throw new IllegalStateException("Failed to execute docker runner command: "
+                    + SensitiveDataRedactor.redact(request.command()), exception);
         }
     }
 
@@ -154,7 +207,8 @@ public class DockerRunnerCommandExecutor implements RunnerCommandExecutor {
                 List.of("docker", "pull", dockerProperties.getImage()),
                 request.workspaceRoot(),
                 Map.of());
-        Thread logThread = new Thread(() -> captureOutput(pullProcess, logFile, lineCount), "docker-image-pull-log-capture");
+        Thread logThread = new Thread(() -> RunnerLogCapture.capture(pullProcess, logFile, lineCount, maxLogBytes),
+                "docker-image-pull-log-capture");
         logThread.start();
 
         Duration pullTimeout = Duration.ofSeconds(Math.max(0, dockerProperties.getImagePullTimeoutSeconds()));
@@ -175,7 +229,15 @@ public class DockerRunnerCommandExecutor implements RunnerCommandExecutor {
         int pullExitCode = pullProcess.exitValue();
         waitForLogThread(logThread);
         if (pullExitCode != 0) {
-            throw new IllegalStateException("Failed to pull docker runner image: " + dockerProperties.getImage());
+            // 保留 pull 日志，并把它作为 INSTALLING 阶段失败结果返回；
+            // 这样阶段日志里能看到镜像拉取失败的原因，而不是只有一条任务错误。
+            String message = "[image pull failed] exitCode=" + pullExitCode
+                    + ", image=" + dockerProperties.getImage();
+            Files.writeString(logFile, message + System.lineSeparator(),
+                    java.nio.charset.StandardCharsets.UTF_8,
+                    java.nio.file.StandardOpenOption.APPEND);
+            lineCount.incrementAndGet();
+            return new RunnerCommandResult(-1, false, false, elapsedMs(startedAt), logFile, lineCount.get());
         }
         return null;
     }
@@ -215,27 +277,6 @@ public class DockerRunnerCommandExecutor implements RunnerCommandExecutor {
             return Files.createTempFile("docker-runner-command-", ".log");
         } catch (IOException exception) {
             throw new IllegalStateException("Failed to create temporary log file", exception);
-        }
-    }
-
-    /**
-     * 异步捕获进程输出并写入日志文件。
-     *
-     * @param process   目标进程
-     * @param logFile   日志文件路径
-     * @param lineCount 行数计数器
-     */
-    private void captureOutput(Process process, Path logFile, AtomicInteger lineCount) {
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8));
-             var writer = Files.newBufferedWriter(logFile, StandardCharsets.UTF_8)) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                writer.write(line);
-                writer.newLine();
-                lineCount.incrementAndGet();
-            }
-        } catch (IOException exception) {
-            throw new UncheckedIOException(exception);
         }
     }
 

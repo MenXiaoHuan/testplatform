@@ -39,7 +39,14 @@ public class AgentTraceLogService {
     private static final Duration TTL_90_DAYS = Duration.ofDays(90);
     private static final String KEY_TRACE_PREFIX = "agent:trace:";
     private static final String KEY_TRACE_INDEX = "agent:trace:index";
+    private static final String KEY_TRACE_OWNER = "agent:trace:owner";
     private static final int MAX_INDEX_SIZE = 10_000;
+    private static final java.util.regex.Pattern URL_USERINFO =
+            java.util.regex.Pattern.compile("(?i)(https?://)[^/@\\s]+@");
+    private static final java.util.regex.Pattern COMMON_SECRET =
+            java.util.regex.Pattern.compile("(?i)(api[_-]?key|token|secret|password)\\s*[=:]\\s*[^\\s,;]+");
+    private static final java.util.regex.Pattern BEARER_TOKEN =
+            java.util.regex.Pattern.compile("(?i)(bearer\\s+)[A-Za-z0-9._-]{12,}");
     /** 所有 metadata 字符串值统一截断上限（不再区分 Preview/Full，全部保留原文）。 */
     private static final int MAX_METADATA_VALUE_LENGTH = 200_000;
 
@@ -63,7 +70,7 @@ public class AgentTraceLogService {
                     Instant.now(),
                     level,
                     stage,
-                    message,
+                    redact(message),
                     truncateMetadata(metadata != null ? metadata : Map.of())
             );
 
@@ -88,13 +95,46 @@ public class AgentTraceLogService {
         }
     }
 
+    /**
+     * 记录 trace 归属。列表/详情查询用它做用户隔离；没有归属的旧 trace 不返回。
+     */
+    public void bindOwner(String traceId, Long userId, Long spaceId) {
+        if (traceId == null || traceId.isBlank() || userId == null) {
+            return;
+        }
+        try {
+            String value = userId + ":" + (spaceId == null ? 0L : spaceId);
+            redis.opsForHash().put(KEY_TRACE_OWNER, traceId, value);
+            redis.expire(KEY_TRACE_OWNER, TTL_90_DAYS);
+        } catch (Exception exception) {
+            log.warn("Failed to bind trace owner: traceId={}, userId={}", traceId, userId, exception);
+        }
+    }
+
+    private boolean ownedBy(String traceId, Long userId) {
+        if (traceId == null || userId == null) {
+            return false;
+        }
+        try {
+            Object value = redis.opsForHash().get(KEY_TRACE_OWNER, traceId);
+            if (value == null) {
+                return false;
+            }
+            String ownerUserId = String.valueOf(value).split(":", 2)[0];
+            return ownerUserId.equals(String.valueOf(userId));
+        } catch (Exception exception) {
+            log.warn("Failed to read trace owner: traceId={}", traceId, exception);
+            return false;
+        }
+    }
+
     private Map<String, Object> truncateMetadata(Map<String, Object> metadata) {
         Map<String, Object> truncated = new LinkedHashMap<>();
         for (Map.Entry<String, Object> entry : metadata.entrySet()) {
             String key = entry.getKey();
             Object value = entry.getValue();
             if (value instanceof String str) {
-                truncated.put(key, truncate(str, MAX_METADATA_VALUE_LENGTH));
+                truncated.put(key, truncate(redact(str), MAX_METADATA_VALUE_LENGTH));
             } else if (value instanceof List<?> list) {
                 if (list.size() > 200) {
                     truncated.put(key, list.subList(0, 200) + "...(total:" + list.size() + ")");
@@ -115,6 +155,19 @@ public class AgentTraceLogService {
         return text.substring(0, maxLength) + "...[truncated]";
     }
 
+    /**
+     * trace 会被页面和 LLM 读取，写入前对常见凭据做最小化脱敏。
+     * 这不是一个完整的 DLP，只是防止 Git URL / Authorization 头把 token 原样留在 Redis。
+     */
+    private String redact(String text) {
+        if (text == null || text.isBlank()) {
+            return text;
+        }
+        String redacted = URL_USERINFO.matcher(text).replaceAll("$1***@");
+        redacted = COMMON_SECRET.matcher(redacted).replaceAll("$1=***");
+        return BEARER_TOKEN.matcher(redacted).replaceAll("$1***");
+    }
+
     public void log(String traceId, String level, String stage, String message) {
         log(traceId, level, stage, message, Map.of());
     }
@@ -133,8 +186,8 @@ public class AgentTraceLogService {
         log(traceId, level, stage, message, metadata);
     }
 
-    public List<TraceLogEntry> queryByTraceId(String traceId) {
-        if (traceId == null || traceId.isBlank()) {
+    public List<TraceLogEntry> queryByTraceId(String traceId, Long userId) {
+        if (traceId == null || traceId.isBlank() || !ownedBy(traceId, userId)) {
             return List.of();
         }
 
@@ -164,11 +217,16 @@ public class AgentTraceLogService {
         }
     }
 
-    public List<TraceSummary> queryRecentTraces(int limit) {
+    public List<TraceSummary> queryRecentTraces(Long userId, int limit) {
+        if (userId == null) {
+            return List.of();
+        }
         try {
-            int count = Math.min(limit, 50);
+            int count = Math.min(Math.max(limit, 1), 50);
+            // 多取一些候选，因为别人的 trace 会被过滤掉。
+            int scanSize = Math.min(500, Math.max(count * 5, count));
             Set<ZSetOperations.TypedTuple<String>> index = redis.opsForZSet()
-                    .reverseRangeWithScores(KEY_TRACE_INDEX, 0, count - 1);
+                    .reverseRangeWithScores(KEY_TRACE_INDEX, 0, scanSize - 1);
 
             if (index == null || index.isEmpty()) {
                 return List.of();
@@ -178,6 +236,9 @@ public class AgentTraceLogService {
             for (ZSetOperations.TypedTuple<String> entry : index) {
                 if (entry.getValue() == null) continue;
                 String traceId = entry.getValue();
+                if (!ownedBy(traceId, userId)) {
+                    continue;
+                }
                 String key = KEY_TRACE_PREFIX + traceId;
                 Long size = redis.opsForList().size(key);
                 Double score = entry.getScore();
@@ -187,6 +248,9 @@ public class AgentTraceLogService {
                         size != null ? size : 0,
                         score != null ? Instant.ofEpochMilli(score.longValue()) : Instant.now()
                 ));
+                if (summaries.size() >= count) {
+                    break;
+                }
             }
 
             return summaries;
@@ -218,6 +282,7 @@ public class AgentTraceLogService {
         try {
             redis.delete(KEY_TRACE_PREFIX + traceId);
             redis.opsForZSet().remove(KEY_TRACE_INDEX, traceId);
+            redis.opsForHash().delete(KEY_TRACE_OWNER, traceId);
         } catch (Exception e) {
             AgentTraceLogService.log.warn("Failed to delete trace: traceId={}", traceId, e);
         }

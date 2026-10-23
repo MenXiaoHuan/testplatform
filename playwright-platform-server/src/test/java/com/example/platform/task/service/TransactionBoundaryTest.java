@@ -18,15 +18,15 @@ class TransactionBoundaryTest {
     @Test
     void repositoryWritesShouldBeTransactional() throws NoSuchMethodException {
         assertTransactional(RepositoryServiceImpl.class, "create", TestRepositoryEntity.class);
-        assertTransactional(RepositoryServiceImpl.class, "update", Long.class, TestRepositoryEntity.class);
-        assertTransactional(RepositoryServiceImpl.class, "delete", Long.class);
+        assertTransactional(RepositoryServiceImpl.class, "update", Long.class, Long.class, TestRepositoryEntity.class);
+        assertTransactional(RepositoryServiceImpl.class, "delete", Long.class, Long.class);
     }
 
     @Test
     void sceneWritesShouldBeTransactional() throws NoSuchMethodException {
         assertTransactional(SceneServiceImpl.class, "create", SceneEntity.class);
-        assertTransactional(SceneServiceImpl.class, "update", Long.class, SceneEntity.class);
-        assertTransactional(SceneServiceImpl.class, "delete", Long.class);
+        assertTransactional(SceneServiceImpl.class, "update", Long.class, Long.class, SceneEntity.class);
+        assertTransactional(SceneServiceImpl.class, "delete", Long.class, Long.class);
     }
 
     @Test
@@ -35,9 +35,17 @@ class TransactionBoundaryTest {
     }
 
     @Test
-    void schedulerLeaseAndDueSceneWritesShouldBeTransactional() throws NoSuchMethodException {
+    void schedulerLeaseShouldBeTransactional() throws NoSuchMethodException {
         assertTransactional(SceneScheduleLeaseServiceImpl.class, "tryAcquire", Long.class, LocalDateTime.class);
-        assertTransactional(SceneSchedulerServiceImpl.class, "triggerDueScenes", LocalDateTime.class);
+    }
+
+    @Test
+    void schedulerLoopShouldNotWrapTaskDispatchInOneTransaction() throws NoSuchMethodException {
+        Method trigger = SceneSchedulerServiceImpl.class.getDeclaredMethod(
+                "triggerDueScenes", LocalDateTime.class);
+        assertThat(trigger.getAnnotation(Transactional.class))
+                .as("整轮扫描不能包在一个事务里，否则异步派发可能读不到未提交任务")
+                .isNull();
     }
 
     @Test

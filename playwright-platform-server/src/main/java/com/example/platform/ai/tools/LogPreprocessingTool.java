@@ -1,5 +1,6 @@
 package com.example.platform.ai.tools;
 
+import com.example.platform.ai.AgentRequestContext;
 import com.example.platform.task.service.TaskService;
 import com.example.platform.task.dto.TaskStageLogResponse;
 import org.slf4j.Logger;
@@ -28,8 +29,8 @@ public class LogPreprocessingTool {
 
     @Tool(description = "Preprocess and analyze task execution logs within the current space, extract error summaries and key information")
     public String analyzeLogs(
-            @ToolParam(description = "Task ID whose logs should be analyzed") Long taskId,
-            @ToolParam(description = "Space ID for data isolation - always required") Long spaceId) {
+            @ToolParam(description = "Task ID whose logs should be analyzed") Long taskId) {
+        Long spaceId = AgentRequestContext.requireSpaceId();
         log.info("AI tool: analyzeLogs, taskId={}, spaceId={}", taskId, spaceId);
         try {
             var task = taskService.get(spaceId, taskId);

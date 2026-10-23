@@ -14,6 +14,9 @@ package com.example.platform.task.model;
  * <p>依赖：无外部依赖，纯 POJO
  */
 public class CaseResultEntity {
+    private static final int MAX_FULL_NAME_LENGTH = 512;
+    private static final int MAX_NAME_LENGTH = 256;
+
     /** 用例结果ID */
     private Long id;
 
@@ -52,21 +55,28 @@ public class CaseResultEntity {
     public Long getTaskId() { return taskId; }
     public void setTaskId(Long taskId) { this.taskId = taskId; }
     public String getHistoryId() { return historyId; }
-    public void setHistoryId(String historyId) { this.historyId = historyId; }
+    public void setHistoryId(String historyId) { this.historyId = truncate(historyId, MAX_NAME_LENGTH); }
     public String getFullName() { return fullName; }
-    public void setFullName(String fullName) { this.fullName = fullName; }
+    public void setFullName(String fullName) { this.fullName = truncate(fullName, MAX_FULL_NAME_LENGTH); }
     public String getSuiteName() { return suiteName; }
-    public void setSuiteName(String suiteName) { this.suiteName = suiteName; }
+    public void setSuiteName(String suiteName) { this.suiteName = truncate(suiteName, MAX_NAME_LENGTH); }
     public String getStoryName() { return storyName; }
-    public void setStoryName(String storyName) { this.storyName = storyName; }
+    public void setStoryName(String storyName) { this.storyName = truncate(storyName, MAX_NAME_LENGTH); }
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
     public Long getDurationMs() { return durationMs; }
     public void setDurationMs(Long durationMs) { this.durationMs = durationMs; }
     public String getOwnerName() { return ownerName; }
-    public void setOwnerName(String ownerName) { this.ownerName = ownerName; }
+    public void setOwnerName(String ownerName) { this.ownerName = truncate(ownerName, 128); }
     public String getSeverity() { return severity; }
-    public void setSeverity(String severity) { this.severity = severity; }
+    public void setSeverity(String severity) { this.severity = truncate(severity, 64); }
     public String getProjectName() { return projectName; }
-    public void setProjectName(String projectName) { this.projectName = projectName; }
+    public void setProjectName(String projectName) { this.projectName = truncate(projectName, 64); }
+
+    private static String truncate(String value, int maxLength) {
+        if (value == null || value.length() <= maxLength) {
+            return value;
+        }
+        return value.substring(0, maxLength);
+    }
 }

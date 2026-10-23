@@ -231,7 +231,8 @@ public class AgentController {
     public ApiResponse<List<AgentTraceLogService.TraceSummary>> listRecentTraces(
             @RequestParam(defaultValue = "20") int limit) {
         int safeLimit = Math.max(1, Math.min(limit, 100));
-        return ApiResponse.ok(traceLogService.queryRecentTraces(safeLimit));
+        Long userId = AuthContextHolder.require().userId();
+        return ApiResponse.ok(traceLogService.queryRecentTraces(userId, safeLimit));
     }
 
     /** 返回某条 trace 的完整时间线（所有日志条目按时间升序）。 */
@@ -240,7 +241,8 @@ public class AgentController {
         if (traceId == null || traceId.isBlank()) {
             return ApiResponse.error("BAD_REQUEST", "traceId is required");
         }
-        List<AgentTraceLogService.TraceLogEntry> entries = traceLogService.queryByTraceId(traceId);
+        Long userId = AuthContextHolder.require().userId();
+        List<AgentTraceLogService.TraceLogEntry> entries = traceLogService.queryByTraceId(traceId, userId);
         if (entries.isEmpty()) {
             return ApiResponse.error("NOT_FOUND", "trace not found: " + traceId);
         }

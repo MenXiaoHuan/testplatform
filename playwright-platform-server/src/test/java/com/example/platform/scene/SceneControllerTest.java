@@ -332,7 +332,7 @@ class SceneControllerTest {
                 .andExpect(status().isInternalServerError())
                 .andExpect(jsonPath("$.code").value("INTERNAL_SERVER_ERROR"))
                 .andExpect(jsonPath("$.data").value(nullValue()))
-                .andExpect(jsonPath("$.msg").value("boom"));
+                .andExpect(jsonPath("$.msg").value("服务内部错误，请稍后重试"));
     }
 
     @Test

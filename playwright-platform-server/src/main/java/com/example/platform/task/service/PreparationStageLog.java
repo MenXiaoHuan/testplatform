@@ -1,5 +1,6 @@
 package com.example.platform.task.service;
 
+import com.example.platform.common.SensitiveDataRedactor;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -52,7 +53,7 @@ final class PreparationStageLog {
             if (line.isBlank()) {
                 continue;
             }
-            lines.add(Instant.now() + " " + line);
+            lines.add(Instant.now() + " " + SensitiveDataRedactor.redact(line));
         }
         if (lines.isEmpty()) {
             return;

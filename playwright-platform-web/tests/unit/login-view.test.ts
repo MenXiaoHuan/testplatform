@@ -65,6 +65,11 @@ describe('LoginView', () => {
     setActivePinia(pinia)
     pushMock.mockReset()
     const store = useAuthStore()
+    store.publicKey = {
+      algorithm: 'RSA',
+      publicKeyPem: '',
+      registrationEnabled: true,
+    }
     store.login = vi.fn().mockResolvedValue({
       id: 1,
       username: 'admin',
@@ -148,16 +153,14 @@ describe('LoginView', () => {
 
     const inputs = wrapper.findAll('input')
     await inputs[0].setValue('zhangsan')
-    await inputs[1].setValue('张三')
+    await inputs[1].setValue('secret123')
     await inputs[2].setValue('secret123')
-    await inputs[3].setValue('secret123')
     await wrapper.find('button').trigger('click')
     await flushPromises()
 
     const store = useAuthStore()
     expect(store.register).toHaveBeenCalledWith({
       username: 'zhangsan',
-      nickname: '张三',
       password: 'secret123',
       confirmPassword: 'secret123',
     })

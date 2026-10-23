@@ -91,6 +91,7 @@ class SceneScheduleStateMapperTest {
 
     private Long insertScene(String name) {
         TestRepositoryEntity repository = new TestRepositoryEntity();
+        repository.setSpaceId(1L);
         repository.setName(name + "-repo");
         repository.setGitUrl("https://github.com/demo/testframe.git");
         repository.setDefaultBranch("main");
@@ -104,6 +105,7 @@ class SceneScheduleStateMapperTest {
         repositoryMapper.insert(repository);
 
         SceneEntity scene = new SceneEntity();
+        scene.setSpaceId(1L);
         scene.setRepoId(repository.getId());
         scene.setName(name);
         scene.setDescription("demo scene");

@@ -8,6 +8,11 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public class AuthProperties {
     private String cookieName = "platform_session";
     private int slidingDays = 14;
+    /**
+     * 是否允许自助注册。默认关闭，避免公网部署时任何人注册后获得执行命令的能力。
+     * 首次部署可临时设为 true，注册完成后改回 false。
+     */
+    private boolean registrationEnabled = false;
     private List<UserConfig> users = new ArrayList<>();
 
     public String getCookieName() {
@@ -24,6 +29,14 @@ public class AuthProperties {
 
     public void setSlidingDays(int slidingDays) {
         this.slidingDays = slidingDays;
+    }
+
+    public boolean isRegistrationEnabled() {
+        return registrationEnabled;
+    }
+
+    public void setRegistrationEnabled(boolean registrationEnabled) {
+        this.registrationEnabled = registrationEnabled;
     }
 
     public List<UserConfig> getUsers() {

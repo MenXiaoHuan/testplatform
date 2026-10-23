@@ -7,14 +7,10 @@ import com.example.platform.repository.mapper.TestRepositoryMapper;
 import com.example.platform.repository.model.TestRepositoryEntity;
 import com.example.platform.runner.service.DockerRunnerCommandExecutor;
 import com.example.platform.runner.service.DockerRunnerProperties;
-import com.example.platform.runner.service.LocalRunnerCommandExecutor;
 import com.example.platform.runner.service.RunnerCommandExecutor;
 import com.example.platform.runner.service.RunnerCommandExecutorConfig;
-import com.example.platform.runner.service.RunnerCommandRequest;
 import com.example.platform.runner.service.RunnerCommandResult;
 import com.example.platform.runner.service.RunnerExecutionService;
-import com.example.platform.runner.service.RunnerExecutionServiceImpl;
-import com.example.platform.runner.service.RunnerMode;
 import com.example.platform.runner.service.RunnerProperties;
 import com.example.platform.runner.service.RunnerWorkspaceService;
 import com.example.platform.scene.mapper.SceneMapper;
@@ -47,7 +43,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.Executor;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -63,7 +58,7 @@ class TaskExecutionServiceTest {
     Path tempDir;
 
     @Test
-    void shouldBuildRunCommandFromRepositoryTemplateAndMatchValue() {
+    void shouldLetCustomRepositoryTemplateControlArguments() {
         TestRepositoryEntity repository = new TestRepositoryEntity();
         repository.setRunCommandTemplate("node ./scripts/run-e2e.cjs");
         repository.setTestRoot("tests");
@@ -76,9 +71,8 @@ class TaskExecutionServiceTest {
         TaskCommandBuilder taskCommandBuilder = new TaskCommandBuilderImpl();
         String command = taskCommandBuilder.buildRunCommand(repository, scene);
 
-        assertThat(command).contains("node ./scripts/run-e2e.cjs");
-        assertThat(command).contains("--project chromium");
-        assertThat(command).contains("--target tests/login.spec.ts");
+        assertThat(command).isEqualTo("node ./scripts/run-e2e.cjs");
+        assertThat(command).doesNotContain("--target");
     }
 
     @Test
@@ -94,7 +88,7 @@ class TaskExecutionServiceTest {
         TaskCommandBuilder taskCommandBuilder = new TaskCommandBuilderImpl();
         String command = taskCommandBuilder.buildRunCommand(repository, scene);
 
-        assertThat(command).isEqualTo("npx playwright test tests/e2e/checkout/cart.spec.ts --project webkit");
+        assertThat(command).isEqualTo("npx playwright test 'tests/e2e/checkout/cart.spec.ts' --project 'webkit'");
         assertThat(command).doesNotContain("--target");
     }
 
@@ -131,7 +125,7 @@ class TaskExecutionServiceTest {
         Mockito.when(context.sceneRepository.findById(11L)).thenReturn(Optional.of(scene));
         Mockito.when(context.repositoryRepository.findById(21L)).thenReturn(Optional.of(repository));
         context.mockSaveWithGeneratedId();
-        Mockito.when(context.workspaceService.prepareWorkspace("git@demo/repo.git", "main", 101L))
+        Mockito.when(context.workspaceService.prepareWorkspace(Mockito.any(TestRepositoryEntity.class), Mockito.eq("main"), Mockito.eq(101L), Mockito.any()))
                 .thenReturn(Path.of("/tmp/task-101"));
         Mockito.when(context.executionService.installDependencies(
                 Path.of("/tmp/task-101/playwright_framework"),
@@ -187,7 +181,7 @@ class TaskExecutionServiceTest {
         Mockito.when(context.sceneRepository.findById(11L)).thenReturn(Optional.of(scene));
         Mockito.when(context.repositoryRepository.findById(21L)).thenReturn(Optional.of(repository));
         context.mockSaveWithGeneratedId();
-        Mockito.when(context.workspaceService.prepareWorkspace("git@demo/repo.git", "main", 101L)).thenReturn(workspace);
+        Mockito.when(context.workspaceService.prepareWorkspace(Mockito.any(TestRepositoryEntity.class), Mockito.eq("main"), Mockito.eq(101L), Mockito.any())).thenReturn(workspace);
         Mockito.when(context.executionService.installDependencies(
                 executionDirectory,
                 "npm install",
@@ -241,7 +235,7 @@ class TaskExecutionServiceTest {
         Mockito.when(context.sceneRepository.findById(11L)).thenReturn(Optional.of(scene));
         Mockito.when(context.repositoryRepository.findById(21L)).thenReturn(Optional.of(repository));
         context.mockSaveWithGeneratedId();
-        Mockito.when(context.workspaceService.prepareWorkspace("git@demo/repo.git", "main", 101L)).thenReturn(workspace);
+        Mockito.when(context.workspaceService.prepareWorkspace(Mockito.any(TestRepositoryEntity.class), Mockito.eq("main"), Mockito.eq(101L), Mockito.any())).thenReturn(workspace);
         Mockito.when(context.executionService.runStage(
                 Mockito.eq(workspace),
                 Mockito.eq(executionDirectory),
@@ -304,7 +298,7 @@ class TaskExecutionServiceTest {
         Mockito.when(context.sceneRepository.findById(11L)).thenReturn(Optional.of(scene));
         Mockito.when(context.repositoryRepository.findById(21L)).thenReturn(Optional.of(repository));
         context.mockSaveWithGeneratedId();
-        Mockito.when(context.workspaceService.prepareWorkspace("git@demo/repo.git", "main", 101L)).thenReturn(workspace);
+        Mockito.when(context.workspaceService.prepareWorkspace(Mockito.any(TestRepositoryEntity.class), Mockito.eq("main"), Mockito.eq(101L), Mockito.any())).thenReturn(workspace);
         Mockito.when(context.executionService.runStage(
                 Mockito.eq(workspace),
                 Mockito.eq(executionDirectory),
@@ -367,7 +361,7 @@ class TaskExecutionServiceTest {
         Mockito.when(context.repositoryRepository.findById(21L)).thenReturn(Optional.of(repository));
         context.mockSaveWithGeneratedId();
         Mockito.when(context.taskRepository.findFirstBySceneIdOrderByCreatedAtDescIdDesc(11L)).thenReturn(Optional.of(latestTask));
-        Mockito.when(context.workspaceService.prepareWorkspace("git@demo/repo.git", "main", 101L)).thenReturn(Path.of("/tmp/task-101"));
+        Mockito.when(context.workspaceService.prepareWorkspace(Mockito.any(TestRepositoryEntity.class), Mockito.eq("main"), Mockito.eq(101L), Mockito.any())).thenReturn(Path.of("/tmp/task-101"));
         Mockito.when(context.executionService.installDependencies(
                 Path.of("/tmp/task-101/playwright_framework"),
                 "npm install",
@@ -421,7 +415,7 @@ class TaskExecutionServiceTest {
         });
         Mockito.when(context.taskCommandBuilder.buildRunCommand(repository, scene))
                 .thenReturn("npx playwright test tests/login.spec.ts --project chromium");
-        Mockito.when(context.workspaceService.prepareWorkspace("git@demo/repo.git", "main", 101L)).thenReturn(Path.of("/tmp/task-101"));
+        Mockito.when(context.workspaceService.prepareWorkspace(Mockito.any(TestRepositoryEntity.class), Mockito.eq("main"), Mockito.eq(101L), Mockito.any())).thenReturn(Path.of("/tmp/task-101"));
         Mockito.when(context.executionService.installDependencies(
                 Path.of("/tmp/task-101/playwright_framework"),
                 "npm install",
@@ -487,7 +481,7 @@ class TaskExecutionServiceTest {
             task.setResolvedRunCommand("npm run test:e2e");
             return Optional.of(task);
         });
-        Mockito.when(context.workspaceService.prepareWorkspace("git@demo/repo.git", "main", 101L)).thenAnswer(invocation -> {
+        Mockito.when(context.workspaceService.prepareWorkspace(Mockito.any(TestRepositoryEntity.class), Mockito.eq("main"), Mockito.eq(101L), Mockito.any())).thenAnswer(invocation -> {
             requestIdSeen.set(MDC.get("requestId"));
             taskIdSeen.set(MDC.get("taskId"));
             sceneIdSeen.set(MDC.get("sceneId"));
@@ -525,67 +519,8 @@ class TaskExecutionServiceTest {
     }
 
     @Test
-    void shouldRestoreInterruptFlagWhenRunnerExecutionIsInterrupted() throws Exception {
-        RunnerExecutionServiceImpl service = new RunnerExecutionServiceImpl(new LocalRunnerCommandExecutor());
-        AtomicReference<Throwable> failure = new AtomicReference<>();
-        AtomicBoolean interrupted = new AtomicBoolean(false);
-
-        Thread worker = new Thread(() -> {
-            try {
-                service.runTests(Path.of(System.getProperty("java.io.tmpdir")), "sleep 5", Map.of());
-            } catch (Throwable throwable) {
-                failure.set(throwable);
-                interrupted.set(Thread.currentThread().isInterrupted());
-            }
-        });
-
-        worker.start();
-        Thread.sleep(200);
-        worker.interrupt();
-        worker.join(3000);
-
-        assertThat(worker.isAlive()).isFalse();
-        assertThat(failure.get()).isInstanceOf(IllegalStateException.class);
-        assertThat(failure.get()).hasCauseInstanceOf(InterruptedException.class);
-        assertThat(interrupted.get()).isTrue();
-    }
-
-    @Test
-    void shouldCaptureCombinedLogOutputToFile() throws Exception {
-        RunnerCommandExecutor executor = new LocalRunnerCommandExecutor();
-        RunnerCommandRequest request = new RunnerCommandRequest(
-                tempDir,
-                tempDir,
-                "TEST",
-                "printf 'line1\\nline2\\n'",
-                Map.of(),
-                Duration.ofSeconds(5),
-                () -> false);
-
-        RunnerCommandResult result = executor.execute(request);
-
-        assertThat(result.exitCode()).isEqualTo(0);
-        assertThat(result.timedOut()).isFalse();
-        assertThat(result.canceled()).isFalse();
-        assertThat(result.lineCount()).isEqualTo(2);
-        assertThat(Files.readString(result.combinedLogFile())).contains("line1").contains("line2");
-    }
-
-    @Test
-    void shouldCreateLocalRunnerCommandExecutorFromConfiguration() {
+    void shouldAlwaysCreateDockerRunnerCommandExecutor() {
         RunnerProperties runnerProperties = new RunnerProperties();
-        runnerProperties.setMode(RunnerMode.LOCAL);
-        RunnerCommandExecutorConfig config = new RunnerCommandExecutorConfig();
-
-        RunnerCommandExecutor executor = config.runnerCommandExecutor(runnerProperties, new DockerRunnerProperties());
-
-        assertThat(executor).isInstanceOf(LocalRunnerCommandExecutor.class);
-    }
-
-    @Test
-    void shouldCreateDockerRunnerCommandExecutorForDockerMode() {
-        RunnerProperties runnerProperties = new RunnerProperties();
-        runnerProperties.setMode(RunnerMode.DOCKER);
         runnerProperties.setWorkspaceRoot(Path.of("/tmp/playwright-platform/workspaces"));
         runnerProperties.setHostWorkspaceRoot(Path.of("/tmp/playwright-platform/workspaces"));
         RunnerCommandExecutorConfig config = new RunnerCommandExecutorConfig();
@@ -831,7 +766,7 @@ class TaskExecutionServiceTest {
             task.setResultMessage("INSTALLING 阶段超时");
             return Optional.of(task);
         });
-        Mockito.when(context.workspaceService.prepareWorkspace("git@demo/repo.git", "main", 101L)).thenReturn(tempDir);
+        Mockito.when(context.workspaceService.prepareWorkspace(Mockito.any(TestRepositoryEntity.class), Mockito.eq("main"), Mockito.eq(101L), Mockito.any())).thenReturn(tempDir);
         Mockito.when(context.executionService.runStage(
                 Mockito.any(),
                 Mockito.any(),
@@ -867,7 +802,7 @@ class TaskExecutionServiceTest {
             task.setResultMessage("INSTALLING 阶段超时");
             return Optional.of(task);
         });
-        Mockito.when(context.workspaceService.prepareWorkspace("git@demo/repo.git", "main", 101L)).thenReturn(tempDir);
+        Mockito.when(context.workspaceService.prepareWorkspace(Mockito.any(TestRepositoryEntity.class), Mockito.eq("main"), Mockito.eq(101L), Mockito.any())).thenReturn(tempDir);
         Mockito.when(context.executionService.runStage(
                 Mockito.any(),
                 Mockito.any(),
@@ -896,7 +831,7 @@ class TaskExecutionServiceTest {
         Mockito.when(context.sceneRepository.findById(11L)).thenReturn(Optional.of(scene));
         Mockito.when(context.repositoryRepository.findById(21L)).thenReturn(Optional.of(context.repository()));
         context.mockSaveWithGeneratedId();
-        Mockito.when(context.workspaceService.prepareWorkspace("git@demo/repo.git", "main", 101L)).thenReturn(tempDir);
+        Mockito.when(context.workspaceService.prepareWorkspace(Mockito.any(TestRepositoryEntity.class), Mockito.eq("main"), Mockito.eq(101L), Mockito.any())).thenReturn(tempDir);
         Mockito.when(context.executionService.runStage(
                 Mockito.any(),
                 Mockito.any(),
@@ -919,7 +854,14 @@ class TaskExecutionServiceTest {
                 Mockito.eq(101L),
                 Mockito.eq("PREPARING"),
                 Mockito.any(Path.class),
-                Mockito.anyInt());
+                Mockito.anyInt(),
+                Mockito.anyLong(),
+                Mockito.isNull(),
+                Mockito.eq("SUCCESS"),
+                Mockito.contains("Workspace preparation"),
+                Mockito.any(),
+                Mockito.any(),
+                Mockito.isNull());
     }
 
     @Test
@@ -990,7 +932,7 @@ class TaskExecutionServiceTest {
         artifact.setContentType("application/zip");
         artifact.setSize(9L);
 
-        Mockito.when(context.artifactRepository.findAllByTaskIdOrderByIdAsc(101L)).thenReturn(List.of(artifact));
+        Mockito.when(context.artifactRepository.findByIdAndTaskId(101L, 1L)).thenReturn(Optional.of(artifact));
         Mockito.when(context.taskRepository.findById(101L)).thenReturn(Optional.of(task));
         Mockito.when(context.objectStorageService.getObject("qa-report", "runs/101/artifacts/trace.zip"))
                 .thenReturn(new java.io.ByteArrayInputStream("zip-data".getBytes()));
@@ -1057,7 +999,7 @@ class TaskExecutionServiceTest {
             task.setLogUrl("parse case results failed: results index missing");
             return Optional.of(task);
         });
-        Mockito.when(context.workspaceService.prepareWorkspace("git@demo/repo.git", "main", 101L)).thenReturn(Path.of("/tmp/task-101"));
+        Mockito.when(context.workspaceService.prepareWorkspace(Mockito.any(TestRepositoryEntity.class), Mockito.eq("main"), Mockito.eq(101L), Mockito.any())).thenReturn(Path.of("/tmp/task-101"));
         Mockito.when(context.executionService.installDependencies(
                 Path.of("/tmp/task-101"),
                 "npm install",
@@ -1120,7 +1062,7 @@ class TaskExecutionServiceTest {
             task.setLogUrl("parse case results failed: results index missing");
             return Optional.of(task);
         });
-        Mockito.when(context.workspaceService.prepareWorkspace("git@demo/repo.git", "main", 101L)).thenReturn(Path.of("/tmp/task-101"));
+        Mockito.when(context.workspaceService.prepareWorkspace(Mockito.any(TestRepositoryEntity.class), Mockito.eq("main"), Mockito.eq(101L), Mockito.any())).thenReturn(Path.of("/tmp/task-101"));
         Mockito.when(context.executionService.installDependencies(
                 Path.of("/tmp/task-101/playwright_framework"),
                 "npm install",
@@ -1168,7 +1110,7 @@ class TaskExecutionServiceTest {
         Mockito.when(context.sceneRepository.findById(11L)).thenReturn(Optional.of(scene));
         Mockito.when(context.repositoryRepository.findById(21L)).thenReturn(Optional.of(repository));
         context.mockSaveWithGeneratedId();
-        Mockito.when(context.workspaceService.prepareWorkspace("git@demo/repo.git", "main", 101L)).thenReturn(Path.of("/tmp/task-101"));
+        Mockito.when(context.workspaceService.prepareWorkspace(Mockito.any(TestRepositoryEntity.class), Mockito.eq("main"), Mockito.eq(101L), Mockito.any())).thenReturn(Path.of("/tmp/task-101"));
 
         TaskEntity result = context.service().createAndRun(11L);
 
@@ -1237,22 +1179,8 @@ class TaskExecutionServiceTest {
         }
 
         private TaskServiceImpl service() {
-            return new TaskServiceImpl(
-                    sceneRepository,
-                    repositoryRepository,
-                    taskRepository,
-                    artifactRepository,
-                    caseResultRepository,
-                    workspaceService,
-                    executionService,
-                    taskArtifactArchiveService,
-                    taskCaseResultParseService,
-                    taskCaseResultPersistenceService,
-                    objectStorageService,
-                    taskCommandBuilder,
-                    detailCacheService,
-                    "qa-report",
-                    "http://minio");
+            // 同步执行，使用无操作 stage log；与原来的 15 参测试构造器语义一致。
+            return service(Runnable::run);
         }
 
         private TaskServiceImpl service(Executor executor) {

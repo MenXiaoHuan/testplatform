@@ -9,6 +9,9 @@ spring:
       ddl-auto: validate
   flyway:
     enabled: true
+    # 测试使用 H2 兼容的迁移副本；生产迁移保持 MySQL 原生语法。
+    locations: classpath:db/migration-test
 platform:
-  runner:
-    mode: local
+  security:
+    # 测试专用 32 字节 key；生产从 PLATFORM_CREDENTIAL_KEY 注入。
+    credential-key: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=

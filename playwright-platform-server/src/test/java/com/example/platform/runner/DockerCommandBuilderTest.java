@@ -3,7 +3,6 @@ package com.example.platform.runner;
 import com.example.platform.runner.service.DockerCommandBuilder;
 import com.example.platform.runner.service.DockerRunnerProperties;
 import com.example.platform.runner.service.RunnerCommandRequest;
-import com.example.platform.runner.service.RunnerMode;
 import com.example.platform.runner.service.RunnerProperties;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -71,7 +70,6 @@ class DockerCommandBuilderTest {
 
     private RunnerProperties runnerProperties(Path hostWorkspaceRoot) {
         RunnerProperties properties = new RunnerProperties();
-        properties.setMode(RunnerMode.DOCKER);
         properties.setWorkspaceRoot(hostWorkspaceRoot);
         properties.setHostWorkspaceRoot(hostWorkspaceRoot);
         return properties;

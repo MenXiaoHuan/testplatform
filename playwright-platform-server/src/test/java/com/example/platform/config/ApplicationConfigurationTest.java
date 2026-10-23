@@ -1,9 +1,21 @@
 package com.example.platform.config;
 
+import com.example.platform.runner.service.RunnerProperties;
+import com.example.platform.task.service.TaskExecutionProperties;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.context.properties.bind.Bindable;
+import org.springframework.boot.context.properties.bind.Binder;
+import org.springframework.boot.context.properties.source.ConfigurationPropertySources;
+import org.springframework.boot.env.YamlPropertySourceLoader;
+import org.springframework.core.env.MapPropertySource;
+import org.springframework.core.env.MutablePropertySources;
+import org.springframework.core.env.PropertySource;
+import org.springframework.core.io.FileSystemResource;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -27,19 +39,19 @@ class ApplicationConfigurationTest {
     }
 
     @Test
-    void shouldNotExposeWeakSecretsInDevProfile() throws IOException {
-        String devApplicationYaml = Files.readString(Path.of("src/main/resources/application-dev.yml"));
+    void shouldKeepDevProfileFreeOfDuplicateConfiguration() throws IOException {
+        Path devConfig = Path.of("src/main/resources/application-dev.yml");
+        if (!Files.exists(devConfig)) {
+            // 当前项目采用单一 application.yml；如果以后新增 dev 覆盖，也不能复制公共配置。
+            return;
+        }
+        String devApplicationYaml = Files.readString(devConfig);
 
-        assertThat(devApplicationYaml).contains("url: ${PLATFORM_DB_URL}");
-        assertThat(devApplicationYaml).contains("endpoint: ${PLATFORM_MINIO_ENDPOINT}");
-        assertThat(devApplicationYaml).contains("public-endpoint: ${PLATFORM_MINIO_PUBLIC_ENDPOINT:${PLATFORM_MINIO_ENDPOINT}}");
-        assertThat(devApplicationYaml).contains("region: ${PLATFORM_MINIO_REGION:us-east-1}");
+        // 公共配置只在 application.yml 维护一份，避免 dev/prod 两套键互相漂移。
+        assertThat(devApplicationYaml).doesNotContain("storage:");
+        assertThat(devApplicationYaml).doesNotContain("runner:");
         assertThat(devApplicationYaml).doesNotContain("jdbc:mysql://localhost");
         assertThat(devApplicationYaml).doesNotContain("http://127.0.0.1");
-        assertThat(devApplicationYaml).contains("${PLATFORM_DB_USERNAME}");
-        assertThat(devApplicationYaml).contains("${PLATFORM_DB_PASSWORD}");
-        assertThat(devApplicationYaml).contains("${PLATFORM_MINIO_ACCESS_KEY}");
-        assertThat(devApplicationYaml).contains("${PLATFORM_MINIO_SECRET_KEY}");
         assertThat(devApplicationYaml).doesNotContain(WEAK_NUMERIC_SECRET);
         assertThat(devApplicationYaml).doesNotContain(WEAK_MINIO_SECRET);
     }
@@ -70,7 +82,6 @@ class ApplicationConfigurationTest {
         assertThat(compose).contains("${PLATFORM_SERVER_HOST_PORT");
         assertThat(compose).contains("${PLATFORM_WEB_HOST_PORT");
         assertThat(compose).contains("${PLATFORM_WEB_API_PROXY_TARGET");
-        assertThat(compose).contains("${PLATFORM_MINIO_INTERNAL_ENDPOINT");
         assertThat(compose).contains("${PLATFORM_MINIO_PUBLIC_ENDPOINT");
         assertThat(compose).contains("${PLATFORM_RUNNER_HOST_WORKSPACE_ROOT");
         assertThat(compose).doesNotContain("\"3307:3306\"");
@@ -130,18 +141,49 @@ class ApplicationConfigurationTest {
     }
 
     @Test
-    void shouldExposeTaskExecutionDefaults() throws IOException {
-        String applicationYaml = Files.readString(Path.of("src/main/resources/application.yml"));
+    void shouldExposeTaskExecutionDefaultsUnderPlatformPrefix() throws IOException {
+        Map<String, Object> properties = loadApplicationProperties();
 
-        assertThat(applicationYaml).contains("platform:");
-        assertThat(applicationYaml).contains("task:");
-        assertThat(applicationYaml).contains("execution:");
-        assertThat(applicationYaml).contains("core-pool-size: 2");
-        assertThat(applicationYaml).contains("max-pool-size: 4");
-        assertThat(applicationYaml).contains("queue-capacity: 50");
-        assertThat(applicationYaml).contains("install-timeout-seconds: 600");
-        assertThat(applicationYaml).contains("test-timeout-seconds: 1800");
-        assertThat(applicationYaml).contains("monitor-log-interval-seconds: 30");
+        assertThat(properties).containsKeys(
+                "platform.task.execution.core-pool-size",
+                "platform.task.execution.max-pool-size",
+                "platform.task.execution.queue-capacity",
+                "platform.task.execution.install-timeout-seconds",
+                "platform.task.execution.test-timeout-seconds",
+                "platform.task.execution.monitor-log-interval-seconds");
+        assertThat(properties).doesNotContainKeys(
+                "task.execution.core-pool-size",
+                "task.execution.max-pool-size");
+    }
+
+    @Test
+    void shouldBindPlatformConfigurationPrefixes() {
+        MutablePropertySources sources = new MutablePropertySources();
+        sources.addFirst(new MapPropertySource("test", Map.of(
+                "platform.task.execution.core-pool-size", "7",
+                "platform.runner.workspace-root", "/tmp/ws",
+                "platform.runner.host-workspace-root", "/host/ws",
+                "platform.runner.git-clone-timeout-seconds", "99")));
+        Binder binder = new Binder(ConfigurationPropertySources.from(sources));
+
+        TaskExecutionProperties taskProperties = binder
+                .bind("platform.task.execution", Bindable.of(TaskExecutionProperties.class))
+                .orElseThrow(() -> new IllegalStateException("task execution properties not bound"));
+        RunnerProperties runnerProperties = binder
+                .bind("platform.runner", Bindable.of(RunnerProperties.class))
+                .orElseThrow(() -> new IllegalStateException("runner properties not bound"));
+
+        assertThat(taskProperties.getCorePoolSize()).isEqualTo(7);
+        assertThat(runnerProperties.getWorkspaceRoot()).isEqualTo(Path.of("/tmp/ws"));
+        assertThat(runnerProperties.getGitCloneTimeoutSeconds()).isEqualTo(99);
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> loadApplicationProperties() throws IOException {
+        YamlPropertySourceLoader loader = new YamlPropertySourceLoader();
+        List<PropertySource<?>> sources = loader.load(
+                "application", new FileSystemResource("src/main/resources/application.yml"));
+        return (Map<String, Object>) sources.get(0).getSource();
     }
 
     @Test
@@ -157,18 +199,19 @@ class ApplicationConfigurationTest {
     }
 
     @Test
-    void shouldExposeRunnerDefaults() throws IOException {
-        String applicationYaml = Files.readString(Path.of("src/main/resources/application.yml"));
+    void shouldExposeRunnerDefaultsUnderPlatformPrefix() throws IOException {
+        Map<String, Object> properties = loadApplicationProperties();
 
-        assertThat(applicationYaml).contains("runner:");
-        assertThat(applicationYaml).contains("mode: ${PLATFORM_RUNNER_MODE:local}");
-        assertThat(applicationYaml).contains("workspace-root: ${PLATFORM_RUNNER_WORKSPACE_ROOT:${java.io.tmpdir}/playwright-platform/workspaces}");
-        assertThat(applicationYaml).contains("host-workspace-root: ${PLATFORM_RUNNER_HOST_WORKSPACE_ROOT:${platform.runner.workspace-root}}");
-        assertThat(applicationYaml).contains("image: ${PLATFORM_RUNNER_DOCKER_IMAGE:mcr.microsoft.com/playwright:v1.44.0-jammy}");
-        assertThat(applicationYaml).contains("network: ${PLATFORM_RUNNER_DOCKER_NETWORK:bridge}");
-        assertThat(applicationYaml).contains("memory: ${PLATFORM_RUNNER_DOCKER_MEMORY:2g}");
-        assertThat(applicationYaml).contains("cpus: ${PLATFORM_RUNNER_DOCKER_CPUS:2}");
-        assertThat(applicationYaml).contains("container-workspace-root: ${PLATFORM_RUNNER_DOCKER_CONTAINER_WORKSPACE_ROOT:/workspace/task}");
+        assertThat(properties).containsKeys(
+                "platform.runner.workspace-root",
+                "platform.runner.host-workspace-root",
+                "platform.runner.git-clone-timeout-seconds",
+                "platform.runner.docker.image",
+                "platform.runner.docker.network",
+                "platform.runner.docker.memory",
+                "platform.runner.docker.cpus",
+                "platform.runner.docker.container-workspace-root");
+        assertThat(properties).doesNotContainKey("runner.mode");
         assertThat(Files.readString(Path.of("../docker-compose.yml")))
                 .contains("${PLATFORM_RUNNER_HOST_WORKSPACE_ROOT:?Set PLATFORM_RUNNER_HOST_WORKSPACE_ROOT in .env}:${PLATFORM_RUNNER_WORKSPACE_ROOT:?Set PLATFORM_RUNNER_WORKSPACE_ROOT in .env}");
     }

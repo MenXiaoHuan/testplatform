@@ -3,13 +3,9 @@ package com.example.platform.runner.service;
 /**
  * 命令执行器接口 —— 定义任务阶段命令的执行契约。
  *
- * <p>核心职责：
- * <ul>
- *   <li>提供统一的命令执行入口，屏蔽本地/Docker 两种实现差异</li>
- *   <li>通过策略模式，允许运行时选择不同的执行后端</li>
- * </ul>
- *
- * <p>实现类：{@link LocalRunnerCommandExecutor}、{@link DockerRunnerCommandExecutor}
+ * <p>平台当前只有一种实现：{@link DockerRunnerCommandExecutor}。
+ * 保留接口是为了让编排层不依赖 Docker 细节，也方便未来替换执行后端；
+ * 但平台不再提供在宿主机直接执行用户命令的实现。
  */
 public interface RunnerCommandExecutor {
     /**

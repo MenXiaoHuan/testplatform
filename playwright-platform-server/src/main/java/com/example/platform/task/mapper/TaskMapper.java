@@ -1,6 +1,7 @@
 package com.example.platform.task.mapper;
 
 import com.example.platform.task.model.TaskEntity;
+import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -453,4 +454,28 @@ public interface TaskMapper {
             where scene_id = #{sceneId}
             """)
     int deleteAllBySceneId(@Param("sceneId") Long sceneId);
+
+    /**
+     * 查询已结束且早于保留截止时间的任务，用于可选的数据保留清理。
+     */
+    @Select("""
+            select
+            """ + TASK_COLUMNS + """
+            from task
+            where finished_at is not null
+              and finished_at &lt; #{cutoff}
+            order by finished_at asc, id asc
+            limit #{limit}
+            """)
+    @ResultMap("TaskResultMap")
+    List<TaskEntity> findFinishedBefore(@Param("cutoff") LocalDateTime cutoff, @Param("limit") int limit);
+
+    /**
+     * 按主键删除任务（调用方需先清理子表和对象存储）。
+     */
+    @Delete("""
+            delete from task
+            where id = #{id}
+            """)
+    int deleteById(@Param("id") Long id);
 }

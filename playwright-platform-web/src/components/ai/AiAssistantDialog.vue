@@ -79,7 +79,7 @@ const entityLoading = new Set<string>()
 const router = useRouter()
 
 function resolveEntityRefs(text: string): string {
-  return text.replace(ENTITY_REF_RE, (match, type: string, id: string) => {
+  return text.replace(ENTITY_REF_RE, (_match, type: string, id: string) => {
     const kind = type === 'i' ? 'task' : type === 's' ? 'scene' : 'repo'
     const cacheKey = `${kind}:${id}`
     const cached = entityCache.get(cacheKey)
@@ -115,6 +115,10 @@ function buildEntityHref(kind: string, id: string): string {
 
 async function fetchEntityName(kind: string, id: string): Promise<string> {
   const spaceId = spaceStore.currentSpaceId
+  const fallback = `${kind === 'task' ? '任务' : kind === 'scene' ? '场景' : '仓库'} #${id}`
+  if (spaceId === null) {
+    return fallback
+  }
   const numId = Number(id)
   try {
     if (kind === 'task') {

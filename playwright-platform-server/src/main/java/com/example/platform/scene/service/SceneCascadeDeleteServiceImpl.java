@@ -52,7 +52,7 @@ public class SceneCascadeDeleteServiceImpl implements SceneCascadeDeleteService 
             ArtifactMapper artifactRepository,
             TaskStageLogMapper taskStageLogRepository,
             ObjectStorageService objectStorageService,
-            @Value("${platform.storage.bucket}") String storageBucket) {
+            @Value("${platform.storage.bucket:qa-report}") String storageBucket) {
         this.sceneMapper = sceneMapper;
         this.scheduleEventMapper = scheduleEventMapper;
         this.sceneScheduleStateMapper = sceneScheduleStateMapper;

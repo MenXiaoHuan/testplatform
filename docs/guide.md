@@ -8,7 +8,7 @@
 
 ### 1.1 一句话介绍
 
-这是一个面向 Playwright 自动化测试的执行与管理平台。用户可以在页面上维护测试仓库、配置测试场景、手动或定时触发任务，并统一查看任务状态、用例结果、阶段日志、截图、视频、Trace 等运行产物。
+这是一个面向 **Node.js / TypeScript / JavaScript `@playwright/test` 项目**的执行与归档平台。用户可以在页面上维护测试仓库（含公有/私有和 HTTPS Token / SSH Deploy Key）、配置测试场景、手动或定时触发任务，并统一查看任务状态、用例结果、阶段日志、截图、视频、Trace 等运行产物。
 
 ### 1.2 简短介绍
 
@@ -16,7 +16,7 @@
 
 ### 1.3 完整介绍
 
-这个项目的核心对象是仓库、场景和任务。用户先配置测试仓库，包括 Git 地址、默认分支、安装命令、测试命令和结果文件路径；然后创建测试场景，选择分支、浏览器、测试选择器、环境变量和定时规则；最后通过手动或定时方式触发任务。
+这个项目的核心对象是仓库、场景和任务。用户先配置测试仓库，包括 Git 地址、公有/私有类型、HTTPS Token/SSH Key、默认分支、安装命令、测试命令和结果文件路径；然后创建测试场景，选择分支、浏览器、测试选择器、环境变量和定时规则；最后通过手动或定时方式触发任务。
 
 后端收到触发请求后，会先在 MySQL 中创建任务记录，状态进入 `QUEUED`，然后把任务提交给自定义线程池。任务执行器会准备 workspace、拉取代码、执行安装命令、执行 Playwright 测试命令、解析结果文件，把用例结果写入 MySQL，并把截图、视频、Trace、报告和日志上传到 MinIO。任务执行过程中的状态变更会拆成短事务独立提交，避免一个大事务包住外部命令和文件上传。
 
@@ -74,7 +74,6 @@ flowchart LR
     Server -->|RedisTemplate| Redis[(Redis)]
     Server -->|MinIO SDK| MinIO[(MinIO)]
     Server --> Runner[RunnerExecutionService]
-    Runner --> Local[Local Runner]
     Runner --> Docker[Docker Runner]
     Docker --> PW[Playwright Runner 容器]
     PW --> Repo[测试代码仓库]
@@ -94,7 +93,7 @@ flowchart LR
 | 数据层 | MyBatis Mapper、Flyway、MySQL | 数据读写和 schema 版本管理 | 纯 MyBatis 注解式 Mapper，Flyway 自动建表 |
 | 缓存层 | Redis、DetailCacheService、AgentTraceLogService | 热点详情缓存、Agent trace 存储 | 详情缓存 + 90 天 TTL trace 日志 |
 | 存储层 | MinIO、ObjectStorageService | 日志、截图、视频、Trace 存储 | 结构化数据和文件产物分离 |
-| 执行层 | Runner、Docker Runner、Workspace | 执行外部测试仓库命令 | 隔离执行环境，避免污染后端服务 |
+| 执行层 | Docker Runner、Workspace | 通过短生命周期容器执行外部测试仓库命令 | 隔离执行环境，避免污染后端服务 |
 | 工程化层 | Docker Compose、Dockerfile、CI | 本地启动、生产部署、自动验证 | 开发/生产镜像分离，CI 前后端独立验证 |
 
 ### 3.3 架构设计亮点
@@ -180,7 +179,7 @@ flowchart LR
 | `src/api/http.ts` | 通用请求 | Axios 实例、统一响应解包、错误处理基础 |
 | `src/api/auth.ts` | 用户认证 | 登录、注册、当前用户、头像、资料 |
 | `src/api/space.ts` | 空间协作 | 空间列表、广场、申请、审批 |
-| `src/api/repository.ts` | 仓库管理 | 仓库 CRUD |
+| `src/api/repository.ts` | 仓库管理 | 仓库 CRUD，含公有/私有与凭据字段 |
 | `src/api/scene.ts` | 场景管理 | 场景 CRUD |
 | `src/api/schedule-event.ts` | 调度事件 | 异常调度事件查看和重试 |
 | `src/api/task.ts` | 任务管理 | 执行、取消、列表、详情、日志、产物、用例 |
@@ -208,7 +207,7 @@ flowchart LR
 |---|---|---|
 | `src/views/auth/LoginView.vue` | 登录/注册 | 用户入驻入口 |
 | `src/views/home/HomeView.vue` | 空间广场 | 展示可访问空间和申请状态 |
-| `src/views/repository/RepositoryListView.vue` | 仓库管理 | 测试仓库配置入口 |
+| `src/views/repository/RepositoryListView.vue` | 仓库管理 | 测试仓库配置入口；支持公有/私有、HTTPS Token、SSH Deploy Key |
 | `src/views/scene/SceneListView.vue` | 场景管理 | 配置浏览器、分支、环境变量、Cron |
 | `src/views/event/EventListView.vue` | 日志追踪（调度事件） | 动态列：定时/Agent/手动三种类型显示不同列；默认展示 Agent 调度事件；支持 traceId 精确筛选和场景名称筛选 |
 | `src/views/ai/AgentTraceDetailView.vue` | Agent Trace 时间线 | 侧边栏固定不随滚动移动，阶段名称中文化，可查看完整 MODEL_CALL/TOOL_CALL 各阶段详情 |
@@ -253,11 +252,10 @@ flowchart LR
 |---|---|---|
 | `pom.xml` | Maven 依赖和构建配置 | Spring Boot、MyBatis、Flyway、Redis、MinIO、Spring AI Alibaba、测试依赖 |
 | `Dockerfile.dev` | 开发镜像 | Maven 镜像运行 `spring-boot:run`，适合挂载源码 |
-| `Dockerfile` | 生产镜像 | 多阶段构建，运行阶段只保留 JRE + jar |
+| `Dockerfile` | 生产镜像 | 多阶段构建，运行阶段保留 JRE + jar + Docker CLI + Git/SSH |
 | `.dockerignore` | 构建上下文过滤 | 避免无关文件进入镜像 |
 | `PlatformApplication.java` | 启动类 | 启动 Spring Boot，开启调度、Mapper 扫描和 AOP 代理 |
-| `application.yml` | 主配置 | 数据源、Redis、Flyway、缓存、线程池、Runner、MinIO、AI 配置 |
-| `application-dev.yml` | 开发配置 | 仍然通过环境变量注入敏感配置 |
+| `application.yml` | 唯一主配置 | 数据源、Redis、Flyway、缓存、线程池、Runner、MinIO、AI 配置；敏感值和部署差异由 env 覆盖 |
 
 ### 6.2 数据库迁移
 
@@ -269,19 +267,23 @@ flowchart LR
 | `V4__add_space_model.sql` | 空间模型 | 空间、成员、申请审批 |
 | `V5__add_platform_user_and_user_session.sql` | 用户和会话 | 登录态和平台用户 |
 | `V6__add_self_service_registration_constraints.sql` | 注册约束 | 自助注册唯一性和约束 |
+| `V7__enhance_task_stage_log_metadata.sql` | 阶段日志元数据 | 阶段耗时、退出码、命令、错误摘要 |
+| `V8__add_schedule_event_type_and_trace.sql` | 调度事件类型和 Trace | 定时/手动/Agent 事件区分 |
+| `V9__constrain_nickname_length.sql` | 昵称长度约束 | 用户昵称边界 |
+| `V10__repository_credentials.sql` | 仓库私有凭据 | `auth_type`、用户名、AES-GCM 密文、更新时间 |
 | `SCHEMA_OVERVIEW.sql` | schema 总览 | 方便整体理解数据库结构 |
 
 ### 6.3 后端模块总览
 
 | 模块 | 核心文件 | 主要职责 | 说明 |
 |---|---|---|---|
-| `common` | `ApiResponse`、`GlobalExceptionHandler`、`RequestCorrelationFilter` | 统一响应、异常处理、请求链路 ID | 平台基础能力 |
+| `common` | `ApiResponse`、`GlobalExceptionHandler`、`RequestCorrelationFilter`、`CredentialCipher`、`SensitiveDataRedactor` | 统一响应、异常处理、请求链路 ID、凭据加密、日志脱敏 | 平台基础能力 |
 | `auth` | `AuthController`、`AuthServiceImpl`、`AuthSessionFilter` | 登录、注册、会话、当前用户、头像、昵称 | 不是无认证后台 |
 | `space` | `SpaceServiceImpl`、`SpaceAuthorizationServiceImpl` | 空间、成员、审批、权限 | 多用户协作边界 |
-| `repository` | `RepositoryController`、`RepositoryServiceImpl`、`TestRepositoryMapper` | 仓库 CRUD 和级联删除 | 测试执行基础配置 |
+| `repository` | `RepositoryController`、`RepositoryServiceImpl`、`TestRepositoryMapper` | 仓库 CRUD、私有凭据加密、级联删除 | 测试执行基础配置 |
 | `scene` | `SceneServiceImpl`、`SceneSchedulerServiceImpl`、`ScheduleEventServiceImpl` | 场景配置、定时调度、调度事件 | 定时任务和幂等控制 |
 | `task` | `TaskServiceImpl`、`TaskExecutionOrchestrator`、`TaskExecutionMutationService` | 任务创建、执行、取消、归档、详情 | 项目最核心模块 |
-| `runner` | `DockerRunnerCommandExecutor`、`RunnerExecutionServiceImpl` | 命令执行环境抽象 | local/docker 策略 |
+| `runner` | `DockerRunnerCommandExecutor`、`RunnerExecutionServiceImpl` | Docker 命令执行环境 | 只使用 Docker Runner |
 | `storage` | `MinioObjectStorageService`、`MinioConfig` | 对象存储 | 产物归档 |
 | `cache` | `DetailCacheService`、`CacheProperties` | Redis 详情缓存 | 缓存保护设计 |
 | `ai` | `AgentService`、`ReactAgentConfig`、`AgentTraceLogService`、`TraceQueryTool` | AI 对话、Agent 配置、全链路追踪、trace 查询 | Spring AI Alibaba Agent 集成 |
@@ -686,12 +688,15 @@ flowchart LR
 
 ## 12. Runner 设计
 
-### 12.1 Runner 模式对比
+### 12.1 只保留 Docker Runner
 
-| 模式 | 执行方式 | 优点 | 风险/限制 |
-|---|---|---|---|
-| local | 在服务所在环境直接执行命令 | 简单，适合本地开发 | 容易污染服务环境 |
-| docker | 启动短生命周期容器执行命令 | 隔离性好，环境一致 | 需要 Docker socket 权限 |
+| 决策 | 说明 |
+|---|---|
+| 执行方式 | 启动短生命周期容器执行命令 |
+| 隔离性 | 测试依赖、浏览器、系统库都在容器内，不污染后端环境 |
+| 资源限制 | 可配置内存、CPU、网络和 workspace |
+| 代价 | 需要 Docker Engine 和 `/var/run/docker.sock` 权限 |
+| 已移除 | local 执行器：不再在 server 进程所在宿主机直接执行用户命令 |
 
 ### 12.2 Docker Runner 流程
 
@@ -708,6 +713,30 @@ flowchart TD
 ### 12.3 说明
 
 > Runner 抽象的价值是隔离测试执行环境。平台执行的是外部仓库命令，不同仓库依赖可能不同，用 Docker Runner 可以减少环境污染，也方便限制 CPU、内存和 workspace。
+
+### 12.4 私有仓库凭据
+
+凭据属于**仓库**，不属于场景。一个私有仓库被多个场景复用时，只配置一次。
+
+仓库管理支持：
+
+| 仓库类型 | 认证方式 | Clone 行为 |
+|---|---|---|
+| 公有 | 无 | 直接 `git clone` |
+| 私有 | HTTPS Token | 临时 `GIT_ASKPASS` + 环境变量，token 不进命令行 |
+| 私有 | SSH Deploy Key | 私钥写入 0600 临时文件，通过 `GIT_SSH_COMMAND` 使用 |
+
+存储与安全：
+
+- `test_repository.auth_type`：`PUBLIC` / `HTTPS_TOKEN` / `SSH_KEY`；
+- `credential_secret` 存 AES-256-GCM 密文，密钥来自 `PLATFORM_CREDENTIAL_KEY`；
+- API 只返回 `credentialConfigured`，不返回明文或密文；
+- 编辑时留空表示保留原凭据；
+- 切换回公有仓库会清除凭据；
+- clone 完成后删除临时 askpass 脚本和 SSH 私钥；
+- 日志和错误消息统一经过 `SensitiveDataRedactor`。
+
+场景页面会检查所选仓库：私有仓库没有配置凭据时，显示提示并阻止保存。
 
 ---
 
@@ -758,7 +787,7 @@ Dockerfile、Dockerfile.dev、.dockerignore 与 Compose 的完整职责划分见
 | 端口 | `PLATFORM_WEB_HOST_PORT`、`PLATFORM_MYSQL_HOST_PORT` | 否 |
 | 密码 | `PLATFORM_DB_PASSWORD`、`PLATFORM_REDIS_PASSWORD` | 否 |
 | MinIO | `PLATFORM_MINIO_ACCESS_KEY`、`PLATFORM_MINIO_SECRET_KEY` | 否 |
-| Runner | `PLATFORM_RUNNER_MODE`、`PLATFORM_RUNNER_DOCKER_IMAGE` | 否 |
+| Runner | `PLATFORM_RUNNER_DOCKER_IMAGE`、`PLATFORM_RUNNER_DOCKER_MEMORY` | 否 |
 
 ---
 
@@ -769,13 +798,13 @@ Dockerfile、Dockerfile.dev、.dockerignore 与 Compose 的完整职责划分见
 | 文件 | 基础镜像 | 作用 |
 |---|---|---|
 | `playwright-platform-server/Dockerfile.dev` | Maven + JDK 21 | 挂载源码后运行 `mvn spring-boot:run` |
-| `playwright-platform-web/Dockerfile.dev` | Node 20 | 挂载源码后运行 `npm ci && npm run dev` |
+| `playwright-platform-web/Dockerfile.dev` | Node 20 | 首次 `npm ci`，已有 `node_modules` 时直接 `npm run dev` |
 
 ### 14.2 生产 Dockerfile
 
 | 文件 | 构建阶段 | 运行阶段 | 作用 |
 |---|---|---|---|
-| `playwright-platform-server/Dockerfile` | Maven 打包 jar | JRE 运行 jar | 减小运行镜像，不带 Maven |
+| `playwright-platform-server/Dockerfile` | Maven 打包 jar | JRE + Docker CLI + Git/SSH 运行 | 支持 Docker Runner 和私有仓库 clone |
 | `playwright-platform-web/Dockerfile` | Node 构建 `dist` | Nginx 托管静态资源 | 构建环境和运行环境分离 |
 
 说明：
@@ -874,7 +903,7 @@ flowchart TD
 | 亮点 | 对应模块 | 说明 |
 |---|---|---|
 | 异步任务编排 | `TaskServiceImpl`、`TaskExecutionOrchestrator` | 请求线程和执行线程分离 |
-| Runner 抽象 | `runner` 模块 | 支持 local/docker 两种执行模式 |
+| Runner 抽象 | `runner` 模块 | 只使用 Docker 容器执行模式 |
 | 对象存储归档 | `storage`、`artifact` | 大文件进 MinIO，元数据进 MySQL |
 | Redis 缓存保护 | `DetailCacheService` | 考虑穿透、击穿、雪崩 |
 | Flyway 迁移 | `db/migration` | 自动建表和 schema 演进 |

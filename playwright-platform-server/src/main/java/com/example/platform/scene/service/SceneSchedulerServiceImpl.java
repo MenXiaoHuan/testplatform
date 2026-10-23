@@ -9,7 +9,6 @@ import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 场景调度服务实现类 —— 定时触发到期场景、失败事件重试与遗留场景初始化。
@@ -47,9 +46,15 @@ public class SceneSchedulerServiceImpl implements SceneSchedulerService {
         this.taskService = taskService;
     }
 
-    /** 触发所有到期场景：重试失败事件 → 初始化遗留场景 → 触发到期场景。 */
+    /**
+     * 触发所有到期场景：重试失败事件 → 初始化遗留场景 → 触发到期场景。
+     *
+     * <p>这里故意不加 {@code @Transactional}：如果整轮扫描包在一个大事务里，
+     * {@code createScheduledTask} 内部的异步派发会在事务提交前执行，worker 可能
+     * 读不到刚插入的任务，任务会卡在 QUEUED。让每个任务创建在自己的事务里提交，
+     * 提交后再派发，是更小、更可靠的修复。
+     */
     @Override
-    @Transactional
     public void triggerDueScenes(LocalDateTime now) {
         retryFailedScheduleEvents(now);
         initializeNextRunAtForLegacyScenes(now);

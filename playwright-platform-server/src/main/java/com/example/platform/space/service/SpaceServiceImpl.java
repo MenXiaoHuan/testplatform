@@ -91,6 +91,7 @@ public class SpaceServiceImpl implements SpaceService {
      * @return 创建的空间摘要
      */
     @Override
+    @Transactional
     public SpaceSummaryResponse createSpace(AuthContext actor, CreateSpaceRequest request) {
         SpaceEntity entity = new SpaceEntity();
         entity.setName(request.name());

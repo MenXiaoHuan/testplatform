@@ -1,10 +1,15 @@
 package com.example.platform.repository.service;
 
 import com.example.platform.cache.DetailCacheService;
+import com.example.platform.common.CredentialCipher;
 import com.example.platform.common.PageResponse;
 import com.example.platform.repository.mapper.TestRepositoryMapper;
 import com.example.platform.repository.model.TestRepositoryEntity;
+import com.example.platform.runner.service.GitUrlPolicy;
+import java.time.LocalDateTime;
+import java.util.Locale;
 import java.util.Optional;
+import java.util.regex.Pattern;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -14,24 +19,39 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class RepositoryServiceImpl implements RepositoryService {
+    private static final String AUTH_PUBLIC = "PUBLIC";
+    private static final String AUTH_HTTPS_TOKEN = "HTTPS_TOKEN";
+    private static final String AUTH_SSH_KEY = "SSH_KEY";
+    private static final Pattern SCP_GIT_URL = Pattern.compile("^[\\w.-]+@[\\w.-]+:.+$");
+
     private final TestRepositoryMapper repository;
     private final RepositoryCascadeDeleteService repositoryCascadeDeleteService;
     private final DetailCacheService detailCacheService;
+    private final CredentialCipher credentialCipher;
 
     @Autowired
     public RepositoryServiceImpl(
             TestRepositoryMapper repository,
             RepositoryCascadeDeleteService repositoryCascadeDeleteService,
-            DetailCacheService detailCacheService) {
+            DetailCacheService detailCacheService,
+            CredentialCipher credentialCipher) {
         this.repository = repository;
         this.repositoryCascadeDeleteService = repositoryCascadeDeleteService;
         this.detailCacheService = detailCacheService;
+        this.credentialCipher = credentialCipher;
+    }
+
+    public RepositoryServiceImpl(
+            TestRepositoryMapper repository,
+            RepositoryCascadeDeleteService repositoryCascadeDeleteService,
+            DetailCacheService detailCacheService) {
+        this(repository, repositoryCascadeDeleteService, detailCacheService, new CredentialCipher(""));
     }
 
     public RepositoryServiceImpl(
             TestRepositoryMapper repository,
             RepositoryCascadeDeleteService repositoryCascadeDeleteService) {
-        this(repository, repositoryCascadeDeleteService, null);
+        this(repository, repositoryCascadeDeleteService, null, new CredentialCipher(""));
     }
 
     @Override
@@ -42,7 +62,9 @@ public class RepositoryServiceImpl implements RepositoryService {
         }
         String normalizedName = normalizeName(entity.getName());
         validateUniqueName(normalizedName, null);
+        GitUrlPolicy.validate(entity.getGitUrl());
         entity.setName(normalizedName);
+        applyCredentials(entity, entity, null);
         repository.insert(entity);
         invalidateDetail(entity.getSpaceId(), entity.getId());
         return entity;
@@ -78,6 +100,7 @@ public class RepositoryServiceImpl implements RepositoryService {
         TestRepositoryEntity existing = get(spaceId, id);
         String normalizedName = normalizeName(entity.getName());
         validateUniqueName(normalizedName, id);
+        GitUrlPolicy.validate(entity.getGitUrl());
         existing.setSpaceId(spaceId);
         existing.setName(normalizedName);
         existing.setGitUrl(entity.getGitUrl());
@@ -88,6 +111,7 @@ public class RepositoryServiceImpl implements RepositoryService {
         existing.setTestRoot(entity.getTestRoot());
         existing.setResultsIndexRelativePath(entity.getResultsIndexRelativePath());
         existing.setArtifactRootRelativePath(entity.getArtifactRootRelativePath());
+        applyCredentials(existing, entity, existing);
         existing.setEnabled(entity.getEnabled());
         repository.update(existing);
         invalidateDetail(spaceId, id);
@@ -115,6 +139,72 @@ public class RepositoryServiceImpl implements RepositoryService {
         if (detailCacheService != null && id != null) {
             detailCacheService.invalidate(detailCacheKey(spaceId), id);
         }
+    }
+
+    private void applyCredentials(TestRepositoryEntity target, TestRepositoryEntity input,
+                                  TestRepositoryEntity existing) {
+        String requestedAuthType = normalizeAuthType(input.getAuthType());
+        String authType = (input.getAuthType() == null || input.getAuthType().isBlank()) && existing != null
+                ? normalizeAuthType(existing.getAuthType())
+                : requestedAuthType;
+        String gitUrl = input.getGitUrl() == null ? "" : input.getGitUrl().trim();
+        if (AUTH_HTTPS_TOKEN.equals(authType) && !gitUrl.startsWith("https://")) {
+            throw new IllegalArgumentException("HTTPS Token 认证只能用于 https:// 仓库地址");
+        }
+        if (AUTH_SSH_KEY.equals(authType)
+                && !(gitUrl.startsWith("ssh://") || SCP_GIT_URL.matcher(gitUrl).matches())) {
+            throw new IllegalArgumentException("SSH Key 认证只能用于 ssh:// 或 git@host:path 仓库地址");
+        }
+
+        String previousAuthType = existing == null ? null : normalizeAuthType(existing.getAuthType());
+        String previousSecret = existing == null ? null : existing.getCredentialSecret();
+        LocalDateTime previousUpdatedAt = existing == null ? null : existing.getCredentialUpdatedAt();
+        String rawSecret = input.getCredentialSecret();
+        target.setAuthType(authType);
+        target.setCredentialUsername(normalizeUsername(input.getCredentialUsername()));
+
+        if (AUTH_PUBLIC.equals(authType)) {
+            target.setCredentialSecret(null);
+            target.setCredentialUsername(null);
+            target.setCredentialUpdatedAt(null);
+            return;
+        }
+
+        if (rawSecret != null && !rawSecret.isBlank()) {
+            target.setCredentialSecret(credentialCipher.encrypt(rawSecret.trim()));
+            target.setCredentialUpdatedAt(LocalDateTime.now());
+            return;
+        }
+
+        boolean existingMatches = existing != null
+                && authType.equals(previousAuthType)
+                && previousSecret != null
+                && !previousSecret.isBlank();
+        if (!existingMatches) {
+            throw new IllegalArgumentException("私有仓库需要配置 Token 或 SSH 私钥");
+        }
+        target.setCredentialSecret(previousSecret);
+        target.setCredentialUpdatedAt(previousUpdatedAt);
+    }
+
+    private String normalizeAuthType(String authType) {
+        String normalized = authType == null || authType.isBlank()
+                ? AUTH_PUBLIC
+                : authType.trim().toUpperCase(Locale.ROOT);
+        if (!AUTH_PUBLIC.equals(normalized)
+                && !AUTH_HTTPS_TOKEN.equals(normalized)
+                && !AUTH_SSH_KEY.equals(normalized)) {
+            throw new IllegalArgumentException("不支持的仓库认证方式: " + authType);
+        }
+        return normalized;
+    }
+
+    private String normalizeUsername(String username) {
+        if (username == null) {
+            return null;
+        }
+        String normalized = username.trim();
+        return normalized.isEmpty() ? null : normalized;
     }
 
     private int normalizePage(int page) {

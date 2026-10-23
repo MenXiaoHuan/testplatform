@@ -58,6 +58,7 @@ public class AgentService {
     private final SkillIndexLoader skillIndexLoader;
     private final ScheduleEventService scheduleEventService;
     private final SpaceAuthorizationService spaceAuthorizationService;
+    private final AgentQuotaService quotaService;
     private final String systemPrompt;
 
     public AgentService(
@@ -73,6 +74,7 @@ public class AgentService {
             SkillIndexLoader skillIndexLoader,
             ScheduleEventService scheduleEventService,
             SpaceAuthorizationService spaceAuthorizationService,
+            AgentQuotaService quotaService,
             SystemPromptConfig systemPromptConfig,
             ResourceLoader resourceLoader,
             @Value("${platform.ai.system-prompt-path:classpath:AGENT.md}") String systemPromptPath) {
@@ -88,6 +90,7 @@ public class AgentService {
         this.skillIndexLoader = skillIndexLoader;
         this.scheduleEventService = scheduleEventService;
         this.spaceAuthorizationService = spaceAuthorizationService;
+        this.quotaService = quotaService;
         this.systemPrompt = systemPromptConfig.loadSystemPrompt(resourceLoader, systemPromptPath);
     }
 
@@ -129,13 +132,18 @@ public class AgentService {
         Long agentEventId = scheduleEventService.createAgentEvent(
                 request.spaceId(), traceId, sessionId, userMessage);
         final boolean[] success = {false};
+        AgentQuotaService.Permit quotaPermit = null;
 
         try {
+            quotaPermit = quotaService.acquire(currentUserId());
             // 空间成员校验：确保当前用户是指定空间的成员
             Long spaceId = request.spaceId();
             if (spaceId != null) {
                 spaceAuthorizationService.requireReadableSpace(spaceId, AuthContextHolder.require());
             }
+            Long userId = currentUserId();
+            AgentRequestContext.register(traceId, userId, spaceId);
+            traceLogService.bindOwner(traceId, userId, spaceId);
 
             InputSanitizer.SanitizeResult sanitizeResult = inputSanitizer.sanitize(request.message());
             if (!sanitizeResult.valid()) {
@@ -407,6 +415,10 @@ public class AgentService {
             observability.recordError(traceId, "UNEXPECTED", e.getMessage());
             return buildErrorResponse(traceId, e, sessionId, false);
         } finally {
+            if (quotaPermit != null) {
+                quotaPermit.close();
+            }
+            AgentRequestContext.clear(traceId);
             scheduleEventService.completeAgentEvent(agentEventId, success[0], success[0] ? null : "chat failed");
         }
     }
@@ -452,13 +464,18 @@ public class AgentService {
         Long agentEventId = scheduleEventService.createAgentEvent(
                 request.spaceId(), traceId, sessionId, userMessage);
         final boolean[] success = {false};
+        AgentQuotaService.Permit quotaPermit = null;
 
         try {
+            quotaPermit = quotaService.acquire(currentUserId());
             // 空间成员校验：确保当前用户是指定空间的成员
             Long spaceId = request.spaceId();
             if (spaceId != null) {
                 spaceAuthorizationService.requireReadableSpace(spaceId, AuthContextHolder.require());
             }
+            Long userId = currentUserId();
+            AgentRequestContext.register(traceId, userId, spaceId);
+            traceLogService.bindOwner(traceId, userId, spaceId);
 
             InputSanitizer.SanitizeResult sanitizeResult = inputSanitizer.sanitize(request.message());
             if (!sanitizeResult.valid()) {
@@ -768,6 +785,10 @@ public class AgentService {
             callback.onError(e.getMessage());
             return buildErrorResponse(traceId, e, sessionId, false);
         } finally {
+            if (quotaPermit != null) {
+                quotaPermit.close();
+            }
+            AgentRequestContext.clear(traceId);
             scheduleEventService.completeAgentEvent(agentEventId, success[0], success[0] ? null : "stream chat failed");
         }
     }
@@ -781,6 +802,11 @@ public class AgentService {
 
     public long getActiveSessionCount() {
         return sessionManager.getActiveSessionCount();
+    }
+
+    private Long currentUserId() {
+        com.example.platform.auth.context.AuthContext context = AuthContextHolder.get();
+        return context == null ? null : context.userId();
     }
 
     private String buildPrompt(ChatSession session, ChatRequest request) {
@@ -878,7 +904,6 @@ public class AgentService {
         if (request.sceneId() != null && request.taskId() == null) {
             builder.append("【提示】用户正在询问场景 ID=").append(request.sceneId())
                     .append(" 的相关信息。如果需要分析该场景下的任务，请使用 listTasks(sceneId=").append(request.sceneId())
-                    .append(", spaceId=").append(request.spaceId())
                     .append(")。\n");
         }
 
@@ -887,18 +912,17 @@ public class AgentService {
         }
 
         if (request.spaceId() != null) {
-            builder.append("【重要】数据隔离规则：你所有的工具调用都必须使用 spaceId=")
+            builder.append("【重要】数据隔离规则：当前 spaceId=")
                     .append(request.spaceId())
-                    .append(" 作为参数。禁止查询或分析其他空间的数据。所有 TaskTool、SceneTool、RepositoryTool、LogPreprocessingTool 的调用都必须传入此 spaceId。\n");
+                    .append(" 已由服务端绑定，所有工具都只能访问这个空间。你不需要、也不能在工具参数中指定 spaceId；")
+                    .append("禁止查询或分析其他空间的数据。\n");
         }
 
         if (request.taskId() != null) {
             builder.append("【重要】用户正在询问一个具体任务，任务 ID=").append(request.taskId())
                     .append("。你必须且只能分析这一个任务。")
                     .append("请立即调用 TaskTool.getTask(taskId=").append(request.taskId())
-                    .append(", spaceId=").append(request.spaceId())
                     .append(") 获取任务详情，然后调用 LogPreprocessingTool.analyzeLogs(taskId=").append(request.taskId())
-                    .append(", spaceId=").append(request.spaceId())
                     .append(") 分析该任务的错误日志。")
                     .append("禁止调用 listTasks 或 listScenes 来查询整个空间的数据。\n");
         }

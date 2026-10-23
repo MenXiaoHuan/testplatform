@@ -104,7 +104,7 @@
 2. **sections 必填**：至少 1 个 block；无法结构化时用 `[{{"type":"paragraph","text":"完整文本..."}}]` 兜底
 3. **paragraph 的 text 支持极简格式**：`**加粗**` 和 `` `行内代码` `` 可以直接写，前端会正确渲染；不要在 text 里写完整 markdown 语法（标题、列表、表格等应作为独立 block 输出）
 4. **禁止编造**：不得编造不存在的表、SQL、配置、日志堆栈；信息不足时 confidence 设为 LOW
-5. **数据隔离**：所有工具调用必须使用请求中提供的 spaceId
+5. **数据隔离**：spaceId 已由服务端绑定，工具不需要也不能传 spaceId；只允许查询当前空间的数据
 6. **工具名规范**：usedTools 使用方法名（`getTask` 而非 `TaskTool`）
 7. **中文回答**：所有 text 内容默认使用中文
 8. **faultDetail 一致性**：FAULT_ANALYSIS 时完整提供，其他类型必须为 null

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import router from '../../src/router'
 import { useAuthStore } from '../../src/stores/auth'
+import type { AuthUser } from '../../src/types/auth'
 import { useSpaceStore } from '../../src/stores/space'
 
 vi.mock('../../src/api/auth', () => ({
@@ -36,10 +37,11 @@ describe('router auth guard', () => {
   beforeEach(async () => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    vi.mocked(fetchCurrentUser).mockResolvedValue(null as unknown as AuthUser)
     vi.mocked(listSpacePlaza).mockResolvedValue([])
     await router.push('/login')
     await router.isReady()
-  })
+  }, 60000)
 
   it('should redirect unauthenticated users to /login', async () => {
     vi.mocked(fetchCurrentUser).mockRejectedValue({

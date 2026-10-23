@@ -34,9 +34,11 @@ class ScheduleEventMapperTest {
         Long sceneId = insertScene("schedule-event-scene");
         LocalDateTime plannedFireAt = LocalDateTime.of(2026, 6, 18, 10, 0);
         ScheduleEventEntity entity = new ScheduleEventEntity();
+        entity.setSpaceId(1L);
         entity.setSceneId(sceneId);
         entity.setPlannedFireAt(plannedFireAt);
         entity.setStatus("ACQUIRED");
+        entity.setScheduleType("CRON");
         entity.setTriggerReason("cron:0 */5 * * * *");
         entity.setRetryCount(0);
 
@@ -60,18 +62,22 @@ class ScheduleEventMapperTest {
     void shouldFindRetryableFailedEventsOrderedByCreatedAt() {
         Long sceneId = insertScene("retryable-failed-scene");
         ScheduleEventEntity first = new ScheduleEventEntity();
+        first.setSpaceId(1L);
         first.setSceneId(sceneId);
         first.setPlannedFireAt(LocalDateTime.of(2026, 6, 18, 10, 0));
         first.setStatus("FAILED");
+        first.setScheduleType("CRON");
         first.setTriggerReason("cron:0 */5 * * * *");
         first.setRetryCount(1);
         first.setNextRetryAt(LocalDateTime.of(2026, 6, 18, 10, 1));
         mapper.insert(first);
 
         ScheduleEventEntity second = new ScheduleEventEntity();
+        second.setSpaceId(1L);
         second.setSceneId(sceneId);
         second.setPlannedFireAt(LocalDateTime.of(2026, 6, 18, 10, 5));
         second.setStatus("FAILED");
+        second.setScheduleType("CRON");
         second.setTriggerReason("cron:0 */5 * * * *");
         second.setRetryCount(3);
         second.setNextRetryAt(LocalDateTime.of(2026, 6, 18, 10, 7));
@@ -87,6 +93,7 @@ class ScheduleEventMapperTest {
 
     private Long insertScene(String name) {
         TestRepositoryEntity repository = new TestRepositoryEntity();
+        repository.setSpaceId(1L);
         repository.setName(name + "-repo");
         repository.setGitUrl("https://github.com/demo/testframe.git");
         repository.setDefaultBranch("main");
@@ -100,6 +107,7 @@ class ScheduleEventMapperTest {
         repositoryMapper.insert(repository);
 
         SceneEntity scene = new SceneEntity();
+        scene.setSpaceId(1L);
         scene.setRepoId(repository.getId());
         scene.setName(name);
         scene.setDescription("demo scene");

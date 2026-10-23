@@ -1,5 +1,6 @@
 package com.example.platform.ai.tools;
 
+import com.example.platform.ai.AgentRequestContext;
 import com.example.platform.task.service.TaskService;
 import com.example.platform.task.model.TaskEntity;
 import org.slf4j.Logger;
@@ -31,10 +32,10 @@ public class TaskTool {
         this.taskService = taskService;
     }
 
-    @Tool(description = "List test tasks scoped to the current space, optionally filtered by scene ID")
+    @Tool(description = "List test tasks in the current space, optionally filtered by scene ID")
     public String listTasks(
-            @ToolParam(description = "Scene ID to filter by (optional)") Long sceneId,
-            @ToolParam(description = "Space ID for data isolation - always required") Long spaceId) {
+            @ToolParam(description = "Scene ID to filter by (optional)") Long sceneId) {
+        Long spaceId = AgentRequestContext.requireSpaceId();
         log.info("AI tool: listTasks, sceneId={}, spaceId={}", sceneId, spaceId);
         try {
             var tasks = sceneId != null
@@ -58,8 +59,8 @@ public class TaskTool {
 
     @Tool(description = "Get detailed information about a specific task by ID including status, results, and stage logs")
     public String getTask(
-            @ToolParam(description = "Task ID") Long taskId,
-            @ToolParam(description = "Space ID for data isolation - always required") Long spaceId) {
+            @ToolParam(description = "Task ID") Long taskId) {
+        Long spaceId = AgentRequestContext.requireSpaceId();
         log.info("AI tool: getTask, id={}, spaceId={}", taskId, spaceId);
         try {
             TaskEntity task = taskService.get(spaceId, taskId);

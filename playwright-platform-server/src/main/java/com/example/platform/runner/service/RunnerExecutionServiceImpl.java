@@ -14,7 +14,7 @@ import org.springframework.stereotype.Service;
  * <ul>
  *   <li>将 installDependencies、runTests、generateReport 统一委托给命令执行器</li>
  *   <li>通过 runStage 方法支持带超时和取消控制的任意命令执行</li>
- *   <li>编排层与执行后端解耦，支持本地/Docker 两种模式无缝切换</li>
+ *   <li>编排层与执行后端解耦，当前固定使用 Docker Runner</li>
  * </ul>
  *
  * <p>依赖：{@link RunnerCommandExecutor}

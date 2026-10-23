@@ -8,6 +8,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Supplier;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
@@ -38,6 +40,7 @@ import org.springframework.stereotype.Service;
 @Service
 @EnableConfigurationProperties(CacheProperties.class)
 public class DetailCacheService {
+    private static final Logger log = LoggerFactory.getLogger(DetailCacheService.class);
 
     /** Redis 操作客户端 */
     private final RedisTemplate<String, String> redisTemplate;
@@ -113,7 +116,13 @@ public class DetailCacheService {
      * @param id         详情主键 ID
      */
     public void invalidate(String detailType, Long id) {
-        redisTemplate.delete(detailKey(detailType, id));
+        try {
+            redisTemplate.delete(detailKey(detailType, id));
+        } catch (RuntimeException exception) {
+            // 缓存不可用时不要影响主流程；下一次读取会回源。
+            log.warn("Failed to invalidate detail cache. key={}, reason={}",
+                    detailKey(detailType, id), exception.getMessage());
+        }
     }
 
     /**
@@ -124,11 +133,11 @@ public class DetailCacheService {
      * @return 缓存值的 {@link Optional} 包装；若键不存在返回 {@code null}
      */
     private <T> Optional<T> readCached(String key, Class<T> valueType) {
-        String json = redisTemplate.opsForValue().get(key);
-        if (json == null) {
-            return null;
-        }
         try {
+            String json = redisTemplate.opsForValue().get(key);
+            if (json == null) {
+                return null;
+            }
             JsonNode root = objectMapper.readTree(json);
             // 检查是否为空值占位（用于防止缓存穿透）
             if (root.path("empty").asBoolean(false)) {
@@ -136,7 +145,10 @@ public class DetailCacheService {
             }
             return Optional.of(objectMapper.treeToValue(root.get("value"), valueType));
         } catch (Exception ex) {
-            throw new IllegalStateException("Failed to read detail cache: " + key, ex);
+            // Redis 抖动/反序列化失败时降级为回源，不能让详情接口整体 500。
+            log.warn("Failed to read detail cache, falling back to loader. key={}, reason={}",
+                    key, ex.getMessage());
+            return null;
         }
     }
 
@@ -151,7 +163,14 @@ public class DetailCacheService {
     private <T> Optional<T> loadAndCache(String key, Class<T> valueType, Supplier<Optional<T>> loader) {
         // Redis 分布式互斥锁键，确保集群中只有一个节点执行回源
         String lockKey = key + ":lock";
-        Boolean locked = redisTemplate.opsForValue().setIfAbsent(lockKey, "1", properties.getMutexTtl());
+        Boolean locked;
+        try {
+            locked = redisTemplate.opsForValue().setIfAbsent(lockKey, "1", properties.getMutexTtl());
+        } catch (RuntimeException exception) {
+            log.warn("Detail cache lock unavailable, loading directly. key={}, reason={}",
+                    key, exception.getMessage());
+            return loader.get();
+        }
         // 未获取到分布式锁，说明其他节点正在加载，等待其写入缓存
         if (!Boolean.TRUE.equals(locked)) {
             return waitForCachedValue(key, valueType);
@@ -162,7 +181,11 @@ public class DetailCacheService {
             return loaded;
         } finally {
             // 释放分布式锁
-            redisTemplate.delete(lockKey);
+            try {
+                redisTemplate.delete(lockKey);
+            } catch (RuntimeException exception) {
+                log.warn("Failed to release detail cache lock. key={}, reason={}", lockKey, exception.getMessage());
+            }
         }
     }
 
@@ -214,7 +237,8 @@ public class DetailCacheService {
         try {
             redisTemplate.opsForValue().set(key, objectMapper.writeValueAsString(cachedValue), ttl(value.isEmpty()));
         } catch (Exception ex) {
-            throw new IllegalStateException("Failed to write detail cache: " + key, ex);
+            // 写缓存失败只记录日志，返回值已经加载成功。
+            log.warn("Failed to write detail cache. key={}, reason={}", key, ex.getMessage());
         }
     }
 

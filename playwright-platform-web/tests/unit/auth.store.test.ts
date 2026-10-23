@@ -157,14 +157,12 @@ describe('auth store', () => {
     const store = useAuthStore()
     await store.register({
       username: 'zhangsan',
-      nickname: '张三',
       password: 'secret123',
       confirmPassword: 'secret123',
     })
 
     expect(registerWithPassword).toHaveBeenCalledWith({
       username: 'zhangsan',
-      nickname: '张三',
       encryptedPassword: 'ciphertext',
     })
     expect(store.user?.lastSpaceId).toBe(12)
@@ -204,7 +202,6 @@ describe('auth store', () => {
     const store = useAuthStore()
     await store.register({
       username: 'zhangsan',
-      nickname: '张三',
       password: 'secret123',
       confirmPassword: 'secret123',
     })
@@ -214,12 +211,10 @@ describe('auth store', () => {
     expect(encryptPassword).toHaveBeenNthCalledWith(2, 'secret123', 'new-key')
     expect(registerWithPassword).toHaveBeenNthCalledWith(1, {
       username: 'zhangsan',
-      nickname: '张三',
       encryptedPassword: 'old-ciphertext',
     })
     expect(registerWithPassword).toHaveBeenNthCalledWith(2, {
       username: 'zhangsan',
-      nickname: '张三',
       encryptedPassword: 'new-ciphertext',
     })
   })

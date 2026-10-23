@@ -42,6 +42,8 @@ export interface StreamHandlers {
   onChunk: (chunk: string) => void
   onComplete?: (data: { traceId: string; processingTime: string; sessionId: string }) => void
   onError?: (error: string) => void
+  /** 无论正常结束、被中止还是网络断开都会触发，用于释放 loading 状态。 */
+  onDone?: () => void
 }
 
 export const sendChatMessage = async (payload: ChatRequestPayload) => {
@@ -123,6 +125,9 @@ export const streamChatMessage = (payload: ChatRequestPayload, handlers: StreamH
       if (err.name !== 'AbortError') {
         handlers.onError?.(err.message ?? 'Stream request failed')
       }
+    })
+    .finally(() => {
+      handlers.onDone?.()
     })
 
   return () => controller.abort()

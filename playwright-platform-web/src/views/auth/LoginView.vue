@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../../stores/auth'
 import { toErrorMessage } from '../../utils/error'
@@ -21,6 +21,12 @@ const registerForm = reactive({
 })
 
 const submitLabel = computed(() => (registerMode.value ? '注册并进入个人空间' : '登录并进入首页'))
+const registrationEnabled = computed(() => authStore.publicKey?.registrationEnabled === true)
+
+onMounted(() => {
+  // 后端默认关闭注册；先拿公钥，同时决定是否展示注册入口。
+  void authStore.ensurePublicKey().catch(() => {})
+})
 
 async function submit() {
   loading.value = true
@@ -77,6 +83,10 @@ async function submit() {
 }
 
 function toggleMode() {
+  if (!registrationEnabled.value) {
+    showAppToast('注册已关闭，请联系管理员', 'warning')
+    return
+  }
   registerMode.value = !registerMode.value
 }
 </script>
@@ -137,10 +147,13 @@ function toggleMode() {
               {{ submitLabel }}
             </el-button>
             <div class="login-form__footer">
-              <span>{{ registerMode ? '已有账号？' : '还没有账号？' }}</span>
-              <button class="login-form__switch" type="button" @click="toggleMode">
-                {{ registerMode ? '去登录' : '立即注册' }}
-              </button>
+              <template v-if="registrationEnabled">
+                <span>{{ registerMode ? '已有账号？' : '还没有账号？' }}</span>
+                <button class="login-form__switch" type="button" @click="toggleMode">
+                  {{ registerMode ? '去登录' : '立即注册' }}
+                </button>
+              </template>
+              <span v-else>注册已关闭，请联系管理员</span>
             </div>
           </el-form>
         </div>

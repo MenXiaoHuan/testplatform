@@ -24,11 +24,11 @@ import com.example.platform.task.model.TaskEntity;
 import com.example.platform.task.mapper.TaskMapper;
 import com.example.platform.task.model.TaskStageLogEntity;
 import java.io.InputStream;
-import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.stream.Collectors;
@@ -66,11 +66,14 @@ import org.springframework.http.HttpStatus;
  *
  * <p>说明：创建和取消操作为短写事务，实际执行通过 {@code taskExecutionExecutor} 异步派发，
  *         避免阻塞 Web 请求线程。
+ *
+ * <p>构造器约定：生产只使用 {@link Autowired} 构造器；另外 3 个 public 构造器是
+ * 单元测试的显式装配入口（分别覆盖 executor / stageLog / detailCache 组合），
+ * 不再为每种组合继续扩展。新增依赖时优先改测试 fixture，而不是再加构造器。
  */
 @Service
 public class TaskServiceImpl implements TaskService {
     private static final Logger log = LoggerFactory.getLogger(TaskServiceImpl.class);
-    private static final Field TASK_CREATED_AT_FIELD = initTaskCreatedAtField();
 
     private final SceneMapper sceneRepository;
     private final TestRepositoryMapper repositoryRepository;
@@ -135,7 +138,6 @@ public class TaskServiceImpl implements TaskService {
                 taskStageLogService,
                 taskExecutionProperties,
                 taskExecutionMutationService,
-                detailCacheService,
                 applicationErrorSummaryService);
         this.taskQueryViewService = new TaskQueryViewService(
                 sceneRepository,
@@ -200,86 +202,6 @@ public class TaskServiceImpl implements TaskService {
             TaskCaseResultPersistenceService taskCaseResultPersistenceService,
             ObjectStorageService objectStorageService,
             TaskCommandBuilder taskCommandBuilder,
-            TaskStageLogService taskStageLogService,
-            String storageBucket,
-            String minioEndpoint) {
-        this(
-                sceneRepository,
-                repositoryRepository,
-                taskRepository,
-                artifactRepository,
-                caseResultRepository,
-                runnerWorkspaceService,
-                runnerExecutionService,
-                taskArtifactArchiveService,
-                taskCaseResultParseService,
-                taskCaseResultPersistenceService,
-                objectStorageService,
-                taskCommandBuilder,
-                new TaskCreationService(sceneRepository, repositoryRepository, taskRepository, taskCommandBuilder),
-                null,
-                new TaskExecutionMutationService(taskRepository, sceneRepository),
-                new InMemoryApplicationErrorSummaryService(),
-                Runnable::run,
-                taskStageLogService,
-                new TaskExecutionProperties(),
-                storageBucket,
-                minioEndpoint);
-    }
-
-    public TaskServiceImpl(
-            SceneMapper sceneRepository,
-            TestRepositoryMapper repositoryRepository,
-            TaskMapper taskRepository,
-            ArtifactMapper artifactRepository,
-            CaseResultMapper caseResultRepository,
-            RunnerWorkspaceService runnerWorkspaceService,
-            RunnerExecutionService runnerExecutionService,
-            TaskArtifactArchiveService taskArtifactArchiveService,
-            TaskCaseResultParseService taskCaseResultParseService,
-            TaskCaseResultPersistenceService taskCaseResultPersistenceService,
-            ObjectStorageService objectStorageService,
-            TaskCommandBuilder taskCommandBuilder,
-            Executor taskExecutionExecutor,
-            String storageBucket,
-            String minioEndpoint) {
-        this(
-                sceneRepository,
-                repositoryRepository,
-                taskRepository,
-                artifactRepository,
-                caseResultRepository,
-                runnerWorkspaceService,
-                runnerExecutionService,
-                taskArtifactArchiveService,
-                taskCaseResultParseService,
-                taskCaseResultPersistenceService,
-                objectStorageService,
-                taskCommandBuilder,
-                new TaskCreationService(sceneRepository, repositoryRepository, taskRepository, taskCommandBuilder),
-                null,
-                new TaskExecutionMutationService(taskRepository, sceneRepository),
-                new InMemoryApplicationErrorSummaryService(),
-                taskExecutionExecutor,
-                new NoopTaskStageLogService(),
-                new TaskExecutionProperties(),
-                storageBucket,
-                minioEndpoint);
-    }
-
-    public TaskServiceImpl(
-            SceneMapper sceneRepository,
-            TestRepositoryMapper repositoryRepository,
-            TaskMapper taskRepository,
-            ArtifactMapper artifactRepository,
-            CaseResultMapper caseResultRepository,
-            RunnerWorkspaceService runnerWorkspaceService,
-            RunnerExecutionService runnerExecutionService,
-            TaskArtifactArchiveService taskArtifactArchiveService,
-            TaskCaseResultParseService taskCaseResultParseService,
-            TaskCaseResultPersistenceService taskCaseResultPersistenceService,
-            ObjectStorageService objectStorageService,
-            TaskCommandBuilder taskCommandBuilder,
             Executor taskExecutionExecutor,
             DetailCacheService detailCacheService,
             String storageBucket,
@@ -308,161 +230,9 @@ public class TaskServiceImpl implements TaskService {
                 minioEndpoint);
     }
 
-    public TaskServiceImpl(
-            SceneMapper sceneRepository,
-            TestRepositoryMapper repositoryRepository,
-            TaskMapper taskRepository,
-            ArtifactMapper artifactRepository,
-            CaseResultMapper caseResultRepository,
-            RunnerWorkspaceService runnerWorkspaceService,
-            RunnerExecutionService runnerExecutionService,
-            TaskArtifactArchiveService taskArtifactArchiveService,
-            TaskCaseResultParseService taskCaseResultParseService,
-            TaskCaseResultPersistenceService taskCaseResultPersistenceService,
-            ObjectStorageService objectStorageService,
-            TaskStageLogService taskStageLogService,
-            String storageBucket,
-            String minioEndpoint) {
-        this(
-                sceneRepository,
-                repositoryRepository,
-                taskRepository,
-                artifactRepository,
-                caseResultRepository,
-                runnerWorkspaceService,
-                runnerExecutionService,
-                taskArtifactArchiveService,
-                taskCaseResultParseService,
-                taskCaseResultPersistenceService,
-                objectStorageService,
-                new TaskCommandBuilderImpl(),
-                new TaskCreationService(sceneRepository, repositoryRepository, taskRepository, new TaskCommandBuilderImpl()),
-                null,
-                new TaskExecutionMutationService(taskRepository, sceneRepository),
-                new InMemoryApplicationErrorSummaryService(),
-                Runnable::run,
-                taskStageLogService,
-                new TaskExecutionProperties(),
-                storageBucket,
-                minioEndpoint);
-    }
 
-    public TaskServiceImpl(
-            SceneMapper sceneRepository,
-            TestRepositoryMapper repositoryRepository,
-            TaskMapper taskRepository,
-            ArtifactMapper artifactRepository,
-            CaseResultMapper caseResultRepository,
-            RunnerWorkspaceService runnerWorkspaceService,
-            RunnerExecutionService runnerExecutionService,
-            TaskArtifactArchiveService taskArtifactArchiveService,
-            TaskCaseResultParseService taskCaseResultParseService,
-            TaskCaseResultPersistenceService taskCaseResultPersistenceService,
-            ObjectStorageService objectStorageService,
-            TaskCommandBuilder taskCommandBuilder,
-            DetailCacheService detailCacheService,
-            String storageBucket,
-            String minioEndpoint) {
-        this(
-                sceneRepository,
-                repositoryRepository,
-                taskRepository,
-                artifactRepository,
-                caseResultRepository,
-                runnerWorkspaceService,
-                runnerExecutionService,
-                taskArtifactArchiveService,
-                taskCaseResultParseService,
-                taskCaseResultPersistenceService,
-                objectStorageService,
-                taskCommandBuilder,
-                new TaskCreationService(sceneRepository, repositoryRepository, taskRepository, taskCommandBuilder, detailCacheService),
-                detailCacheService,
-                new TaskExecutionMutationService(taskRepository, sceneRepository, detailCacheService),
-                new InMemoryApplicationErrorSummaryService(),
-                Runnable::run,
-                new NoopTaskStageLogService(),
-                new TaskExecutionProperties(),
-                storageBucket,
-                minioEndpoint);
-    }
 
-    public TaskServiceImpl(
-            SceneMapper sceneRepository,
-            TestRepositoryMapper repositoryRepository,
-            TaskMapper taskRepository,
-            ArtifactMapper artifactRepository,
-            CaseResultMapper caseResultRepository,
-            RunnerWorkspaceService runnerWorkspaceService,
-            RunnerExecutionService runnerExecutionService,
-            TaskArtifactArchiveService taskArtifactArchiveService,
-            TaskCaseResultParseService taskCaseResultParseService,
-            TaskCaseResultPersistenceService taskCaseResultPersistenceService,
-            ObjectStorageService objectStorageService,
-            TaskCommandBuilder taskCommandBuilder,
-            String storageBucket,
-            String minioEndpoint) {
-        this(
-                sceneRepository,
-                repositoryRepository,
-                taskRepository,
-                artifactRepository,
-                caseResultRepository,
-                runnerWorkspaceService,
-                runnerExecutionService,
-                taskArtifactArchiveService,
-                taskCaseResultParseService,
-                taskCaseResultPersistenceService,
-                objectStorageService,
-                taskCommandBuilder,
-                new TaskCreationService(sceneRepository, repositoryRepository, taskRepository, taskCommandBuilder),
-                null,
-                new TaskExecutionMutationService(taskRepository, sceneRepository),
-                new InMemoryApplicationErrorSummaryService(),
-                Runnable::run,
-                new NoopTaskStageLogService(),
-                new TaskExecutionProperties(),
-                storageBucket,
-                minioEndpoint);
-    }
 
-    public TaskServiceImpl(
-            SceneMapper sceneRepository,
-            TestRepositoryMapper repositoryRepository,
-            TaskMapper taskRepository,
-            ArtifactMapper artifactRepository,
-            CaseResultMapper caseResultRepository,
-            RunnerWorkspaceService runnerWorkspaceService,
-            RunnerExecutionService runnerExecutionService,
-            TaskArtifactArchiveService taskArtifactArchiveService,
-            TaskCaseResultParseService taskCaseResultParseService,
-            TaskCaseResultPersistenceService taskCaseResultPersistenceService,
-            ObjectStorageService objectStorageService,
-            String storageBucket,
-            String minioEndpoint) {
-        this(
-                sceneRepository,
-                repositoryRepository,
-                taskRepository,
-                artifactRepository,
-                caseResultRepository,
-                runnerWorkspaceService,
-                runnerExecutionService,
-                taskArtifactArchiveService,
-                taskCaseResultParseService,
-                taskCaseResultPersistenceService,
-                objectStorageService,
-                new TaskCommandBuilderImpl(),
-                new TaskCreationService(sceneRepository, repositoryRepository, taskRepository, new TaskCommandBuilderImpl()),
-                null,
-                new TaskExecutionMutationService(taskRepository, sceneRepository),
-                new InMemoryApplicationErrorSummaryService(),
-                Runnable::run,
-                new NoopTaskStageLogService(),
-                new TaskExecutionProperties(),
-                storageBucket,
-                minioEndpoint);
-    }
 
     /**
      * 创建任务并异步启动执行
@@ -472,7 +242,7 @@ public class TaskServiceImpl implements TaskService {
         TaskEntity createdTask = taskCreationService.createTask(sceneId, "MANUAL", "manual-run", null);
         log.info("Task created and queued for background execution. taskId={}, sceneId={}", createdTask.getId(), sceneId);
         dispatchExistingTask(createdTask.getId(), true);
-        return copyTask(createdTask);
+        return createdTask;
     }
 
     @Override
@@ -499,7 +269,7 @@ public class TaskServiceImpl implements TaskService {
     public TaskEntity createScheduledTask(Long sceneId, String triggerReason) {
         TaskEntity createdTask = taskCreationService.createTask(sceneId, "SCHEDULED", triggerReason, "scheduler");
         dispatchExistingTask(createdTask.getId(), false);
-        return copyTask(createdTask);
+        return createdTask;
     }
 
     TaskEntity runCreatedTask(Long taskId) {
@@ -553,6 +323,13 @@ public class TaskServiceImpl implements TaskService {
         scene.setLastTaskStatus(task.getStatus());
         scene.setLastRunAt(task.getFinishedAt());
         taskExecutionMutationService.saveTaskAndScene(task, scene);
+    }
+
+    private boolean isTerminalStatus(String status) {
+        return "SUCCESS".equalsIgnoreCase(status)
+                || "FAILED".equalsIgnoreCase(status)
+                || "CANCELED".equalsIgnoreCase(status)
+                || "TIMEOUT".equalsIgnoreCase(status);
     }
 
     private int normalizePage(int page) {
@@ -679,14 +456,13 @@ public class TaskServiceImpl implements TaskService {
 
     private TaskDetailResponse loadTaskDetail(Long taskId) {
         TaskEntity task = get(taskId);
-        List<ArtifactEntity> artifacts = listArtifacts(taskId);
-        return taskQueryViewService.toTaskDetailResponse(task, artifacts.size());
+        // 详情只需要产物数量，不要把所有产物查出来再生成预签名 URL。
+        return taskQueryViewService.toTaskDetailResponse(task, (int) artifactRepository.countByTaskId(taskId));
     }
 
     private TaskDetailResponse loadTaskDetail(Long spaceId, Long taskId) {
         TaskEntity task = get(spaceId, taskId);
-        List<ArtifactEntity> artifacts = listArtifacts(spaceId, taskId);
-        return taskQueryViewService.toTaskDetailResponse(task, artifacts.size());
+        return taskQueryViewService.toTaskDetailResponse(task, (int) artifactRepository.countByTaskId(taskId));
     }
 
     @Override
@@ -706,20 +482,28 @@ public class TaskServiceImpl implements TaskService {
 
     @Override
     public List<CaseResultResponse> listCaseResultResponses(Long taskId) {
+        Map<Long, List<ArtifactEntity>> artifactsByCase = listArtifacts(taskId).stream()
+                .filter(artifact -> artifact.getCaseResultId() != null)
+                .collect(Collectors.groupingBy(ArtifactEntity::getCaseResultId));
         return listCaseResults(taskId).stream()
                 .map(caseResult -> taskQueryViewService.toCaseResultResponse(
                         caseResult,
-                        listArtifactsByCaseResult(caseResult.getId())))
+                        artifactsByCase.getOrDefault(caseResult.getId(), List.of())))
                 .toList();
     }
 
     @Override
     public List<CaseResultResponse> listCaseResultResponses(Long spaceId, Long taskId) {
         get(spaceId, taskId);
+        // 一次查出任务下所有产物再按用例分组，避免每个用例都查询一次 artifact（N+1）。
+        Map<Long, List<ArtifactEntity>> artifactsByCase = artifactRepository.findAllByTaskIdOrderByIdAsc(taskId).stream()
+                .filter(artifact -> artifact.getCaseResultId() != null)
+                .map(artifact -> taskQueryViewService.withAccessibleArtifactUrl(artifact, spaceId))
+                .collect(Collectors.groupingBy(ArtifactEntity::getCaseResultId));
         return listCaseResults(taskId).stream()
                 .map(caseResult -> taskQueryViewService.toCaseResultResponse(
                         caseResult,
-                        listArtifactsByCaseResult(spaceId, taskId, caseResult.getId())))
+                        artifactsByCase.getOrDefault(caseResult.getId(), List.of())))
                 .toList();
     }
 
@@ -749,6 +533,9 @@ public class TaskServiceImpl implements TaskService {
     public void cancelTask(Long taskId, String operatorName) {
         TaskEntity task = taskRepository.findById(taskId)
                 .orElseThrow(() -> new IllegalArgumentException("Task not found: " + taskId));
+        if (isTerminalStatus(task.getStatus())) {
+            return;
+        }
         task.setCancelRequested(true);
         task.setCancelRequestedAt(LocalDateTime.now());
         task.setCancelRequestedBy(operatorName);
@@ -760,6 +547,9 @@ public class TaskServiceImpl implements TaskService {
     @Transactional
     public void cancelTask(Long spaceId, Long taskId, String operatorName) {
         TaskEntity task = get(spaceId, taskId);
+        if (isTerminalStatus(task.getStatus())) {
+            return;
+        }
         task.setCancelRequested(true);
         task.setCancelRequestedAt(LocalDateTime.now());
         task.setCancelRequestedBy(operatorName);
@@ -785,9 +575,7 @@ public class TaskServiceImpl implements TaskService {
     @Override
     public ResponseEntity<Resource> downloadArtifact(Long taskId, Long artifactId) {
         get(taskId);
-        ArtifactEntity artifact = artifactRepository.findAllByTaskIdOrderByIdAsc(taskId).stream()
-                .filter(item -> artifactId.equals(item.getId()))
-                .findFirst()
+        ArtifactEntity artifact = artifactRepository.findByIdAndTaskId(taskId, artifactId)
                 .orElseThrow(() -> new IllegalArgumentException("Artifact not found: " + artifactId));
         return buildStorageDownloadResponse(
                 artifact.getBucket(),
@@ -799,9 +587,7 @@ public class TaskServiceImpl implements TaskService {
     @Override
     public ResponseEntity<Resource> downloadArtifact(Long spaceId, Long taskId, Long artifactId) {
         get(spaceId, taskId);
-        ArtifactEntity artifact = artifactRepository.findAllByTaskIdOrderByIdAsc(taskId).stream()
-                .filter(item -> artifactId.equals(item.getId()))
-                .findFirst()
+        ArtifactEntity artifact = artifactRepository.findByIdAndTaskId(taskId, artifactId)
                 .orElseThrow(() -> new IllegalArgumentException("Artifact not found: " + artifactId));
         return buildStorageDownloadResponse(
                 artifact.getBucket(),
@@ -896,12 +682,6 @@ public class TaskServiceImpl implements TaskService {
         }
     }
 
-    private void invalidateSceneDetail(Long sceneId) {
-        if (detailCacheService != null && sceneId != null) {
-            detailCacheService.invalidate("scene", sceneId);
-        }
-    }
-
     private void recordApplicationError(TaskEntity task, String stage, String message, Throwable throwable) {
         if (applicationErrorSummaryService == null) {
             return;
@@ -909,61 +689,6 @@ public class TaskServiceImpl implements TaskService {
         try (TaskLogContext taskLogContext = TaskLogContext.open(task, null)) {
             taskLogContext.setStage(stage);
             applicationErrorSummaryService.recordError(log.getName(), message, throwable);
-        }
-    }
-
-    private TaskEntity copyTask(TaskEntity source) {
-        TaskEntity copy = new TaskEntity();
-        copy.setId(source.getId());
-        copy.setSpaceId(source.getSpaceId());
-        copy.setSceneId(source.getSceneId());
-        copy.setRepoId(source.getRepoId());
-        copy.setStatus(source.getStatus());
-        copy.setTriggerType(source.getTriggerType());
-        copy.setTriggerUser(source.getTriggerUser());
-        copy.setTriggerReason(source.getTriggerReason());
-        copy.setQueuedAt(source.getQueuedAt());
-        copy.setBranch(source.getBranch());
-        copy.setCommitSha(source.getCommitSha());
-        copy.setStartedAt(source.getStartedAt());
-        copy.setFinishedAt(source.getFinishedAt());
-        copy.setDurationMs(source.getDurationMs());
-        copy.setRunnerName(source.getRunnerName());
-        copy.setCurrentStage(source.getCurrentStage());
-        copy.setResultCode(source.getResultCode());
-        copy.setResultMessage(source.getResultMessage());
-        copy.setCancelRequested(source.getCancelRequested());
-        copy.setCancelRequestedAt(source.getCancelRequestedAt());
-        copy.setCancelRequestedBy(source.getCancelRequestedBy());
-        copy.setLogUrl(source.getLogUrl());
-        copy.setResolvedBranch(source.getResolvedBranch());
-        copy.setResolvedBrowser(source.getResolvedBrowser());
-        copy.setResolvedEnvJson(source.getResolvedEnvJson());
-        copy.setResolvedMatchValue(source.getResolvedMatchValue());
-        copy.setResolvedTestRoot(source.getResolvedTestRoot());
-        copy.setResolvedRunCommand(source.getResolvedRunCommand());
-        copy.setPassedCount(source.getPassedCount());
-        copy.setFailedCount(source.getFailedCount());
-        copy.setSkippedCount(source.getSkippedCount());
-        copyReadOnlyCreatedAt(source, copy);
-        return copy;
-    }
-
-    private static Field initTaskCreatedAtField() {
-        try {
-            Field field = TaskEntity.class.getDeclaredField("createdAt");
-            field.setAccessible(true);
-            return field;
-        } catch (ReflectiveOperationException exception) {
-            throw new IllegalStateException("Failed to access TaskEntity.createdAt", exception);
-        }
-    }
-
-    private void copyReadOnlyCreatedAt(TaskEntity source, TaskEntity target) {
-        try {
-            TASK_CREATED_AT_FIELD.set(target, source.getCreatedAt());
-        } catch (IllegalAccessException exception) {
-            throw new IllegalStateException("Failed to copy TaskEntity.createdAt", exception);
         }
     }
 

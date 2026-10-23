@@ -112,8 +112,10 @@ describe('space-aware stores', () => {
     expect(listTasks).toHaveBeenCalledWith(7, 1, 10)
     expect(listScheduleEvents).toHaveBeenCalledWith({
       spaceId: 7,
-      statusCsv: 'FAILED,ABANDONED',
+      scheduleType: 'AGENT',
       sceneId: null,
+      sceneName: '',
+      traceId: '',
       page: 1,
       limit: 20,
     })

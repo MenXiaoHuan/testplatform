@@ -52,6 +52,14 @@ const ElSwitchStub = defineComponent({
   template: '<div />',
 })
 
+const ElRadioGroupStub = defineComponent({
+  template: '<div><slot /></div>',
+})
+
+const ElRadioButtonStub = defineComponent({
+  template: '<button><slot /></button>',
+})
+
 const ElTooltipStub = defineComponent({
   props: {
     content: {
@@ -73,6 +81,9 @@ describe('repository defaults', () => {
     const form = createRepositoryForm()
 
     expect(form.installCommand).toBe('npm install')
+    expect(form.authType).toBe('PUBLIC')
+    expect(form.credentialSecret).toBe('')
+    expect(form.runCommandTemplate).toBe('npx playwright test')
   })
 
   it('should show npm install as the default install command in repository creation help text and placeholder', () => {
@@ -90,11 +101,15 @@ describe('repository defaults', () => {
           'el-table-column': ElTableColumnStub,
           'el-switch': ElSwitchStub,
           'el-tooltip': ElTooltipStub,
+          'el-radio-group': ElRadioGroupStub,
+          'el-radio-button': ElRadioButtonStub,
         },
       },
     })
 
-    expect(wrapper.text()).toContain('默认使用 npm install；如仓库封装了脚本，也可以改成自定义安装命令。')
+    expect(wrapper.text()).toContain('默认 npm install；仓库有 package-lock.json 时建议改成 npm ci')
+    expect(wrapper.text()).toContain('公有仓库')
+    expect(wrapper.text()).toContain('私有仓库')
     expect(wrapper.find('input[placeholder="npm install"]').exists()).toBe(true)
   })
 })

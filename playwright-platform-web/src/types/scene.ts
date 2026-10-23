@@ -57,5 +57,5 @@ export const createSceneForm = (): SceneForm => ({
   branch: 'main',
   testSelectorType: 'file',
   testSelectorValue: '',
-  runCommand: 'node ./scripts/run-e2e.cjs',
+  runCommand: 'npx playwright test',
 })

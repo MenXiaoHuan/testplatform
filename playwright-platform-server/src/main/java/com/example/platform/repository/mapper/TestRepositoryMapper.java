@@ -26,11 +26,13 @@ public interface TestRepositoryMapper {
             insert into test_repository (
                 space_id, name, git_url, default_branch, working_directory, install_command,
                 run_command_template, test_root, results_index_relative_path,
-                artifact_root_relative_path, enabled
+                artifact_root_relative_path, auth_type, credential_username, credential_secret,
+                credential_updated_at, enabled
             ) values (
                 #{spaceId}, #{name}, #{gitUrl}, #{defaultBranch}, #{workingDirectory}, #{installCommand},
                 #{runCommandTemplate}, #{testRoot}, #{resultsIndexRelativePath},
-                #{artifactRootRelativePath}, #{enabled}
+                #{artifactRootRelativePath}, coalesce(#{authType}, 'PUBLIC'), #{credentialUsername}, #{credentialSecret},
+                #{credentialUpdatedAt}, #{enabled}
             )
             """)
     @Options(useGeneratedKeys = true, keyProperty = "id")
@@ -48,6 +50,10 @@ public interface TestRepositoryMapper {
                 test_root = #{testRoot},
                 results_index_relative_path = #{resultsIndexRelativePath},
                 artifact_root_relative_path = #{artifactRootRelativePath},
+                auth_type = coalesce(#{authType}, 'PUBLIC'),
+                credential_username = #{credentialUsername},
+                credential_secret = #{credentialSecret},
+                credential_updated_at = #{credentialUpdatedAt},
                 enabled = #{enabled}
             where id = #{id}
             """)
@@ -56,7 +62,8 @@ public interface TestRepositoryMapper {
     @Select("""
             select id, space_id, name, git_url, default_branch, working_directory, install_command,
                    run_command_template, test_root, results_index_relative_path,
-                   artifact_root_relative_path, enabled, created_at, updated_at
+                   artifact_root_relative_path, auth_type, credential_username, credential_secret,
+                   credential_updated_at, enabled, created_at, updated_at
             from test_repository
             where id = #{id}
             """)
@@ -72,6 +79,10 @@ public interface TestRepositoryMapper {
             @Result(property = "testRoot", column = "test_root"),
             @Result(property = "resultsIndexRelativePath", column = "results_index_relative_path"),
             @Result(property = "artifactRootRelativePath", column = "artifact_root_relative_path"),
+            @Result(property = "authType", column = "auth_type"),
+            @Result(property = "credentialUsername", column = "credential_username"),
+            @Result(property = "credentialSecret", column = "credential_secret"),
+            @Result(property = "credentialUpdatedAt", column = "credential_updated_at"),
             @Result(property = "enabled", column = "enabled"),
             @Result(property = "createdAt", column = "created_at"),
             @Result(property = "updatedAt", column = "updated_at")
@@ -81,7 +92,8 @@ public interface TestRepositoryMapper {
     @Select("""
             select id, space_id, name, git_url, default_branch, working_directory, install_command,
                    run_command_template, test_root, results_index_relative_path,
-                   artifact_root_relative_path, enabled, created_at, updated_at
+                   artifact_root_relative_path, auth_type, credential_username, credential_secret,
+                   credential_updated_at, enabled, created_at, updated_at
             from test_repository
             where id = #{id}
               and space_id = #{spaceId}
@@ -92,7 +104,8 @@ public interface TestRepositoryMapper {
     @Select("""
             select id, space_id, name, git_url, default_branch, working_directory, install_command,
                    run_command_template, test_root, results_index_relative_path,
-                   artifact_root_relative_path, enabled, created_at, updated_at
+                   artifact_root_relative_path, auth_type, credential_username, credential_secret,
+                   credential_updated_at, enabled, created_at, updated_at
             from test_repository
             where space_id = #{spaceId}
             order by id asc
@@ -103,7 +116,8 @@ public interface TestRepositoryMapper {
     @Select("""
             select id, space_id, name, git_url, default_branch, working_directory, install_command,
                    run_command_template, test_root, results_index_relative_path,
-                   artifact_root_relative_path, enabled, created_at, updated_at
+                   artifact_root_relative_path, auth_type, credential_username, credential_secret,
+                   credential_updated_at, enabled, created_at, updated_at
             from test_repository
             where space_id = #{spaceId}
             order by updated_at desc, id desc

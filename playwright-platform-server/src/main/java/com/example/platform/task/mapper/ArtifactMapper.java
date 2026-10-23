@@ -2,6 +2,7 @@ package com.example.platform.task.mapper;
 
 import com.example.platform.task.model.ArtifactEntity;
 import java.util.List;
+import java.util.Optional;
 import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
@@ -92,6 +93,23 @@ public interface ArtifactMapper {
             """)
     @ResultMap("ArtifactResultMap")
     List<ArtifactEntity> findAllByCaseResultIdOrderByIdAsc(@Param("caseResultId") Long caseResultId);
+
+    @Select("""
+            select count(1)
+            from artifact
+            where task_id = #{taskId}
+            """)
+    long countByTaskId(@Param("taskId") Long taskId);
+
+    @Select("""
+            select
+            """ + ARTIFACT_COLUMNS + """
+            from artifact
+            where task_id = #{taskId}
+              and id = #{artifactId}
+            """)
+    @ResultMap("ArtifactResultMap")
+    Optional<ArtifactEntity> findByIdAndTaskId(@Param("taskId") Long taskId, @Param("artifactId") Long artifactId);
 
     /**
      * 根据任务ID列表批量查询制品

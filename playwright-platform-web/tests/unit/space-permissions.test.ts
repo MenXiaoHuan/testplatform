@@ -17,7 +17,7 @@ describe('space permissions', () => {
     expect(items.map((item) => item.label)).toEqual([
       '仓库管理',
       '场景管理',
-      '调度事件',
+      '日志追踪',
     ])
   })
 

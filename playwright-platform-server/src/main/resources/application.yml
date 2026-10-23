@@ -33,41 +33,6 @@ spring:
           model: ${PLATFORM_DEEPSEEK_MODEL:deepseek-chat}
           temperature: ${PLATFORM_DEEPSEEK_TEMPERATURE:0.7}
 
-# === 任务执行服务配置 ===
-task:
-  execution:
-    core-pool-size: 2
-    max-pool-size: 4
-    queue-capacity: 50
-    keep-alive-seconds: 60
-    install-timeout-seconds: 600
-    test-timeout-seconds: 1800
-    monitor-log-interval-seconds: 30
-
-# === 测试运行器配置 ===
-runner:
-  mode: ${PLATFORM_RUNNER_MODE:local}
-  workspace-root: ${PLATFORM_RUNNER_WORKSPACE_ROOT:${java.io.tmpdir}/playwright-platform/workspaces}
-  host-workspace-root: ${PLATFORM_RUNNER_HOST_WORKSPACE_ROOT:${platform.runner.workspace-root}}
-  # === Docker 容器运行器配置 ===
-  docker:
-    image: ${PLATFORM_RUNNER_DOCKER_IMAGE:mcr.microsoft.com/playwright:v1.44.0-jammy}
-    network: ${PLATFORM_RUNNER_DOCKER_NETWORK:bridge}
-    memory: ${PLATFORM_RUNNER_DOCKER_MEMORY:2g}
-    cpus: ${PLATFORM_RUNNER_DOCKER_CPUS:2}
-    container-workspace-root: ${PLATFORM_RUNNER_DOCKER_CONTAINER_WORKSPACE_ROOT:/workspace/task}
-    remove-container: ${PLATFORM_RUNNER_DOCKER_REMOVE_CONTAINER:true}
-
-# === 对象存储配置（MinIO） ===
-storage:
-  bucket: ${PLATFORM_STORAGE_BUCKET:qa-report}
-  minio:
-    endpoint: ${PLATFORM_MINIO_ENDPOINT}
-    public-endpoint: ${PLATFORM_MINIO_PUBLIC_ENDPOINT:${PLATFORM_MINIO_ENDPOINT}}
-    region: ${PLATFORM_MINIO_REGION:us-east-1}
-    access-key: ${PLATFORM_MINIO_ACCESS_KEY}
-    secret-key: ${PLATFORM_MINIO_SECRET_KEY}
-
 # === MyBatis 配置 ===
 mybatis:
   configuration:
@@ -90,6 +55,66 @@ server:
 
 # === 平台自定义配置 ===
 platform:
+  # === 仓库凭据加密密钥（32 字节 base64） ===
+  security:
+    credential-key: ${PLATFORM_CREDENTIAL_KEY:}
+
+  # === 认证与注册配置 ===
+  auth:
+    cookie-name: ${PLATFORM_AUTH_COOKIE_NAME:platform_session}
+    sliding-days: ${PLATFORM_AUTH_SLIDING_DAYS:14}
+    # 默认关闭自助注册；个人部署临时打开注册后再关掉。
+    registration-enabled: ${PLATFORM_REGISTRATION_ENABLED:false}
+
+  # === 任务执行服务配置 ===
+  task:
+    execution:
+      core-pool-size: ${PLATFORM_TASK_CORE_POOL_SIZE:2}
+      max-pool-size: ${PLATFORM_TASK_MAX_POOL_SIZE:4}
+      queue-capacity: ${PLATFORM_TASK_QUEUE_CAPACITY:50}
+      keep-alive-seconds: ${PLATFORM_TASK_KEEP_ALIVE_SECONDS:60}
+      install-timeout-seconds: ${PLATFORM_TASK_INSTALL_TIMEOUT_SECONDS:600}
+      test-timeout-seconds: ${PLATFORM_TASK_TEST_TIMEOUT_SECONDS:1800}
+      monitor-log-interval-seconds: ${PLATFORM_TASK_MONITOR_LOG_INTERVAL_SECONDS:30}
+      # 单个产物文件 100MB，单任务产物总量 1GB。
+      max-artifact-file-bytes: ${PLATFORM_TASK_MAX_ARTIFACT_FILE_BYTES:104857600}
+      max-artifact-total-bytes: ${PLATFORM_TASK_MAX_ARTIFACT_TOTAL_BYTES:1073741824}
+    # 默认 0 = 不自动清理；生产环境可按需设为 90 天。
+    retention:
+      days: ${PLATFORM_TASK_RETENTION_DAYS:0}
+      cron: ${PLATFORM_TASK_RETENTION_CRON:0 30 3 * * *}
+
+  # === 测试运行器配置（仅 Docker Runner） ===
+  runner:
+    workspace-root: ${PLATFORM_RUNNER_WORKSPACE_ROOT:${java.io.tmpdir}/playwright-platform/workspaces}
+    host-workspace-root: ${PLATFORM_RUNNER_HOST_WORKSPACE_ROOT:${platform.runner.workspace-root}}
+    git-clone-timeout-seconds: ${PLATFORM_RUNNER_GIT_CLONE_TIMEOUT_SECONDS:120}
+    max-log-bytes: ${PLATFORM_RUNNER_MAX_LOG_BYTES:52428800}
+    max-test-log-bytes: ${PLATFORM_RUNNER_MAX_TEST_LOG_BYTES:209715200}
+    # 私有仓库凭据在仓库管理中按仓库配置；这里只保留 SSH host key 校验等全局设置。
+    known-hosts-path: ${PLATFORM_GIT_KNOWN_HOSTS_PATH:}
+    submodules-enabled: ${PLATFORM_GIT_SUBMODULES_ENABLED:false}
+    lfs-enabled: ${PLATFORM_GIT_LFS_ENABLED:false}
+    # === Docker 容器运行器配置 ===
+    docker:
+      image: ${PLATFORM_RUNNER_DOCKER_IMAGE:mcr.microsoft.com/playwright:v1.61.1-noble}
+      network: ${PLATFORM_RUNNER_DOCKER_NETWORK:bridge}
+      memory: ${PLATFORM_RUNNER_DOCKER_MEMORY:2g}
+      cpus: ${PLATFORM_RUNNER_DOCKER_CPUS:2}
+      container-workspace-root: ${PLATFORM_RUNNER_DOCKER_CONTAINER_WORKSPACE_ROOT:/workspace/task}
+      remove-container: ${PLATFORM_RUNNER_DOCKER_REMOVE_CONTAINER:true}
+      image-pull-timeout-seconds: ${PLATFORM_RUNNER_DOCKER_IMAGE_PULL_TIMEOUT_SECONDS:1800}
+
+  # === 对象存储配置（MinIO） ===
+  storage:
+    bucket: ${PLATFORM_STORAGE_BUCKET:qa-report}
+    minio:
+      endpoint: ${PLATFORM_MINIO_ENDPOINT:http://localhost:9000}
+      public-endpoint: ${PLATFORM_MINIO_PUBLIC_ENDPOINT:${PLATFORM_MINIO_ENDPOINT:http://localhost:9000}}
+      region: ${PLATFORM_MINIO_REGION:us-east-1}
+      access-key: ${PLATFORM_MINIO_ACCESS_KEY}
+      secret-key: ${PLATFORM_MINIO_SECRET_KEY}
+
   # === AI 智能体配置 ===
   ai:
     system-prompt-path: ${PLATFORM_AI_SYSTEM_PROMPT_PATH:classpath:AGENT.md}
@@ -106,6 +131,10 @@ platform:
       timeout-seconds: ${PLATFORM_AI_CALL_TIMEOUT:60}
       max-retries: ${PLATFORM_AI_CALL_MAX_RETRIES:2}
       retry-delay-ms: ${PLATFORM_AI_CALL_RETRY_DELAY:1000}
+    # === AI 用量保护：每日次数 + 全局并发 ===
+    quota:
+      daily-limit: ${PLATFORM_AI_DAILY_LIMIT:50}
+      max-concurrent: ${PLATFORM_AI_MAX_CONCURRENT:4}
     # === AI 输入清理配置 ===
     sanitizer:
       enabled: ${PLATFORM_AI_SANITIZER_ENABLED:true}

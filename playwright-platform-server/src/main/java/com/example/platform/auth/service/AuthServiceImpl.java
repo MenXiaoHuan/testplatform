@@ -77,6 +77,9 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional
     public LoginResult register(String username, String encryptedPassword) {
+        if (!authProperties.isRegistrationEnabled()) {
+            throw new BusinessException("REGISTRATION_DISABLED", "注册已关闭，请联系管理员");
+        }
         String normalizedUsername = normalizeRequiredValue(username, "请输入用户名");
         ensureUsernameAvailable(normalizedUsername);
 
@@ -127,18 +130,25 @@ public class AuthServiceImpl implements AuthService {
         if (session == null) {
             return Optional.empty();
         }
-        if (session.expiresAt().isBefore(nowSupplier.get())) {
+        LocalDateTime now = nowSupplier.get();
+        if (session.expiresAt().isBefore(now)) {
             userSessionMapper.deleteBySessionId(sessionId);
             return Optional.empty();
         }
-        LocalDateTime refreshedExpiresAt = nowSupplier.get().plusDays(authProperties.getSlidingDays());
-        userSessionMapper.updateExpiresAt(sessionId, refreshedExpiresAt);
+        // 滑动续期只在剩余时间不足一半时写库：列表页 3 秒轮询会让每个请求都 UPDATE，
+        // 对单机 MySQL 是完全没有必要的写放大。
+        LocalDateTime refreshedExpiresAt = session.expiresAt();
+        LocalDateTime refreshThreshold = now.plusDays(Math.max(1, authProperties.getSlidingDays() / 2));
+        if (session.expiresAt().isBefore(refreshThreshold)) {
+            refreshedExpiresAt = now.plusDays(authProperties.getSlidingDays());
+            userSessionMapper.updateExpiresAt(sessionId, refreshedExpiresAt);
+        }
         boolean needsSetup = needsSetup(session.nickname(), session.lastSpaceId());
         return Optional.of(new AuthSession(
                 session.sessionId(),
                 session.userId(),
                 session.username(),
-                session.nickname(),
+                resolveNickname(session.nickname(), session.username()),
                 session.avatarObjectKey(),
                 session.lastSpaceId(),
                 refreshedExpiresAt,
@@ -199,6 +209,18 @@ public class AuthServiceImpl implements AuthService {
         return (nickname == null || nickname.isBlank()) || lastSpaceId == null;
     }
 
+    private String resolveNickname(String nickname, String username) {
+        return nickname == null || nickname.isBlank() ? username : nickname;
+    }
+
+    /** 登录响应保留 null 表示“新用户未设置昵称”，但空白昵称回退为用户名。 */
+    private String resolveNicknameForLogin(String nickname, String username) {
+        if (nickname == null) {
+            return null;
+        }
+        return nickname.isBlank() ? username : nickname;
+    }
+
     private String normalizeNickname(String nickname) {
         if (nickname == null || nickname.isBlank()) {
             throw new BusinessException("BAD_REQUEST", "请输入昵称");
@@ -223,7 +245,7 @@ public class AuthServiceImpl implements AuthService {
                 session.getSessionId(),
                 user.getId(),
                 user.getUsername(),
-                user.getNickname(),
+                resolveNicknameForLogin(user.getNickname(), user.getUsername()),
                 user.getAvatarObjectKey(),
                 user.getLastSpaceId(),
                 needsSetup);

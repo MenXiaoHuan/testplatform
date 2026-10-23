@@ -1,5 +1,6 @@
 package com.example.platform.task.model;
 
+import com.example.platform.common.SensitiveDataRedactor;
 import java.time.LocalDateTime;
 
 /**
@@ -15,6 +16,9 @@ import java.time.LocalDateTime;
  * <p>依赖：{@link LocalDateTime}
  */
 public class TaskEntity {
+    /** 与 task.result_message / task.log_url 的 varchar(1024) 对齐，预留少量余量 */
+    private static final int MAX_TEXT_FIELD_LENGTH = 1000;
+
     /** 任务ID */
     private Long id;
 
@@ -149,7 +153,7 @@ public class TaskEntity {
     public String getResultCode() { return resultCode; }
     public void setResultCode(String resultCode) { this.resultCode = resultCode; }
     public String getResultMessage() { return resultMessage; }
-    public void setResultMessage(String resultMessage) { this.resultMessage = resultMessage; }
+    public void setResultMessage(String resultMessage) { this.resultMessage = truncate(resultMessage); }
     public Boolean getCancelRequested() { return cancelRequested; }
     public void setCancelRequested(Boolean cancelRequested) { this.cancelRequested = cancelRequested; }
     public LocalDateTime getCancelRequestedAt() { return cancelRequestedAt; }
@@ -157,7 +161,7 @@ public class TaskEntity {
     public String getCancelRequestedBy() { return cancelRequestedBy; }
     public void setCancelRequestedBy(String cancelRequestedBy) { this.cancelRequestedBy = cancelRequestedBy; }
     public String getLogUrl() { return logUrl; }
-    public void setLogUrl(String logUrl) { this.logUrl = logUrl; }
+    public void setLogUrl(String logUrl) { this.logUrl = truncate(logUrl); }
     public String getResolvedBranch() { return resolvedBranch; }
     public void setResolvedBranch(String resolvedBranch) { this.resolvedBranch = resolvedBranch; }
     public String getResolvedBrowser() { return resolvedBrowser; }
@@ -178,4 +182,16 @@ public class TaskEntity {
     public void setFailedCount(int failedCount) { this.failedCount = failedCount; }
     public int getSkippedCount() { return skippedCount; }
     public void setSkippedCount(int skippedCount) { this.skippedCount = skippedCount; }
+
+    /**
+     * 任务失败时异常消息可能非常长，直接写 varchar(1024) 会触发 MySQL strict mode 错误，
+     * 导致任务状态更新失败、任务永远停在 RUNNING。统一在入口截断。
+     */
+    private static String truncate(String value) {
+        String redacted = SensitiveDataRedactor.redact(value);
+        if (redacted == null || redacted.length() <= MAX_TEXT_FIELD_LENGTH) {
+            return redacted;
+        }
+        return redacted.substring(0, MAX_TEXT_FIELD_LENGTH);
+    }
 }

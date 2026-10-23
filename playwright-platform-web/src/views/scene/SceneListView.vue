@@ -125,6 +125,11 @@ function selectedRepository(repoId: number) {
   return repositories.value.find((item) => item.id === repoId) ?? null
 }
 
+const selectedRepositoryNeedsCredential = computed(() => {
+  const repository = selectedRepository(form.repoId)
+  return Boolean(repository && repository.authType !== 'PUBLIC' && !repository.credentialConfigured)
+})
+
 function openCreate() {
   editingId.value = null
   Object.assign(form, sceneStore.createEmptyForm())
@@ -218,6 +223,10 @@ async function submit() {
   }
   if (!repository.enabled) {
     showAppToast('所属仓库已停用，请先启用仓库', 'warning')
+    return
+  }
+  if (repository.authType !== 'PUBLIC' && !repository.credentialConfigured) {
+    showAppToast('该私有仓库尚未配置凭据，请先在仓库管理中补全 Token 或 SSH Key', 'warning')
     return
   }
 
@@ -352,6 +361,9 @@ async function handleSizeChange(size: number) {
           <el-select v-model="repositorySelectValue" placeholder="请选择仓库">
             <el-option v-for="item in selectableRepositories" :key="item.id" :label="item.name" :value="item.id" />
           </el-select>
+          <div v-if="selectedRepositoryNeedsCredential" class="form-hint form-hint--warning">
+            该仓库是私有仓库，但还没有配置凭据。请先到「仓库管理」编辑该仓库，保存 HTTPS Token 或 SSH Key。
+          </div>
         </el-form-item>
         <el-form-item>
           <template #label>
@@ -392,6 +404,17 @@ async function handleSizeChange(size: number) {
 </template>
 
 <style scoped>
+.form-hint {
+  margin-top: 6px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.form-hint--warning {
+  color: var(--el-color-warning);
+}
+
 .form-label-with-help {
   display: inline-flex;
   align-items: center;

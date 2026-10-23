@@ -128,11 +128,8 @@ public class GlobalExceptionHandler {
         log.error("Unhandled server exception", ex);
         // 异步记录错误摘要，供任务详情页查询
         applicationErrorSummaryService.recordError(log.getName(), ex.getMessage(), ex);
-        String message = ex.getMessage();
-        if (message != null && !message.isBlank()) {
-            return new ApiErrorResponse("INTERNAL_SERVER_ERROR", null, message);
-        }
-        return new ApiErrorResponse("INTERNAL_SERVER_ERROR", null, "Internal server error");
+        // 不把异常消息（可能包含 SQL、路径、内部类名）直接返回给前端；详情留在日志和 requestId 里。
+        return new ApiErrorResponse("INTERNAL_SERVER_ERROR", null, "服务内部错误，请稍后重试");
     }
 
     /**

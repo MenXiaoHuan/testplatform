@@ -1,5 +1,6 @@
 package com.example.platform.ai.tools;
 
+import com.example.platform.ai.AgentRequestContext;
 import com.example.platform.scene.service.SceneService;
 import com.example.platform.scene.model.SceneEntity;
 import org.slf4j.Logger;
@@ -31,10 +32,10 @@ public class SceneTool {
         this.sceneService = sceneService;
     }
 
-    @Tool(description = "List test scenes scoped to the current space, optionally filtered by repository ID")
+    @Tool(description = "List test scenes in the current space, optionally filtered by repository ID")
     public String listScenes(
-            @ToolParam(description = "Repository ID to filter by (optional)") Long repoId,
-            @ToolParam(description = "Space ID for data isolation - always required") Long spaceId) {
+            @ToolParam(description = "Repository ID to filter by (optional)") Long repoId) {
+        Long spaceId = AgentRequestContext.requireSpaceId();
         log.info("AI tool: listScenes, repoId={}, spaceId={}", repoId, spaceId);
         try {
             var scenes = sceneService.listCards(spaceId, 1, 50);
@@ -57,8 +58,8 @@ public class SceneTool {
 
     @Tool(description = "Get detailed information about a specific scene by ID within the current space")
     public String getSceneDetail(
-            @ToolParam(description = "Scene ID") Long sceneId,
-            @ToolParam(description = "Space ID for data isolation - always required") Long spaceId) {
+            @ToolParam(description = "Scene ID") Long sceneId) {
+        Long spaceId = AgentRequestContext.requireSpaceId();
         log.info("AI tool: getSceneDetail, id={}, spaceId={}", sceneId, spaceId);
         try {
             SceneEntity scene = sceneService.get(spaceId, sceneId);

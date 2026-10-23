@@ -30,9 +30,9 @@
 | 文件 | 使用场景 | 被谁使用 | 主要职责 |
 |---|---|---|---|
 | `playwright-platform-server/Dockerfile.dev` | 后端本地开发 | `docker-compose.yml` | Maven 开发容器，挂载源码后运行 `mvn spring-boot:run` |
-| `playwright-platform-server/Dockerfile` | 后端生产构建 | `docker-compose.prod.yml` / CI/CD | 多阶段构建后端 jar，运行阶段只保留 JRE |
+| `playwright-platform-server/Dockerfile` | 后端生产构建 | `docker-compose.prod.yml` / CI/CD | 多阶段构建后端 jar，运行阶段保留 JRE + Docker CLI + Git/SSH |
 | `playwright-platform-server/.dockerignore` | 后端镜像构建 | Docker build | 排除 `target/`、IDE 文件、本机系统文件 |
-| `playwright-platform-web/Dockerfile.dev` | 前端本地开发 | `docker-compose.yml` | Node 开发容器，运行 `npm ci && npm run dev` |
+| `playwright-platform-web/Dockerfile.dev` | 前端本地开发 | `docker-compose.yml` | Node 开发容器；首次 `npm ci`，已有 `node_modules` 时直接启动 Vite |
 | `playwright-platform-web/Dockerfile` | 前端生产构建 | `docker-compose.prod.yml` / CI/CD | 多阶段构建前端 `dist`，用 Nginx 托管 |
 | `playwright-platform-web/.dockerignore` | 前端镜像构建 | Docker build | 排除 `node_modules/`、`dist/`、`.vite/` 等 |
 | `docker-compose.yml` | 本地开发 | 开发机 Docker Compose | 编排 MySQL、Redis、MinIO、server、web |
@@ -139,9 +139,16 @@ RUN mvn -B -DskipTests dependency:go-offline
 COPY src ./src
 RUN mvn -B -DskipTests package
 
+FROM docker:27-cli AS dockercli
+
 FROM eclipse-temurin:21-jre
 WORKDIR /app
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git git-lfs openssh-client ca-certificates \
+    && git lfs install --system \
+    && rm -rf /var/lib/apt/lists/*
 RUN useradd --system --create-home --uid 10001 appuser
+COPY --from=dockercli /usr/local/bin/docker /usr/local/bin/docker
 COPY --from=build /workspace/target/*.jar /app/app.jar
 USER appuser
 EXPOSE 8080
@@ -150,7 +157,9 @@ ENTRYPOINT ["java", "-jar", "/app/app.jar"]
 
 | 设计点 | 说明 |
 |---|---|
-| 多阶段构建 | 构建阶段有 Maven，运行阶段只有 JRE |
+| 多阶段构建 | 构建阶段有 Maven；运行阶段有 JRE + Docker CLI + Git/SSH |
+| 复制 Docker CLI | Docker Runner 需要在 server 容器内执行 `docker run` |
+| 安装 Git/SSH | server 在启动 runner 容器前执行 `git clone`，私有仓库可能需要 SSH |
 | 先复制 `pom.xml` | 利用 Docker layer 缓存依赖 |
 | `dependency:go-offline` | 提前下载依赖，加快后续构建 |
 | 运行阶段不带源码 | 生产镜像只运行 jar |
@@ -158,7 +167,7 @@ ENTRYPOINT ["java", "-jar", "/app/app.jar"]
 
 说明：
 
-> 后端生产镜像用多阶段构建，构建阶段负责 Maven 打包，运行阶段只保留 JRE 和 jar。这样镜像更小、攻击面更低，也更符合生产部署习惯。
+> 后端生产镜像用多阶段构建，构建阶段负责 Maven 打包，运行阶段保留 JRE、jar、Docker CLI（Docker Runner 需要）以及 Git/SSH 客户端（clone 仓库需要）。这样镜像仍然很小，同时避免在生产机上额外安装 Docker 客户端和 Git。
 
 ---
 
@@ -172,12 +181,13 @@ ENTRYPOINT ["java", "-jar", "/app/app.jar"]
 FROM node:20-alpine
 WORKDIR /workspace
 EXPOSE 5173
-CMD ["sh", "-c", "npm ci && npm run dev -- --host 0.0.0.0"]
+CMD ["sh", "-c", "[ -x node_modules/.bin/vite ] || npm ci; npm run dev -- --host 0.0.0.0"]
 ```
 
 | 设计点 | 说明 |
 |---|---|
 | 使用 Node 20 | 与项目依赖和 CI 保持一致 |
+| 复用 node_modules | 已有 Vite 时跳过 `npm ci`，避免每次重启等 4 分钟 |
 | `npm ci` | 根据 `package-lock.json` 可复现安装 |
 | Vite 监听 `0.0.0.0` | 容器外浏览器才能访问 |
 | 挂载源码 | 支持本地修改后热更新 |
@@ -297,9 +307,8 @@ dist-ssr/
 | 服务 | 镜像来源 | 端口暴露 | 作用 |
 |---|---|---|---|
 | `mysql` | `mysql:8.0` | `${PLATFORM_MYSQL_HOST_PORT}:3306` | 本地业务数据库 |
-| `redis` | `redis:7.2-alpine` | `${PLATFORM_REDIS_HOST_PORT}:6379` | 本地 Redis 缓存 |
-| `minio` | `minio/minio` | `${PLATFORM_MINIO_API_HOST_PORT}:9000`、`${PLATFORM_MINIO_CONSOLE_HOST_PORT}:9001` | 本地对象存储 |
-| `minio-init` | `minio/mc` | 不暴露 | 初始化 bucket |
+| `redis` | `redis:7` | `${PLATFORM_REDIS_HOST_PORT}:6379` | 本地 Redis 缓存 |
+| `minio` | `minio/minio` | `${PLATFORM_MINIO_API_HOST_PORT}:9000`、`${PLATFORM_MINIO_CONSOLE_HOST_PORT}:9001` | 本地对象存储；bucket 由应用首次使用时自动创建 |
 | `server` | `Dockerfile.dev` | `${PLATFORM_SERVER_HOST_PORT}:8080` | Spring Boot 开发服务 |
 | `web` | `Dockerfile.dev` | `${PLATFORM_WEB_HOST_PORT}:5173` | Vite 开发服务 |
 
@@ -318,9 +327,9 @@ dist-ssr/
 | 服务 | 镜像来源 | 端口暴露 | 作用 |
 |---|---|---|---|
 | `mysql` | `mysql:8.0` | 默认不暴露 | 生产业务数据库 |
-| `redis` | `redis:7.2-alpine` | 默认不暴露 | 生产缓存 |
-| `minio` | `minio/minio` | 可选暴露 API 和 Console | 生产对象存储 |
-| `minio-init` | `minio/mc` | 不暴露 | 初始化 bucket |
+| `redis` | `redis:7` | 默认不暴露 | 生产缓存 |
+| `minio` | `minio/minio` | 可选暴露 API 和 Console | 生产对象存储；bucket 由应用首次使用时自动创建 |
+| `runner-workspace-init` | `alpine:3.20` | 不暴露 | 修正 runner workspace 属主，一次性执行 |
 | `server` | 后端生产 `Dockerfile` | 默认不暴露 | Spring Boot 生产服务 |
 | `web` | 前端生产 `Dockerfile` | `${PLATFORM_WEB_HOST_PORT}:80` | Nginx 前端入口 |
 
@@ -329,9 +338,12 @@ dist-ssr/
 - 使用生产 Dockerfile。
 - 不挂载源码目录。
 - 前端由 Nginx 托管。
-- 后端运行 jar。
+- 后端运行 jar，镜像内包含 Docker CLI。
 - 服务配置 `restart: unless-stopped`。
 - MySQL、Redis、server 主要在 Docker 内部网络访问。
+- `server` 通过 `group_add: DOCKER_GID` 访问 Docker socket。
+- `runner-workspace-init` 在 server 启动前修正 workspace 属主。
+- `env_file: .env` 把部署配置注入 server。
 
 ### 7.3 开发和生产 Compose 对比
 
@@ -373,7 +385,7 @@ depends_on:
     condition: service_healthy
   redis:
     condition: service_healthy
-  minio-init:
+  runner-workspace-init:
     condition: service_completed_successfully
 ```
 
@@ -383,37 +395,40 @@ depends_on:
 
 ---
 
-## 9. minio-init 是否必须
+## 9. runner-workspace-init 的作用
 
-`minio-init` 是一次性初始化容器，负责用 `minio/mc` 创建 bucket。
+`runner-workspace-init` 是一次性初始化容器，不是 MinIO bucket 初始化。
 
 ```mermaid
 flowchart TD
-    MinIO[MinIO healthy] --> Init[minio-init]
-    Init --> Alias[mc alias set]
-    Alias --> Bucket[mc mb --ignore-existing]
-    Bucket --> Server[server 启动]
+    HostDir[宿主机 runner workspace] --> Init[runner-workspace-init]
+    Init --> Chown[chown 10001:DOCKER_GID]
+    Chown --> Server[server 启动]
+    Server --> Runner[启动 Playwright 容器]
 ```
 
-### 9.1 保留的好处
+### 9.1 为什么需要它
 
-- Compose 启动阶段就能确保 bucket 存在。
-- 环境初始化逻辑清晰。
-- 后端启动前对象存储环境更完整。
+- server 容器以 UID 10001 运行；
+- 宿主机 bind mount 的目录默认通常是 root 所有；
+- 不修正属主，Docker Runner 无法写入任务 workspace；
+- `chown` 需要 root，所以放在一次性 init 容器里做。
 
-### 9.2 可以删除的前提
+### 9.2 不需要它的前提
 
-- 后端 `MinioObjectStorageService` 已经有 `ensureBucket` 兜底。
-- 接受 bucket 在第一次上传时才创建。
-- `server.depends_on` 改为直接依赖 `minio.service_healthy`。
+- 宿主机目录已经预创建并 chown 给 UID 10001；
+- 或者使用命名卷并自行管理权限；
+- 本地开发常用 root 运行 server，通常不会遇到这个问题。
 
 ### 9.3 建议
 
 | 环境 | 建议 | 原因 |
 |---|---|---|
-| 本地开发 | 可以保留，也可以删除 | 后端有兜底，开发更看重简单 |
-| 单机生产 | 建议保留 | 启动阶段环境更明确 |
-| 更成熟部署 | 用初始化 Job 或 IaC 管理 bucket | 初始化和应用运行职责更清晰 |
+| 本地开发 | 不需要 | dev compose 以 root 运行，workspace 可直接写 |
+| 单机生产 | 保留 | 避免 bind mount 属主问题 |
+| 更成熟部署 | 用 IaC / init job 统一管理目录权限 | 初始化和应用运行职责更清晰 |
+
+> MinIO bucket 不需要 `minio-init`：后端 `MinioObjectStorageService.ensureBucket` 会在第一次上传时自动创建 bucket。
 
 ---
 
@@ -427,11 +442,15 @@ flowchart TD
 | Redis | `PLATFORM_REDIS_PASSWORD` | Redis 已启用密码 |
 | MinIO | `PLATFORM_MINIO_ACCESS_KEY`、`PLATFORM_MINIO_SECRET_KEY` | 对象存储账号密钥 |
 | 端口 | `PLATFORM_WEB_HOST_PORT`、`PLATFORM_MYSQL_HOST_PORT` | 不同机器可能端口不同 |
-| Runner | `PLATFORM_RUNNER_DOCKER_IMAGE`、`PLATFORM_RUNNER_DOCKER_MEMORY` | 不同环境资源不同 |
+| Runner | `PLATFORM_RUNNER_DOCKER_IMAGE`、`PLATFORM_RUNNER_DOCKER_MEMORY`、`DOCKER_GID` | 不同环境资源与 socket 权限不同 |
+| 容量/策略 | `PLATFORM_TASK_MAX_POOL_SIZE`、`PLATFORM_AI_MAX_CONCURRENT`、`PLATFORM_REGISTRATION_ENABLED` | 按机器和运营策略调整 |
+| 私有 Git | `PLATFORM_CREDENTIAL_KEY` | 仓库级凭据在 UI 配置，服务端只存密文 |
 
 说明：
 
 > Compose 只引用环境变量，不把真实密码写死在 YAML 或代码里。真实 `.env` 是环境私有文件，并被 `.gitignore` 忽略。
+>
+> 首次部署可复制脱敏模板 `.env.example` 为 `.env`，替换占位值。应用默认值、超时、缓存、AI 上下文等仍在 `application.yml`，`.env` 只保留部署差异和调优项。
 
 ---
 
@@ -491,7 +510,7 @@ Dockerfile 定义单个镜像怎么构建，比如后端 jar 怎么打包、前�
 
 答：
 
-Maven 镜像适合构建和开发，但生产运行只需要 JRE 和 jar。运行阶段去掉 Maven 和源码可以减小镜像体积，也减少攻击面。
+Maven 镜像适合构建和开发，但生产运行只需要 JRE、jar 和 Docker CLI（Docker Runner 使用）。运行阶段去掉 Maven 和源码可以减小镜像体积，也减少攻击面。
 
 ### Q5：`.dockerignore` 有什么用？
 

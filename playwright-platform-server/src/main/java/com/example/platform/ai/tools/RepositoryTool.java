@@ -1,7 +1,10 @@
 package com.example.platform.ai.tools;
 
+import com.example.platform.ai.AgentRequestContext;
 import com.example.platform.repository.service.RepositoryService;
 import com.example.platform.repository.model.TestRepositoryEntity;
+import java.net.URI;
+import java.net.URISyntaxException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.tool.annotation.Tool;
@@ -33,8 +36,8 @@ public class RepositoryTool {
 
     @Tool(description = "Search for test repositories within the current space by name or keyword")
     public String searchRepository(
-            @ToolParam(description = "Search keyword or repository name") String keyword,
-            @ToolParam(description = "Space ID for data isolation - always required") Long spaceId) {
+            @ToolParam(description = "Search keyword or repository name") String keyword) {
+        Long spaceId = AgentRequestContext.requireSpaceId();
         log.info("AI tool: searchRepository, keyword={}, spaceId={}", keyword, spaceId);
         try {
             var repos = repositoryService.list(spaceId, 1, 20);
@@ -47,7 +50,7 @@ public class RepositoryTool {
             StringBuilder sb = new StringBuilder("Found " + matched.size() + " repositories in space " + spaceId + ":\n");
             for (TestRepositoryEntity r : matched) {
                 sb.append(String.format("- [ID:%d] %s (branch: %s, url: %s, enabled: %s)%n",
-                        r.getId(), r.getName(), r.getDefaultBranch(), r.getGitUrl(), r.getEnabled()));
+                        r.getId(), r.getName(), r.getDefaultBranch(), redactGitUrl(r.getGitUrl()), r.getEnabled()));
             }
             return sb.toString();
         } catch (Exception e) {
@@ -58,8 +61,8 @@ public class RepositoryTool {
 
     @Tool(description = "Get repository details by ID within the current space")
     public String getRepository(
-            @ToolParam(description = "Repository ID") Long repositoryId,
-            @ToolParam(description = "Space ID for data isolation - always required") Long spaceId) {
+            @ToolParam(description = "Repository ID") Long repositoryId) {
+        Long spaceId = AgentRequestContext.requireSpaceId();
         log.info("AI tool: getRepository, id={}, spaceId={}", repositoryId, spaceId);
         try {
             TestRepositoryEntity repo = repositoryService.get(spaceId, repositoryId);
@@ -68,10 +71,29 @@ public class RepositoryTool {
             }
             return String.format("Repository [ID:%d]: name=%s, branch=%s, url=%s, testRoot=%s, runCmd=%s, enabled=%s",
                     repo.getId(), repo.getName(), repo.getDefaultBranch(),
-                    repo.getGitUrl(), repo.getTestRoot(), repo.getRunCommandTemplate(), repo.getEnabled());
+                    redactGitUrl(repo.getGitUrl()), repo.getTestRoot(), repo.getRunCommandTemplate(), repo.getEnabled());
         } catch (Exception e) {
             log.error("getRepository failed", e);
             return "Error getting repository: " + e.getMessage();
+        }
+    }
+
+    /**
+     * Git URL 可能带 user:token@，不能原样进入 LLM prompt 或 trace。
+     */
+    private String redactGitUrl(String gitUrl) {
+        if (gitUrl == null || gitUrl.isBlank()) {
+            return gitUrl;
+        }
+        try {
+            URI uri = new URI(gitUrl);
+            if (uri.getUserInfo() == null) {
+                return gitUrl;
+            }
+            return new URI(uri.getScheme(), null, uri.getHost(), uri.getPort(), uri.getPath(), null, null).toString();
+        } catch (URISyntaxException exception) {
+            // 非标准 URL（例如 git@host:path）没有 userinfo，直接返回；正则兜底处理 http(s)。
+            return gitUrl.replaceAll("(?i)(https?://)[^/@\\s]+@", "$1***@");
         }
     }
 }

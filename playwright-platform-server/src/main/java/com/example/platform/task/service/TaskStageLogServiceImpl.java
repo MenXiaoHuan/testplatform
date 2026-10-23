@@ -1,9 +1,12 @@
 package com.example.platform.task.service;
 
+import com.example.platform.common.SensitiveDataRedactor;
 import com.example.platform.storage.service.ObjectStorageService;
 import com.example.platform.task.model.TaskStageLogEntity;
 import com.example.platform.task.mapper.TaskStageLogMapper;
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
@@ -28,6 +31,8 @@ import org.springframework.stereotype.Service;
 public class TaskStageLogServiceImpl implements TaskStageLogService {
     /** 日志预览文本最大长度 */
     private static final int PREVIEW_TEXT_MAX_LENGTH = 512;
+    /** 日志预览只读取文件头部，避免把几十 MB 的日志整体读进内存 */
+    private static final int PREVIEW_READ_BYTES = 4096;
     /** 命令字段最大长度 */
     private static final int COMMAND_MAX_LENGTH = 1024;
     /** 错误消息最大长度 */
@@ -40,7 +45,7 @@ public class TaskStageLogServiceImpl implements TaskStageLogService {
     public TaskStageLogServiceImpl(
             TaskStageLogMapper repository,
             ObjectStorageService objectStorageService,
-            @Value("${platform.storage.bucket}") String storageBucket) {
+            @Value("${platform.storage.bucket:qa-report}") String storageBucket) {
         this.repository = repository;
         this.objectStorageService = objectStorageService;
         this.storageBucket = storageBucket;
@@ -91,10 +96,10 @@ public class TaskStageLogServiceImpl implements TaskStageLogService {
         entity.setDurationMs(durationMs != null ? durationMs : 0L);
         entity.setExitCode(exitCode);
         entity.setStageStatus(stageStatus != null ? stageStatus : "SUCCESS");
-        entity.setCommand(truncate(command, COMMAND_MAX_LENGTH));
+        entity.setCommand(truncate(SensitiveDataRedactor.redact(command), COMMAND_MAX_LENGTH));
         entity.setStartedAt(startedAt);
         entity.setEndedAt(endedAt);
-        entity.setErrorMessage(truncate(errorMessage, ERROR_MESSAGE_MAX_LENGTH));
+        entity.setErrorMessage(truncate(SensitiveDataRedactor.redact(errorMessage), ERROR_MESSAGE_MAX_LENGTH));
         repository.insert(entity);
         return entity;
     }
@@ -122,8 +127,9 @@ public class TaskStageLogServiceImpl implements TaskStageLogService {
      * 读取日志文件前 512 字符作为预览文本。
      */
     private String readPreview(Path logFile) {
-        try {
-            String preview = Files.readString(logFile);
+        try (InputStream inputStream = Files.newInputStream(logFile)) {
+            String preview = SensitiveDataRedactor.redact(
+                    new String(inputStream.readNBytes(PREVIEW_READ_BYTES), StandardCharsets.UTF_8));
             if (preview.length() <= PREVIEW_TEXT_MAX_LENGTH) {
                 return preview;
             }

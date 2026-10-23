@@ -1,3 +1,5 @@
+export type RepositoryAuthType = 'PUBLIC' | 'HTTPS_TOKEN' | 'SSH_KEY'
+
 export interface RepositoryRecord {
   id: number
   name: string
@@ -9,6 +11,10 @@ export interface RepositoryRecord {
   testRoot: string
   resultsIndexRelativePath: string
   artifactRootRelativePath: string
+  authType: RepositoryAuthType
+  credentialUsername?: string | null
+  credentialConfigured?: boolean
+  credentialUpdatedAt?: string | null
   enabled: boolean
 }
 
@@ -22,6 +28,9 @@ export interface RepositoryForm {
   testRoot: string
   resultsIndexRelativePath: string
   artifactRootRelativePath: string
+  authType: RepositoryAuthType
+  credentialUsername: string
+  credentialSecret: string
   enabled: boolean
 }
 
@@ -35,5 +44,8 @@ export const createRepositoryForm = (): RepositoryForm => ({
   testRoot: 'tests',
   resultsIndexRelativePath: 'test-results/.playwright-results.json',
   artifactRootRelativePath: '.playwright-artifacts',
+  authType: 'PUBLIC',
+  credentialUsername: '',
+  credentialSecret: '',
   enabled: true,
 })

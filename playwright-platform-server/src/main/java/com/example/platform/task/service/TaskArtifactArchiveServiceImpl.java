@@ -11,6 +11,9 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -28,17 +31,33 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class TaskArtifactArchiveServiceImpl implements TaskArtifactArchiveService {
+    private static final Logger log = LoggerFactory.getLogger(TaskArtifactArchiveServiceImpl.class);
     private final ObjectStorageService objectStorageService;
     private final ArtifactMapper artifactRepository;
     private final String storageBucket;
+    private final long maxFileBytes;
+    private final long maxTotalBytes;
 
     public TaskArtifactArchiveServiceImpl(
             ObjectStorageService objectStorageService,
             ArtifactMapper artifactRepository,
-            @Value("${platform.storage.bucket}") String storageBucket) {
+            String storageBucket) {
+        this(objectStorageService, artifactRepository, storageBucket,
+                100L * 1024 * 1024, 1024L * 1024 * 1024);
+    }
+
+    @Autowired
+    public TaskArtifactArchiveServiceImpl(
+            ObjectStorageService objectStorageService,
+            ArtifactMapper artifactRepository,
+            @Value("${platform.storage.bucket:qa-report}") String storageBucket,
+            @Value("${platform.task.execution.max-artifact-file-bytes:104857600}") long maxFileBytes,
+            @Value("${platform.task.execution.max-artifact-total-bytes:1073741824}") long maxTotalBytes) {
         this.objectStorageService = objectStorageService;
         this.artifactRepository = artifactRepository;
         this.storageBucket = storageBucket;
+        this.maxFileBytes = maxFileBytes;
+        this.maxTotalBytes = maxTotalBytes;
     }
 
     /**
@@ -51,6 +70,7 @@ public class TaskArtifactArchiveServiceImpl implements TaskArtifactArchiveServic
             List<String> artifactRelativeRoots,
             Map<String, ArtifactBindingTarget> bindingTargets) {
         List<ArtifactEntity> archivedArtifacts = new ArrayList<>();
+        long totalBytes = 0;
         for (String artifactRelativeRoot : artifactRelativeRoots) {
             // 安全解析工件根路径，防止路径穿越攻击
             Path root = resolveWorkspaceSubPath(workspace, artifactRelativeRoot, "Artifact relative path");
@@ -58,10 +78,23 @@ public class TaskArtifactArchiveServiceImpl implements TaskArtifactArchiveServic
                 continue;
             }
             try (Stream<Path> walk = Files.walk(root)) {
-                walk.filter(Files::isRegularFile)
+                List<Path> files = walk.filter(Files::isRegularFile)
                         .sorted(Comparator.naturalOrder())
-                        .map(path -> persistArtifact(taskId, workspace, path, bindingTargets))
-                        .forEach(archivedArtifacts::add);
+                        .toList();
+                for (Path file : files) {
+                    long size = Files.size(file);
+                    if (maxFileBytes > 0 && size > maxFileBytes) {
+                        log.warn("Skip oversized artifact. taskId={}, file={}, size={}", taskId, file, size);
+                        continue;
+                    }
+                    if (maxTotalBytes > 0 && totalBytes + size > maxTotalBytes) {
+                        log.warn("Artifact total size limit reached, skip remaining files. taskId={}, totalBytes={}",
+                                taskId, totalBytes);
+                        return archivedArtifacts;
+                    }
+                    totalBytes += size;
+                    archivedArtifacts.add(persistArtifact(taskId, workspace, file, bindingTargets));
+                }
             } catch (IOException exception) {
                 throw new IllegalStateException("Failed to scan artifacts under " + artifactRelativeRoot, exception);
             }

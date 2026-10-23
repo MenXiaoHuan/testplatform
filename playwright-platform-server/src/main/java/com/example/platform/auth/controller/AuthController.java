@@ -54,7 +54,8 @@ public class AuthController {
 
     @GetMapping("/public-key")
     public ApiResponse<PublicKeyResponse> publicKey() {
-        return ApiResponse.ok(new PublicKeyResponse("RSA", authKeyProvider.publicKeyPem()));
+        return ApiResponse.ok(new PublicKeyResponse(
+                "RSA", authKeyProvider.publicKeyPem(), authProperties.isRegistrationEnabled()));
     }
 
     @PostMapping("/login")
@@ -168,7 +169,8 @@ public class AuthController {
 
     public record PublicKeyResponse(
             String algorithm,
-            String publicKeyPem) {
+            String publicKeyPem,
+            boolean registrationEnabled) {
     }
 
     private String readSessionId(HttpServletRequest request) {

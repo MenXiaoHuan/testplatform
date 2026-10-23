@@ -8,12 +8,23 @@
 
 传统 Playwright 测试通常分散在不同仓库、机器和命令行环境中，执行记录、日志、截图、视频、Trace 和结果文件也不容易集中追踪。本项目把这些能力平台化：
 
-- 管理测试仓库配置：Git 地址、默认分支、工作目录、安装命令、测试执行命令、结果文件路径和产物目录。
+- 管理测试仓库配置：Git 地址、公有/私有类型、HTTPS Token / SSH Deploy Key、默认分支、工作目录、安装命令、测试执行命令、结果文件路径和产物目录。
 - 管理测试场景：关联仓库、浏览器、测试选择器、环境变量、Cron 定时规则。
 - 执行测试任务：支持手动触发、定时触发、任务取消和重新执行。
 - 查看执行结果：任务状态、阶段日志、用例结果、截图、视频、Trace 和报告。
 - AI 智能助手：基于 ReAct Agent 的故障排查、业务咨询、任务分析、链路回溯。
 - 统一运行环境：通过 Docker Compose 启动 MySQL、Redis、MinIO、后端和前端。
+
+### 1.1 支持范围
+
+平台明确面向 **Node.js / TypeScript / JavaScript 的 `@playwright/test` 项目**：
+
+- 使用 Playwright Test Runner；
+- 能生成 Playwright JSON reporter 结果；
+- 通过 `npm ci` / `npm install` 安装依赖；
+- 通过 `npx playwright test` 或自定义命令执行。
+
+Python Playwright、Java/.NET Playwright、Cucumber、CodeceptJS 等不在默认支持范围内。
 
 ---
 
@@ -25,7 +36,7 @@
 | 后端 | Spring Boot 3.5、Spring Web、MyBatis、Flyway、Spring Data Redis | REST API、业务编排、数据库迁移和缓存 |
 | AI Agent | Spring AI Alibaba Agent 1.1.2、ReAct 模式、SSE 流式 | 智能助手、工具调用、上下文管理、全链路追踪 |
 | 存储 | MySQL、Redis、MinIO | 结构化数据、详情缓存、对象文件 |
-| 执行 | Local Runner、Docker Runner、Playwright Runner 镜像 | 执行外部测试仓库命令 |
+| 执行 | Docker Runner、Playwright Runner 镜像 | 通过短生命周期容器执行 Node/TS/JS `@playwright/test` 项目 |
 | 工程化 | Docker、Docker Compose、GitHub Actions、JaCoCo | 本地开发、单机部署、CI 和覆盖率 |
 
 后端持久层只使用注解式 MyBatis，Flyway 管理 schema，不使用 JPA，也不使用 XML Mapper。
@@ -144,10 +155,17 @@ flowchart LR
 - MySQL 8+。
 - Redis 7+。
 - MinIO。
+- Docker Engine（Docker Runner 必需，且当前进程用户需要能访问 Docker socket）。
 
 ### 5.2 创建 `.env`
 
-首次启动前，在项目根目录创建本机私有 `.env` 文件。该文件已被 `.gitignore` 忽略，不会上传到 GitHub。
+首次启动前，在项目根目录创建本机私有 `.env` 文件。该文件已被 `.gitignore` 忽略，不会上传到 GitHub。可以直接复制脱敏模板：
+
+```bash
+cp .env.example .env
+```
+
+然后替换其中的占位值。
 
 ```env
 # Frontend
@@ -156,6 +174,10 @@ PLATFORM_WEB_API_PROXY_TARGET=http://server:8080
 
 # Backend - Server
 PLATFORM_SERVER_HOST_PORT=8080
+
+# Backend - 注册开关
+# 默认关闭；本地开发首次使用时临时设为 true，注册完账号后建议改回 false。
+PLATFORM_REGISTRATION_ENABLED=true
 
 # Backend - MySQL
 PLATFORM_DB_NAME=playwright_platform
@@ -180,22 +202,26 @@ PLATFORM_MINIO_SECRET_KEY=<your-minio-secret-key>
 PLATFORM_STORAGE_BUCKET=qa-report
 
 # Backend - Runner
-PLATFORM_RUNNER_MODE=docker
 PLATFORM_RUNNER_WORKSPACE_ROOT=/runner-workspaces
 PLATFORM_RUNNER_HOST_WORKSPACE_ROOT=<absolute-path-to-project>/.runner-workspaces
-PLATFORM_RUNNER_DOCKER_IMAGE=mcr.microsoft.com/playwright:v1.44.0-jammy
+PLATFORM_RUNNER_DOCKER_IMAGE=mcr.microsoft.com/playwright:v1.61.1-noble
 PLATFORM_RUNNER_DOCKER_NETWORK=bridge
 PLATFORM_RUNNER_DOCKER_MEMORY=2g
 PLATFORM_RUNNER_DOCKER_CPUS=2
 PLATFORM_RUNNER_DOCKER_CONTAINER_WORKSPACE_ROOT=/workspace/task
+
+# Backend - 私有仓库凭据加密
+PLATFORM_CREDENTIAL_KEY=<32-byte-base64>
 ```
 
 注意：
 
 - 不要把真实密码写进代码库。
+- 自助注册默认关闭（`PLATFORM_REGISTRATION_ENABLED=false`）。本地首次使用请在 `.env` 临时设为 `true` 创建账号，之后改回 `false`，避免公网部署时任何人注册后获得执行命令的能力。
 - `PLATFORM_MINIO_ENDPOINT` 是后端访问 MinIO 的 Docker 内部地址，保持 `http://minio:9000`。
 - `PLATFORM_MINIO_PUBLIC_ENDPOINT` 用于生成公网可访问的 MinIO 预签名地址，本地通常是 `http://localhost:10000`；任务产物下载和 Trace 分享仍优先通过后端平台代理接口返回。
 - `PLATFORM_RUNNER_HOST_WORKSPACE_ROOT` 建议填写宿主机绝对路径，例如 `/opt/testplatform/.runner-workspaces`。
+- 私有仓库在「仓库管理」里选择私有并配置 HTTPS Token 或 SSH Deploy Key；凭据加密存储，不会回显。`PLATFORM_CREDENTIAL_KEY` 是加密密钥，生产必须设置。
 - 如果 MySQL、Redis 或 MinIO 已经使用 Docker volume 初始化过，修改 `.env` 密码不会自动修改已有 volume 内账号密码。
 
 ### 5.3 启动
@@ -269,7 +295,7 @@ docker compose -f docker-compose.prod.yml ps
 | 文件 | 作用 |
 |---|---|
 | `playwright-platform-server/Dockerfile.dev` | 后端开发镜像，挂载源码后运行 `mvn spring-boot:run` |
-| `playwright-platform-server/Dockerfile` | 后端生产镜像，多阶段构建 jar，运行阶段只保留 JRE |
+| `playwright-platform-server/Dockerfile` | 后端生产镜像，多阶段构建 jar，运行阶段保留 JRE + Docker CLI + Git/SSH |
 | `playwright-platform-server/.dockerignore` | 排除后端构建产物、IDE 文件等 |
 | `playwright-platform-web/Dockerfile.dev` | 前端开发镜像，运行 Vite dev server |
 | `playwright-platform-web/Dockerfile` | 前端生产镜像，Node 构建后由 Nginx 托管 |
@@ -462,6 +488,8 @@ SSE 流式输出时：`meta` 事件携带完整 `sections` 数组供前端完成
 
 不推荐新手使用这种方式，除非你已经本机准备好了 MySQL、Redis 和 MinIO。
 
+> 非 Docker 启动时 Spring Boot 不会自动读取根目录 `.env`；请先把 `.env` 里的变量导出到当前 shell，或使用 IDE 的 Environment variables 配置。Docker Compose 会自动注入这些变量。
+
 ### 9.1 启动后端
 
 ```bash
@@ -577,10 +605,12 @@ npm run build
 
 平台中的“测试仓库”指被平台拉取并执行的 Playwright 自动化项目。接入时建议：
 
+- `仓库类型`：公有仓库直接 clone；私有仓库在仓库管理里配置 HTTPS Token 或 SSH Deploy Key。
+- `凭据安全`：Token/私钥使用 `PLATFORM_CREDENTIAL_KEY` 加密存储，API 不回显明文；不要把 token 写进 Git URL。
 - `工作目录`：单仓库项目可留空，Monorepo 填写子目录。
 - `安装命令`：建议使用 `npm ci` 或与测试仓库锁文件匹配的安装命令。
 - `测试执行命令`：例如 `npx playwright test`。
-- 如果用 npm script 包装测试命令，保持参数透传，例如 `npm run test:e2e --`。
+- 自定义 / npm script 命令使用 `{target}`、`{project}`、`{testRoot}` 占位符接入平台参数，例如 `npm run test:e2e -- {target} --project {project}`；占位符会作为完整参数转义，不要写成 `{testRoot}/foo.spec.ts`。不含占位符的自定义命令会原样执行，平台不再自动追加 `--target`；只有 `npx/pnpm/yarn/npm exec playwright test` 这类 Playwright CLI 仍会自动追加 target/project。
 - `测试目录`：相对工作目录，例如 `tests`。
 - `结果索引文件`：相对工作目录，例如 `test-results/.playwright-results.json`。
 - `运行产物目录`：相对工作目录，例如 `.playwright-artifacts`。
@@ -719,7 +749,7 @@ AI 对话前端组件位于 `playwright-platform-web/src/components/ai/`：
 ## 15. 注意事项
 
 - `.env` 保存本地或服务器真实配置，不要提交 GitHub。
-- `.env.example` 当前按项目要求不保留，创建 `.env` 时参考本文档和 `docs/deployment.md`。
+- 根目录提供脱敏模板 `.env.example`，首次部署可复制为 `.env` 后替换占位值；不要提交真实的 `.env`。
 - MySQL、Redis、MinIO 使用 Docker volume 初始化后，修改 `.env` 密码不会自动修改已有数据卷里的账号密码。
 - 不要公网开放 MySQL 和 Redis。
 - MinIO Console 只建议限制来源 IP 后开放。

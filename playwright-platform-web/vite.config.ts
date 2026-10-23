@@ -52,6 +52,9 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     include: ['tests/unit/**/*.{test,spec}.ts'],
+    // 路由守卫测试首次加载懒加载页面时，Vite transform 在低配机器上可能超过默认 10s。
+    hookTimeout: 30000,
+    testTimeout: 30000,
     css: true,
     server: {
       deps: {

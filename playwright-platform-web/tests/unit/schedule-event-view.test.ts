@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { defineComponent, provide } from 'vue'
+import { defineComponent, h, inject, provide } from 'vue'
 import EventListView from '../../src/views/event/EventListView.vue'
 import { useScheduleEventStore } from '../../src/stores/schedule-event'
 
@@ -52,6 +52,13 @@ const ElTableStub = defineComponent({
   },
 })
 
+const ElTableColumnStub = defineComponent({
+  setup(_, { slots }) {
+    const rows = inject<Array<Record<string, unknown>>>('tableRows', [])
+    return () => h('div', rows.map((row) => slots.default?.({ row })))
+  },
+})
+
 describe('EventListView', () => {
   let pinia: ReturnType<typeof createPinia>
 
@@ -95,6 +102,7 @@ describe('EventListView', () => {
           ListPageShell: ListPageShellStub,
           'el-button': ElButtonStub,
           'el-table': ElTableStub,
+          'el-table-column': ElTableColumnStub,
           'el-radio-group': { template: '<div><slot /></div>' },
           'el-radio-button': { template: '<label><slot /></label>' },
           'el-input': { template: '<input />' },
@@ -106,7 +114,7 @@ describe('EventListView', () => {
     const store = useScheduleEventStore()
     expect(store.setScheduleTypeFilter).toBeDefined()
     expect(store.fetchAll).toHaveBeenCalled()
-    expect(wrapper.text()).toContain('调度事件')
+    expect(wrapper.text()).toContain('TraceID')
   })
 
   it('should retry issue event when clicking retry action', async () => {
@@ -117,6 +125,7 @@ describe('EventListView', () => {
           ListPageShell: ListPageShellStub,
           'el-button': ElButtonStub,
           'el-table': ElTableStub,
+          'el-table-column': ElTableColumnStub,
           'el-radio-group': { template: '<div><slot /></div>' },
           'el-radio-button': { template: '<label><slot /></label>' },
           'el-input': { template: '<input />' },

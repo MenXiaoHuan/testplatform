@@ -18,11 +18,10 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * HTTP boundary for repository management.
+ * 仓库管理 HTTP 边界。
  *
- * <p>CRUD behavior, transaction boundaries, cascade deletion, and detail-cache
- * invalidation live in {@link RepositoryService}; this class only maps requests
- * and wraps responses in the platform envelope.
+ * <p>CRUD、事务边界、级联删除和详情缓存失效都在 {@link RepositoryService} 中；
+ * 控制器只负责参数映射、空间权限校验和统一响应包装，避免业务逻辑回流到 Web 层。
  */
 @RestController
 @RequestMapping("/api/spaces/{spaceId}/repos")

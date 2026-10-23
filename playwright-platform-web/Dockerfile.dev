@@ -6,4 +6,5 @@ WORKDIR /workspace
 EXPOSE 5173
 
 # npm ci uses package-lock.json for reproducible installs in the dev container.
-CMD ["sh", "-c", "npm ci && npm run dev -- --host 0.0.0.0"]
+# 首次启动安装依赖；之后复用 node_modules volume，重启不必再等 npm ci。
+CMD ["sh", "-c", "[ -x node_modules/.bin/vite ] || npm ci; npm run dev -- --host 0.0.0.0"]

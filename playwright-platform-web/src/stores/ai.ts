@@ -29,6 +29,15 @@ export interface ChatMessage {
   sections?: ContentBlock[]
 }
 
+let watchdogTimer: ReturnType<typeof setTimeout> | null = null
+
+function clearWatchdog() {
+  if (watchdogTimer !== null) {
+    clearTimeout(watchdogTimer)
+    watchdogTimer = null
+  }
+}
+
 export const useAiStore = defineStore('ai', {
   state: () => ({
     visible: false,
@@ -94,6 +103,20 @@ export const useAiStore = defineStore('ai', {
         saveHistory: true,
       }
 
+      clearWatchdog()
+      watchdogTimer = setTimeout(() => {
+        if (!this.loading) {
+          return
+        }
+        this.stopStreaming()
+        const msg = this.messages.find(m => m.id === assistantId)
+        if (msg) {
+          msg.role = 'error'
+          msg.content = 'AI 响应超时，请重试'
+          msg.streaming = false
+        }
+      }, 300_000)
+
       try {
         this.abortStream = streamChatMessage(payload, {
           onMeta: (data) => {
@@ -121,8 +144,7 @@ export const useAiStore = defineStore('ai', {
               msg.processingTime = data.processingTime
             }
             this.sessionId = data.sessionId
-            this.abortStream = null
-            this.loading = false
+            this.finishStream()
           },
           onError: (error) => {
             const msg = this.messages.find(m => m.id === assistantId)
@@ -131,8 +153,11 @@ export const useAiStore = defineStore('ai', {
               msg.content = error
               msg.streaming = false
             }
-            this.abortStream = null
-            this.loading = false
+            this.finishStream()
+          },
+          onDone: () => {
+            // 服务端/Nginx 提前断开时可能没有 complete/error 事件，这里兜底释放输入框。
+            this.finishStream()
           },
         })
       } catch (error: unknown) {
@@ -142,10 +167,20 @@ export const useAiStore = defineStore('ai', {
           msg.content = error instanceof Error ? error.message : '请求失败，请重试'
           msg.streaming = false
         }
-        this.loading = false
+        this.finishStream()
+      }
+    },
+    finishStream() {
+      clearWatchdog()
+      this.abortStream = null
+      this.loading = false
+      const lastMsg = this.messages[this.messages.length - 1]
+      if (lastMsg?.streaming) {
+        lastMsg.streaming = false
       }
     },
     stopStreaming() {
+      clearWatchdog()
       if (this.abortStream) {
         this.abortStream()
         this.abortStream = null

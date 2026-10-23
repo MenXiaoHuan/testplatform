@@ -60,6 +60,22 @@ class DockerRunnerCommandExecutorTest {
     }
 
     @Test
+    void shouldKeepPullLogWhenImagePullFails() throws IOException {
+        FakeRunnerProcessLauncher launcher = new FakeRunnerProcessLauncher(
+                new CompletedProcess(1, "missing\n"),
+                new CompletedProcess(1, "pull denied\n"));
+        DockerRunnerCommandExecutor executor = executor(launcher);
+
+        RunnerCommandResult result = executor.execute(request(false, Duration.ofSeconds(5)));
+
+        assertThat(result.exitCode()).isEqualTo(-1);
+        assertThat(Files.readString(result.combinedLogFile()))
+                .contains("pull denied")
+                .contains("[image pull failed]");
+        assertThat(launcher.startedCommands()).hasSize(2);
+    }
+
+    @Test
     void shouldRemoveContainerWhenCancellationIsRequested() {
         FakeRunnerProcessLauncher launcher = new FakeRunnerProcessLauncher(
                 new CompletedProcess(0, ""),
@@ -111,7 +127,6 @@ class DockerRunnerCommandExecutorTest {
     @Test
     void shouldCreateDockerRunnerCommandExecutorFromConfiguration() {
         RunnerProperties runnerProperties = runnerProperties();
-        runnerProperties.setMode(RunnerMode.DOCKER);
         RunnerCommandExecutorConfig config = new RunnerCommandExecutorConfig();
 
         RunnerCommandExecutor executor = config.runnerCommandExecutor(runnerProperties, dockerProperties());
@@ -151,7 +166,6 @@ class DockerRunnerCommandExecutorTest {
 
     private RunnerProperties runnerProperties() {
         RunnerProperties properties = new RunnerProperties();
-        properties.setMode(RunnerMode.DOCKER);
         properties.setWorkspaceRoot(tempDir);
         properties.setHostWorkspaceRoot(tempDir);
         return properties;

@@ -64,4 +64,10 @@ public interface UserSessionMapper {
             where session_id = #{sessionId}
             """)
     int deleteBySessionId(@Param("sessionId") String sessionId);
+
+    @Delete("""
+            delete from user_session
+            where expires_at &lt; #{now}
+            """)
+    int deleteExpired(@Param("now") LocalDateTime now);
 }

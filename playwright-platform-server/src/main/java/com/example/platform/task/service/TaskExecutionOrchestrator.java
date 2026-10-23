@@ -1,7 +1,7 @@
 package com.example.platform.task.service;
 
-import com.example.platform.cache.DetailCacheService;
 import com.example.platform.common.ApplicationErrorSummaryService;
+import com.example.platform.common.SensitiveDataRedactor;
 import com.example.platform.repository.model.TestRepositoryEntity;
 import com.example.platform.runner.service.RunnerCommandResult;
 import com.example.platform.runner.service.RunnerExecutionService;
@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -56,7 +57,6 @@ final class TaskExecutionOrchestrator {
     private final TaskStageLogService taskStageLogService;
     private final TaskExecutionProperties taskExecutionProperties;
     private final TaskExecutionMutationService taskExecutionMutationService;
-    private final DetailCacheService detailCacheService;
     private final ApplicationErrorSummaryService applicationErrorSummaryService;
 
     TaskExecutionOrchestrator(
@@ -70,7 +70,6 @@ final class TaskExecutionOrchestrator {
             TaskStageLogService taskStageLogService,
             TaskExecutionProperties taskExecutionProperties,
             TaskExecutionMutationService taskExecutionMutationService,
-            DetailCacheService detailCacheService,
             ApplicationErrorSummaryService applicationErrorSummaryService) {
         this.taskRepository = taskRepository;
         this.sceneMapper = sceneMapper;
@@ -82,7 +81,6 @@ final class TaskExecutionOrchestrator {
         this.taskStageLogService = taskStageLogService;
         this.taskExecutionProperties = taskExecutionProperties;
         this.taskExecutionMutationService = taskExecutionMutationService;
-        this.detailCacheService = detailCacheService;
         this.applicationErrorSummaryService = applicationErrorSummaryService;
     }
 
@@ -110,9 +108,10 @@ final class TaskExecutionOrchestrator {
 
             currentStage = StageExecutionContext.start("PREPARING");
             workspace = runnerWorkspaceService.prepareWorkspace(
-                    repository.getGitUrl(),
+                    repository,
                     task.getResolvedBranch(),
-                    task.getId());
+                    task.getId(),
+                    preparationStageLog::write);
             preparationStageLog.write("Workspace prepared at " + workspace);
             Path executionDirectory = resolveExecutionDirectory(workspace, repository);
             preparationStageLog.write("Execution directory resolved to " + executionDirectory);
@@ -208,13 +207,16 @@ final class TaskExecutionOrchestrator {
                 taskExecutionMutationService.saveTask(task);
 
                 StageExecutionContext archiveStage = StageExecutionContext.start("ARCHIVING");
+                PreparationStageLog archiveLog = PreparationStageLog.create();
                 try {
-                    continuePostProcessing(task, executionDirectory, executionPaths, runStatus == 0);
-                    archiveStageLog(task.getId(), "ARCHIVING", null, 0, archiveStage,
-                            "Artifact archive and case result parsing", null, null, "SUCCESS");
+                    continuePostProcessing(task, executionDirectory, executionPaths, runStatus == 0, archiveLog::write);
+                    archiveLog.write("ARCHIVING completed");
+                    archiveStageLog(task.getId(), "ARCHIVING", archiveLog.logFile(), archiveLog.lineCount(),
+                            archiveStage, "Artifact archive and case result parsing", null, null, "SUCCESS");
                 } catch (Exception ex) {
-                    archiveStageLog(task.getId(), "ARCHIVING", null, 0, archiveStage,
-                            null, null, ex.getMessage(), "FAILED");
+                    archiveLog.write("ARCHIVING failed: " + ex.getMessage());
+                    archiveStageLog(task.getId(), "ARCHIVING", archiveLog.logFile(), archiveLog.lineCount(),
+                            archiveStage, null, null, ex.getMessage(), "FAILED");
                     throw ex;
                 }
             } else {
@@ -268,18 +270,25 @@ final class TaskExecutionOrchestrator {
             TaskEntity task,
             Path executionDirectory,
             ResolvedExecutionPaths executionPaths,
-            boolean testsPassed) {
+            boolean testsPassed,
+            Consumer<String> logConsumer) {
         List<String> errors = new ArrayList<>();
         Path resultsIndex = executionPaths.resultsIndex();
         Path artifactDirectory = executionPaths.artifactDirectory();
+        logConsumer.accept("Results index: " + resultsIndex);
+        logConsumer.accept("Artifact directory: " + artifactDirectory);
 
         Map<String, TaskArtifactArchiveService.ArtifactBindingTarget> bindingTargets = Map.of();
-        if (testsPassed || Files.exists(resultsIndex)) {
+        if (!testsPassed && !Files.exists(resultsIndex)) {
+            logConsumer.accept("Skip case result parsing: results index does not exist");
+        } else {
             try {
                 ParsedTaskResults parsedTaskResults = taskCaseResultParseService.parse(
                         task.getId(),
                         resultsIndex,
                         executionDirectory);
+                logConsumer.accept("Parsed case results: " + parsedTaskResults.caseResults().size()
+                        + ", artifact bindings: " + parsedTaskResults.artifactBindings().size());
                 Map<String, Long> caseResultIds = taskCaseResultPersistenceService.persist(parsedTaskResults.caseResults());
                 bindingTargets = parsedTaskResults.artifactBindings().stream()
                         .collect(Collectors.toMap(
@@ -288,21 +297,28 @@ final class TaskExecutionOrchestrator {
                                         caseResultIds.get(binding.caseHistoryId()),
                                         binding.artifactType()),
                                 (left, right) -> left));
+                logConsumer.accept("Persisted case results: " + caseResultIds.size()
+                        + ", resolved artifact bindings: " + bindingTargets.size());
             } catch (Exception exception) {
                 errors.add("parse case results failed: " + exception.getMessage());
+                logConsumer.accept("Case result parsing failed: " + exception.getMessage());
                 recordApplicationError(task, null, "ARCHIVING", "parse case results failed: " + exception.getMessage(), exception);
             }
         }
 
-        if (testsPassed || Files.exists(artifactDirectory)) {
+        if (!testsPassed && !Files.exists(artifactDirectory)) {
+            logConsumer.accept("Skip artifact archive: artifact directory does not exist");
+        } else {
             try {
                 taskArtifactArchiveService.archiveArtifacts(
                         task.getId(),
                         executionDirectory,
                         List.of(executionPaths.artifactRootRelativePath()),
                         bindingTargets);
+                logConsumer.accept("Artifact archive completed");
             } catch (Exception exception) {
                 errors.add("archive artifacts failed: " + exception.getMessage());
+                logConsumer.accept("Artifact archive failed: " + exception.getMessage());
                 recordApplicationError(task, null, "ARCHIVING", "archive artifacts failed: " + exception.getMessage(), exception);
             }
         }
@@ -462,6 +478,14 @@ final class TaskExecutionOrchestrator {
                     taskId,
                     stage,
                     exception.getMessage());
+        } finally {
+            // 日志已经上传（或确定失败），临时文件不再需要；否则 /tmp 会随任务数持续增长。
+            try {
+                Files.deleteIfExists(logFile);
+            } catch (Exception cleanupException) {
+                log.warn("Failed to delete runner temp log. taskId={}, stage={}, path={}, reason={}",
+                        taskId, stage, logFile, cleanupException.getMessage());
+            }
         }
     }
 
@@ -492,11 +516,12 @@ final class TaskExecutionOrchestrator {
         if (message == null || message.isBlank()) {
             return;
         }
+        String safeMessage = SensitiveDataRedactor.redact(message);
         if (task.getLogUrl() == null || task.getLogUrl().isBlank()) {
-            task.setLogUrl(message);
+            task.setLogUrl(safeMessage);
             return;
         }
-        task.setLogUrl(task.getLogUrl() + "; " + message);
+        task.setLogUrl(task.getLogUrl() + "; " + safeMessage);
     }
 
     private void recordApplicationError(
@@ -510,19 +535,8 @@ final class TaskExecutionOrchestrator {
         }
         try (TaskLogContext taskLogContext = TaskLogContext.open(task, scene)) {
             taskLogContext.setStage(stage);
-            applicationErrorSummaryService.recordError(log.getName(), message, throwable);
-        }
-    }
-
-    private void invalidateTaskDetail(Long taskId) {
-        if (detailCacheService != null && taskId != null) {
-            detailCacheService.invalidate("task", taskId);
-        }
-    }
-
-    private void invalidateSceneDetail(Long sceneId) {
-        if (detailCacheService != null && sceneId != null) {
-            detailCacheService.invalidate("scene", sceneId);
+            applicationErrorSummaryService.recordError(
+                    log.getName(), SensitiveDataRedactor.redact(message), throwable);
         }
     }
 
