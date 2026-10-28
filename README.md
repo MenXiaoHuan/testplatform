@@ -1,757 +1,324 @@
-# Playwright Test Platform
+# 智能自动化测试平台
 
-一个面向 Playwright 自动化测试的执行与管理平台。平台支持维护测试仓库、配置测试场景、手动或定时触发任务，并统一查看任务状态、用例结果、阶段日志、截图、视频、Trace 等运行产物。内置 AI 智能助手，可自动分析失败原因、排查故障链路、查询全平台数据。
+[![Java CI with Maven](https://github.com/MenXiaoHuan/testplatform/actions/workflows/backend-ci.yml/badge.svg)](https://github.com/MenXiaoHuan/testplatform/actions/workflows/backend-ci.yml)
+[![Node.js CI](https://github.com/MenXiaoHuan/testplatform/actions/workflows/frontend-ci.yml/badge.svg)](https://github.com/MenXiaoHuan/testplatform/actions/workflows/frontend-ci.yml)
+[![Coverage](https://img.shields.io/badge/coverage-progress-informational)](https://github.com/MenXiaoHuan/testplatform/actions)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-linux-docker-blue)](DEPLOYMENT.md)
 
----
-
-## 1. 项目定位
-
-传统 Playwright 测试通常分散在不同仓库、机器和命令行环境中，执行记录、日志、截图、视频、Trace 和结果文件也不容易集中追踪。本项目把这些能力平台化：
-
-- 管理测试仓库配置：Git 地址、公有/私有类型、HTTPS Token / SSH Deploy Key、默认分支、工作目录、安装命令、测试执行命令、结果文件路径和产物目录。
-- 管理测试场景：关联仓库、浏览器、测试选择器、环境变量、Cron 定时规则。
-- 执行测试任务：支持手动触发、定时触发、任务取消和重新执行。
-- 查看执行结果：任务状态、阶段日志、用例结果、截图、视频、Trace 和报告。
-- AI 智能助手：基于 ReAct Agent 的故障排查、业务咨询、任务分析、链路回溯。
-- 统一运行环境：通过 Docker Compose 启动 MySQL、Redis、MinIO、后端和前端。
-
-### 1.1 支持范围
-
-平台明确面向 **Node.js / TypeScript / JavaScript 的 `@playwright/test` 项目**：
-
-- 使用 Playwright Test Runner；
-- 能生成 Playwright JSON reporter 结果；
-- 通过 `npm ci` / `npm install` 安装依赖；
-- 通过 `npx playwright test` 或自定义命令执行。
-
-Python Playwright、Java/.NET Playwright、Cucumber、CodeceptJS 等不在默认支持范围内。
+> 面向 **Node.js / TypeScript / JavaScript `@playwright/test`** 项目的**一站式智能自动化测试平台**。
+> 覆盖 **UI 自动化测试**（已完成）、**大模型评测**（建设中），未来扩展**性能测试**和**接口自动化**。
 
 ---
 
-## 2. 技术栈
+## ✨ 功能特性
 
-| 分层 | 技术 | 说明 |
-|---|---|---|
-| 前端 | Vue 3、TypeScript、Vite、Pinia、Element Plus、Axios、Vitest | 后台页面、状态管理、接口请求和单元测试 |
-| 后端 | Spring Boot 3.5、Spring Web、MyBatis、Flyway、Spring Data Redis | REST API、业务编排、数据库迁移和缓存 |
-| AI Agent | Spring AI Alibaba Agent 1.1.2、ReAct 模式、SSE 流式 | 智能助手、工具调用、上下文管理、全链路追踪 |
-| 存储 | MySQL、Redis、MinIO | 结构化数据、详情缓存、对象文件 |
-| 执行 | Docker Runner、Playwright Runner 镜像 | 通过短生命周期容器执行 Node/TS/JS `@playwright/test` 项目 |
-| 工程化 | Docker、Docker Compose、GitHub Actions、JaCoCo | 本地开发、单机部署、CI 和覆盖率 |
+### 🔧 UI 自动化测试（已完成）
 
-后端持久层只使用注解式 MyBatis，Flyway 管理 schema，不使用 JPA，也不使用 XML Mapper。
+- **仓库管理**：Git 地址 / 私有仓库凭据（HTTPS Token · SSH Deploy Key · AES-256-GCM 加密）/ 安装命令 / 执行命令模板
+- **场景配置**：关联仓库 · 选择分支 / 浏览器 / 测试选择器 / 环境变量 / Cron 定时规则
+- **Docker Runner**：短生命周期容器执行任务，隔离测试依赖 / 限制 CPU / 内存 / 网络，不污染宿主机
+- **异步任务编排**：手动触发 · 定时触发 · Agent 对话触发 · 任务取消 · 失败重试
+- **产物自动归档**：截图 / 视频 / Trace / 阶段日志 自动上传 MinIO · 统一下载 / 分享链接
+- **结果解析**：Playwright JSON reporter → 自动入库为结构化用例结果
+- **任务状态机**：QUEUED → RUNNING → SUCCESS/FAILED/CANCELED，含 6 个执行阶段日志
+
+### 🤖 AI 智能助手（已完成）
+
+- **ReAct 循环推理**：Spring AI Alibaba Agent · 思考 → 调用工具 → 观察 → 回答（最多 20 次模型调用熔断）
+- **结构化输出**：sections-only（heading / paragraph / list / code / quote / table 六种块）· 省 40-50% Token
+- **内置工具集**：TaskTool / SceneTool / RepositoryTool / LogPreprocessingTool / TraceQueryTool
+- **Skills 按需加载**：启动时只扫 frontmatter 生成索引，LLM 判断需要时才加载正文（error-analysis / business-knowledge）
+- **上下文压缩**：Smart 压缩（LLM 摘要优先，30s 超时 → 规则提取回退）+ Aggressive 压缩
+- **全链路 Trace**：Redis 90 天 TTL · 21 个阶段结构化日志 · AOP 拦截真实 Token 用量
+- **故障排查**：「帮我分析任务 123 为什么失败了」→ 自动调 TaskTool + LogPreprocessingTool → 输出结构化故障详情
+- **SSE 流式**：meta + chunk + complete 事件 · 打字机效果 + fade-in 动画
+
+### 📊 大模型评测（建设中，PRD 已完成）
+
+- **Prompt 托管中心**：Agent 通过平台 API 拉取当前 ACTIVE 版本（ETag 缓存 · P95 ≤ 10ms），Langfuse Trace 自动关联
+- **通用被评目标**：LLM API · HTTP Agent · 平台内置 Agent · Python 脚本，适配器模式统一接口
+- **离线评测**：固定评测集批量跑批 · 多评分器叠加（规则 / LLM-as-Judge / 代码执行 / 相似度）
+- **在线评测**：Langfuse 自动采集所有真实生产请求 → 基于 Trace 配置策略 + 自动评分 + 监控聚合（P50/P95 延迟 / Token / 自动评分分布）
+- **A/B 实验**：同一份 Prompt 的不同版本对比 · 跨 Target 对比 · 并行执行 · t 检验 p-value 显著性分析
+- **多租户并发**：双层并发限流 + per-Target 共享隔离 + 扫描抖动 + 三层 Judge 预算墙（日预算 → space 预算 → 分钟级 rateLimit）
+- **外部评测集接入**：MMLU / HumanEval / GSM8K / TruthfulQA 一键导入
+
+### 🏗️ 平台基础设施
+
+- **RBAC 三角色**：Space 内 ADMIN / DEVELOPER / OBSERVER
+- **多租户隔离**：所有业务数据通过 `space_id` 关联，后端强制校验
+- **审批流程**：自助注册（可开关）→ 自动创建默认 Space → 申请加入 → Space ADMIN 审批
+- **安全基线**：RSA 公钥加密密码传输 · BCrypt 加盐哈希 · AES-256-GCM 凭据加密 · Cookie HttpOnly + SameSite
+- **审计日志**：PlatformAuditLog 操作可追溯
 
 ---
 
-## 3. 系统架构
+## 🏗️ 系统架构
 
 ```mermaid
-flowchart LR
-    User[用户浏览器] --> Web[Vue 3 / Nginx or Vite]
-    Web -->|/api| Server[Spring Boot 后端]
-    Server -->|MyBatis| MySQL[(MySQL)]
-    Server -->|RedisTemplate + Trace| Redis[(Redis)]
-    Server -->|MinIO SDK| MinIO[(MinIO)]
-    Server --> Runner[RunnerExecutionService]
-    Runner --> DockerRunner[Docker Runner 容器]
-    DockerRunner --> Repo[外部 Playwright 测试仓库]
-    Server -->|/api/ai| Agent[AI Agent 服务]
-    Agent -->|ReAct 循环| LLM[LLM API]
-    Agent -->|Tools| Server
-    Agent -->|Trace Logs| Redis
+flowchart TD
+    User[用户浏览器] --> Web[Vue 3 + Nginx]
+    Web -->|api| Server[Spring Boot Server]
+    Web -->|SSE chat stream| Server
+    Server -->|MyBatis| MySQL[MySQL]
+    Server -->|RedisTemplate| Redis[Redis]
+    Server -->|MinIO SDK| MinIO[MinIO]
+    Server -->|Docker Socket| Runner[Docker Runner]
+    Runner --> Repo[测试仓库 Playwright test]
+
+    subgraph Agent[AI Agent ReAct]
+        Server -->|SystemPromptHook| Prompt[AGENT.md + Skills Index]
+        Server -->|ReactAgent| LLM[LLM API deepseek-chat]
+        LLM -->|Tool Call| Tools[TaskTool SceneTool LogPreprocessingTool]
+        Tools --> Redis
+        Server -->|AgentTraceLogService| Redis
+    end
+
+    subgraph Eval[大模型评测 建设中]
+        Server -->|TargetAdapter| EvalTarget[LLM API / HTTP Agent / Builtin]
+        Server -->|Langfuse SDK| Langfuse[Langfuse]
+        EvalTarget -->|Prompt API| Server
+    end
 ```
 
-核心设计：
+### 核心设计决策
 
-- 前端负责配置录入、任务状态展示、日志和产物查看。
-- 后端负责业务规则、任务调度、异步执行编排、结果解析和产物归档。
-- AI Agent 基于 Spring AI Alibaba Agent 框架，通过 ReAct 循环自动调用平台工具。
-- MySQL 保存用户、空间、仓库、场景、任务、用例结果和产物元数据。
-- Redis 缓存仓库详情、场景详情和任务详情，并处理缓存穿透、击穿、雪崩风险；同时存储 Agent 全链路 Trace 日志（90 天 TTL）。
-- MinIO 保存截图、视频、Trace、阶段日志、头像等对象文件。
-- 长任务交给自定义线程池和 Runner 执行，不阻塞 Spring Web 请求线程。
+| 决策 | 原因 |
+|------|------|
+| **Docker Runner only**（无宿主机降级路径）| 隔离测试执行环境 · 避免依赖污染 · 支持资源限制 |
+| **短事务状态落库**（不包大事务）| Git / Docker / MinIO 都不是数据库事务能回滚的资源 |
+| **详情缓存三防**（穿透 / 击穿 / 雪崩）| 空值缓存 + 互斥锁 + TTL 抖动 |
+| **Flyway + MyBatis 注解 Mapper**（不用 JPA）| SQL 可控 · 任务状态和分页查询更透明 · 纯注解避免 XML 分散 |
+| **sections-only 输出**（不派 response）| LLM 只输出结构化 JSON，后端派生纯文本 · 省 40-50% Token · 避免双写不一致 |
+| **Agent Trace 存 Redis**（90 天 TTL）| 比 MySQL 快 · 过期自动清理 · List + ZSet 双索引 |
+| **Prompt 托管中心 API 拉取**（不硬编码）| 版本可回滚 · Langfuse Trace 自动关联 Prompt 版本 · A/B 实验强制注入 |
 
 ---
 
-## 4. 目录结构
+## 🚀 快速开始
 
-```text
-.
-├── README.md
-├── docker-compose.yml
-├── docker-compose.prod.yml
-├── docs
-│   ├── deployment.md
-│   ├── docker.md
-│   ├── guide.md
-│   └── agent-architecture.md
-├── playwright-platform-server
-│   ├── Dockerfile
-│   ├── Dockerfile.dev
-│   ├── pom.xml
-│   └── src
-│       └── main
-│           ├── java/com/example/platform
-│           │   ├── ai/
-│           │   │   ├── config/          # Agent 配置 (ReactAgentConfig, SystemPromptConfig)
-│           │   │   ├── controller/      # AgentController HTTP 接口
-│           │   │   ├── hook/            # SystemPromptHook 系统提示词注入
-│           │   │   ├── service/         # AgentService 对话主入口
-│           │   │   ├── session/         # ChatSession + ChatSessionManager + ContextCompressionService
-│           │   │   ├── output/          # 输出解析兜底
-│           │   │   ├── skill/           # SkillIndexLoader 技能索引/按需加载
-│           │   │   ├── tools/           # Agent 工具 (TaskTool, SceneTool, LoadSkillContentTool, ...)
-│           │   │   ├── ModelCallTraceAspect.java  # 拦截 ChatModel.call() 记录真实 token 用量
-│           │   │   ├── ToolTraceAspect.java        # 拦截 @Tool 方法记录工具调用详情
-│           │   │   ├── AgentTraceContext.java      # ThreadLocal traceId 持有器
-│           │   │   └── AgentObservability.java
-│           │   └── ...                  # 业务模块 (space, repo, scene, task)
-│           └── resources/
-│               ├── AGENT.md             # 系统提示词
-│               └── skills/              # Skills 技能文档
-│                   ├── error-analysis/
-│                   └── business-knowledge/
-└── playwright-platform-web
-    ├── Dockerfile
-    ├── Dockerfile.dev
-    ├── package.json
-    └── src
-        └── components/ai/              # 前端 AI 对话框组件
-```
+### 前置要求
 
-| 路径 | 作用 |
-|---|---|
-| `playwright-platform-server` | Spring Boot 后端 |
-| `playwright-platform-web` | Vue 3 + Vite 前端 |
-| `docker-compose.yml` | 本地开发编排 |
-| `docker-compose.prod.yml` | 单机生产部署编排 |
-| `docs/deployment.md` | 生产部署手册 |
-| `docs/docker.md` | Docker 文件职责说明 |
-| `docs/guide.md` | 项目架构与技术讲解指南 |
-| `docs/agent-architecture.md` | AI Agent 技术架构详解 |
-| `playwright-platform-server/src/main/java/com/example/platform/ai/` | AI Agent 核心代码 |
-| `playwright-platform-server/src/main/resources/AGENT.md` | Agent 系统提示词 |
-| `playwright-platform-server/src/main/resources/skills/` | Agent Skills 技能文档 |
-| `playwright-platform-web/src/components/ai/` | 前端 AI 对话组件 |
+| 组件 | 版本 |
+|------|------|
+| Docker Engine | ≥ 25.0 |
+| Docker Compose Plugin | ≥ 2.20 |
+| Git | 任意 |
 
----
-
-## 5. 快速启动：Docker Compose
-
-推荐本地直接用 Docker Compose 启动完整开发环境。
-
-### 5.1 环境要求
-
-- Docker Desktop 或 Docker Engine。
-- Docker Compose Plugin。
-- Git。
-
-如果不使用 Docker Compose，本机还需要安装：
-
-- Java 21。
-- Maven 3.9+。
-- Node.js 20+。
-- npm。
-- MySQL 8+。
-- Redis 7+。
-- MinIO。
-- Docker Engine（Docker Runner 必需，且当前进程用户需要能访问 Docker socket）。
-
-### 5.2 创建 `.env`
-
-首次启动前，在项目根目录创建本机私有 `.env` 文件。该文件已被 `.gitignore` 忽略，不会上传到 GitHub。可以直接复制脱敏模板：
+### 5 步启动本地开发环境
 
 ```bash
+# 1. 克隆代码
+git clone https://github.com/MenXiaoHuan/testplatform.git
+cd testplatform
+
+# 2. 创建 .env（替换所有 <...> 占位值）
 cp .env.example .env
-```
+# 编辑 .env，最少要填：PLATFORM_DB_PASSWORD / PLATFORM_REDIS_PASSWORD /
+#                      PLATFORM_MINIO_SECRET_KEY / PLATFORM_DEEPSEEK_API_KEY /
+#                      PLATFORM_CREDENTIAL_KEY（openssl rand -base64 32）
 
-然后替换其中的占位值。
-
-```env
-# Frontend
-PLATFORM_WEB_HOST_PORT=5173
-PLATFORM_WEB_API_PROXY_TARGET=http://server:8080
-
-# Backend - Server
-PLATFORM_SERVER_HOST_PORT=8080
-
-# Backend - 注册开关
-# 默认关闭；本地开发首次使用时临时设为 true，注册完账号后建议改回 false。
-PLATFORM_REGISTRATION_ENABLED=true
-
-# Backend - MySQL
-PLATFORM_DB_NAME=playwright_platform
-PLATFORM_DB_URL=jdbc:mysql://mysql:3306/playwright_platform?useSSL=false&allowPublicKeyRetrieval=true&createDatabaseIfNotExist=true&serverTimezone=UTC
-PLATFORM_DB_USERNAME=root
-PLATFORM_DB_PASSWORD=<your-db-password>
-PLATFORM_MYSQL_HOST_PORT=4306
-
-# Backend - Redis
-PLATFORM_REDIS_HOST=redis
-PLATFORM_REDIS_PORT=6379
-PLATFORM_REDIS_HOST_PORT=7379
-PLATFORM_REDIS_PASSWORD=<your-redis-password>
-
-# Backend - MinIO
-PLATFORM_MINIO_ENDPOINT=http://minio:9000
-PLATFORM_MINIO_PUBLIC_ENDPOINT=http://localhost:10000
-PLATFORM_MINIO_API_HOST_PORT=10000
-PLATFORM_MINIO_CONSOLE_HOST_PORT=10001
-PLATFORM_MINIO_ACCESS_KEY=<your-minio-access-key>
-PLATFORM_MINIO_SECRET_KEY=<your-minio-secret-key>
-PLATFORM_STORAGE_BUCKET=qa-report
-
-# Backend - Runner
-PLATFORM_RUNNER_WORKSPACE_ROOT=/runner-workspaces
-PLATFORM_RUNNER_HOST_WORKSPACE_ROOT=<absolute-path-to-project>/.runner-workspaces
-PLATFORM_RUNNER_DOCKER_IMAGE=mcr.microsoft.com/playwright:v1.61.1-noble
-PLATFORM_RUNNER_DOCKER_NETWORK=bridge
-PLATFORM_RUNNER_DOCKER_MEMORY=2g
-PLATFORM_RUNNER_DOCKER_CPUS=2
-PLATFORM_RUNNER_DOCKER_CONTAINER_WORKSPACE_ROOT=/workspace/task
-
-# Backend - 私有仓库凭据加密
-PLATFORM_CREDENTIAL_KEY=<32-byte-base64>
-```
-
-注意：
-
-- 不要把真实密码写进代码库。
-- 自助注册默认关闭（`PLATFORM_REGISTRATION_ENABLED=false`）。本地首次使用请在 `.env` 临时设为 `true` 创建账号，之后改回 `false`，避免公网部署时任何人注册后获得执行命令的能力。
-- `PLATFORM_MINIO_ENDPOINT` 是后端访问 MinIO 的 Docker 内部地址，保持 `http://minio:9000`。
-- `PLATFORM_MINIO_PUBLIC_ENDPOINT` 用于生成公网可访问的 MinIO 预签名地址，本地通常是 `http://localhost:10000`；任务产物下载和 Trace 分享仍优先通过后端平台代理接口返回。
-- `PLATFORM_RUNNER_HOST_WORKSPACE_ROOT` 建议填写宿主机绝对路径，例如 `/opt/testplatform/.runner-workspaces`。
-- 私有仓库在「仓库管理」里选择私有并配置 HTTPS Token 或 SSH Deploy Key；凭据加密存储，不会回显。`PLATFORM_CREDENTIAL_KEY` 是加密密钥，生产必须设置。
-- 如果 MySQL、Redis 或 MinIO 已经使用 Docker volume 初始化过，修改 `.env` 密码不会自动修改已有 volume 内账号密码。
-
-### 5.3 启动
-
-```bash
-docker compose config
+# 3. 启动所有服务（MySQL + Redis + MinIO + Server + Web）
 docker compose up -d --build
+
+# 4. 等健康检查通过（约 60s）
 docker compose ps
+
+# 5. 打开浏览器
+#    前端：http://localhost:5173
+#    后端：http://localhost:8080/api/auth/public-key
 ```
 
-查看日志：
+### 生产部署
 
 ```bash
-docker compose logs -f server
-docker compose logs -f web
-```
-
-访问地址：
-
-| 服务 | 地址 |
-|---|---|
-| 前端 | `http://localhost:5173` |
-| 后端 | `http://localhost:8080` |
-| MySQL | `localhost:4306` |
-| Redis | `localhost:7379` |
-| MinIO API | `http://localhost:10000` |
-| MinIO Console | `http://localhost:10001` |
-
-停止服务：
-
-```bash
-docker compose down
-```
-
-删除容器和数据卷：
-
-```bash
-docker compose down -v
-```
-
-`down -v` 会删除 MySQL、Redis、MinIO、Maven 缓存和前端依赖数据卷，谨慎执行。
-
----
-
-## 6. 生产部署
-
-单机生产部署使用 `docker-compose.prod.yml` 和生产 Dockerfile。
-
-```bash
-docker compose -f docker-compose.prod.yml config
+# 完整单机 / 分机 / K8s / 云托管部署指南见 DEPLOYMENT.md
 docker compose -f docker-compose.prod.yml up -d --build
-docker compose -f docker-compose.prod.yml ps
 ```
 
-生产环境特点：
-
-- 后端使用 `playwright-platform-server/Dockerfile`，构建 jar 后用 JRE 运行。
-- 前端使用 `playwright-platform-web/Dockerfile`，构建 `dist` 后由 Nginx 托管。
-- MySQL、Redis、后端默认只在 Docker 内部网络访问。
-- 敏感配置通过服务器私有 `.env` 注入。
-- 正式对团队开放时，推荐前后端分域名：
-  - 前端：`https://test-platform.example.com`
-  - 后端 API：`https://api.test-platform.example.com`
-
-完整部署步骤见 `docs/deployment.md`。
-
----
-
-## 7. Docker 文件说明
-
-| 文件 | 作用 |
-|---|---|
-| `playwright-platform-server/Dockerfile.dev` | 后端开发镜像，挂载源码后运行 `mvn spring-boot:run` |
-| `playwright-platform-server/Dockerfile` | 后端生产镜像，多阶段构建 jar，运行阶段保留 JRE + Docker CLI + Git/SSH |
-| `playwright-platform-server/.dockerignore` | 排除后端构建产物、IDE 文件等 |
-| `playwright-platform-web/Dockerfile.dev` | 前端开发镜像，运行 Vite dev server |
-| `playwright-platform-web/Dockerfile` | 前端生产镜像，Node 构建后由 Nginx 托管 |
-| `playwright-platform-web/.dockerignore` | 排除 `node_modules`、`dist`、`.vite` 等 |
-| `docker-compose.yml` | 本地开发多服务编排 |
-| `docker-compose.prod.yml` | 单机生产多服务编排 |
-
-详细说明见 `docs/docker.md`。
-
----
-
-## 8. 后端核心能力
-
-### 8.1 数据库与迁移
-
-- Flyway 启动时自动执行 `playwright-platform-server/src/main/resources/db/migration` 下的迁移脚本。
-- 当前迁移覆盖初始化 schema、调度事件、空间模型、用户会话和自助注册约束。
-- `SCHEMA_OVERVIEW.sql` 仅作为结构参考，不是首选初始化方式。
-
-### 8.2 Redis 详情缓存
-
-仓库详情、场景详情和任务详情会先查 Redis。列表接口、任务日志、用例、产物等目前直接查 MySQL 或对象存储相关服务。
-
-缓存策略：
-
-- 空值缓存：降低不存在 ID 的重复数据库查询，防穿透。
-- TTL 随机抖动：避免大量 key 同时过期，防雪崩。
-- 互斥刷新：热点 key 未命中时减少并发回源，防击穿。
-- 写后失效：仓库、场景、任务变更后删除对应详情缓存。
-
-### 8.3 事务策略
-
-- 仓库、场景创建/更新/删除使用短事务。
-- 任务创建、取消、状态更新使用短事务。
-- Playwright 安装、测试执行、结果解析、产物上传不包在一个大事务里。
-- 长任务状态落库由独立 mutation service 分阶段提交，避免长时间占用数据库连接和锁。
-
-### 8.4 多线程与 Runner
-
-- HTTP 请求线程由内嵌 Tomcat 管理，只负责接收请求和快速返回。
-- 长任务执行使用自定义 `taskExecutionExecutor`。
-- Docker Runner 通过 Docker socket 启动短生命周期 Playwright 容器执行测试。
-- Runner workspace 由 `PLATFORM_RUNNER_HOST_WORKSPACE_ROOT` 和 `PLATFORM_RUNNER_WORKSPACE_ROOT` 控制。
-- 线程池满载时 fail-fast，任务会被标记为 `FAILED` / `SYSTEM_BUSY`，避免无限排队。
-
-### 8.5 对象存储
-
-- MinIO 保存截图、视频、Trace、阶段日志和头像。
-- MySQL 只保存 bucket、object key、content type、size 等元数据。
-- 运行产物下载通过后端平台代理接口返回，避免前端直接依赖 MinIO 内网地址。
-
-### 8.6 AI Agent 智能助手
-
-平台集成了基于 Spring AI Alibaba Agent 框架的 AI 智能助手，可为测试团队提供故障排查、业务咨询、任务分析等能力。
-
-#### 架构概览
-
-AI Agent 采用 **ReAct（Reason + Act）** 循环模式：
-
-```
-用户提问
-  → SystemPromptHook 注入系统提示词 (AGENT.md + SkillIndexLoader 生成的技能索引)
-  → ReAct 循环 (最多 20 次模型调用)
-      → Think (思考) → Call Tool (调用工具) → Observe (观察结果) → ... → Answer
-      → 按需调用 loadSkill / loadSkillDocument 加载技能正文与子文档
-      → ModelCallTraceAspect / ToolTraceAspect 拦截记录每一次模型调用和工具调用详情
-  → OutputFormatFallbackService 四层输出解析（sections-only，无 response 字段）
-  → AgentTraceLogService 写入全链路 Trace（含 MODEL_CALL_*/TOOL_CALL_* 各阶段）
-  → ScheduleEventService 记录一条 AGENT 调度事件
-```
-
-> 技能（Skills）采用**按需加载**：启动时 `SkillIndexLoader` 只扫描各 `SKILL.md` 的 frontmatter（name + description）生成索引并追加到系统提示词，正文不进入上下文；LLM 判断需要某技能时再调用 `loadSkill` 工具加载正文，并按正文指引用 `loadSkillDocument` 加载子文档。
-
-#### 核心组件
-
-| 组件 | 职责 |
-|---|---|
-| `ReactAgent` | ReAct 推理循环，思考→行动→观察 |
-| `SystemPromptHook` | 注入 `AGENT.md` 系统提示词（末尾追加技能索引） |
-| `SkillIndexLoader` | 启动时扫描 `skills/*/SKILL.md` frontmatter 生成技能索引，按需读取技能正文/子文档 |
-| `ModelCallLimitHook` | 限制最多 20 次模型调用，防止死循环 |
-| `ModelCallTraceAspect` | AOP 拦截 `ChatModel.call()`，记录每次模型调用的真实 token 用量（promptTokens/completionTokens/totalTokens）和耗时 |
-| `ToolTraceAspect` | AOP 拦截所有 `@Tool` 方法，记录工具名、入参、结果、耗时 |
-| `AgentTraceContext` | ThreadLocal 持有当前请求 traceId，供两个 AOP 切面使用 |
-| `ChatSessionManager` | 会话管理（Caffeine 缓存，30min TTL） |
-| `ContextCompressionService` | 上下文压缩（LLM 摘要优先，失败回退规则提取 + 滑动窗口） |
-| `OutputFormatFallbackService` | 四层输出解析兜底（sections-only，从 sections 派生纯文本） |
-| `InputSanitizer` | 输入清洗 + Prompt 注入检测 |
-| `AgentObservability` | 调用量/错误率/Token 用量监控 |
-| `AgentTraceLogService` | 全链路 Trace 日志（Redis，90 天 TTL） |
-| `ScheduleEventService` | Agent 对话入口写入/完成 AGENT 调度事件 |
-
-#### Agent 工具
-
-| 工具 | 方法 | 功能 |
-|---|---|---|
-| **TaskTool** | `getTask(taskId, spaceId)` | 查询任务详情（状态、结果、用例统计、阶段日志预览） |
-| | `listTasks(sceneId?, spaceId)` | 列出空间下的任务（sceneId 可选过滤） |
-| **SceneTool** | `listScenes(repoId?, spaceId)` | 列出空间下的测试场景（repoId 可选过滤） |
-| | `getSceneDetail(sceneId, spaceId)` | 查询场景详情（浏览器、分支、选择器、环境变量） |
-| **RepositoryTool** | `getRepository(repositoryId, spaceId)` | 查询仓库配置（Git 地址、默认分支、安装/执行命令） |
-| | `searchRepository(keyword, spaceId)` | 按名称关键词搜索仓库 |
-| **LogPreprocessingTool** | `analyzeLogs(taskId, spaceId)` | 分析任务日志，提取错误摘要和失败用例列表 |
-| **TraceQueryTool** | `queryTrace(traceId)` | 查询某条 Agent 调用的完整链路（所有阶段日志） |
-| | `listRecentTraces(limit?)` | 列出最近的 Agent 调用记录（摘要，默认 10 条） |
-| | `getTraceStats()` | Trace 存储统计（总数、保留策略） |
-| **LoadSkillContentTool** | `loadSkill(name)` | 按需加载某技能的 `SKILL.md` 正文（含子文档清单） |
-| **LoadSkillDocumentTool** | `loadSkillDocument(skillName, docName)` | 按需加载技能目录下的子文档 |
-
-#### 上下文管理
-
-- **Token 预算**：最大 8000 tokens，达到 80%（6400）触发压缩。
-- **压缩策略**：
-  - Smart 压缩（80%~100%）：优先调用 LLM 生成结构化摘要（30 秒超时），失败/超时/未启用时回退到规则提取，保留最近 3 条原始消息。
-  - Aggressive 压缩（>100%）：规则提取精简摘要，只保留最近 3 条 user/assistant 消息。
-- **LLM 摘要开关**：`platform.ai.context.use-llm-summary`（默认 `true`）。
-- **会话存储**：Caffeine 本地缓存，30 分钟 TTL，最多 10000 个会话。
-- **Token 估算**：中文 × 1.5 + 英文 × 0.25。
-
-#### 输出格式
-
-Agent 使用 `ChatAssistantResult` 结构化输出（sections-only，不含 response 文本）：
-
-```java
-@JsonInclude(JsonInclude.Include.NON_NULL)
-public record ChatAssistantResult(
-    String traceId,                // 追踪 ID（自动生成）
-    List<String> usedTools,       // 使用过的工具名列表
-    String confidence,             // 置信度 (HIGH/MEDIUM/LOW)
-    String responseType,          // 响应类型 (ANALYSIS/QA/TRACE/...)
-    FaultDetail faultDetail,      // 故障详情 (可选)
-    List<ContentBlock> sections   // 结构化内容块
-) {
-    public String deriveResponse() { /* 从 sections 派生纯文本 */ }
-
-    public record FaultDetail(
-        String fault_type,         // 故障类型
-        String root_cause,         // 根因分析
-        String immediate_solution, // 临时解决方案
-        String long_term_optimize, // 长期优化建议
-        String test_risk,          // 测试风险
-        String reproduce_steps     // 复现步骤
-    )
-}
-```
-
-`ContentBlock` 六种类型：
-
-```java
-public record ContentBlock(
-    String type,        // heading / paragraph / list / code / quote / table
-    Integer level,      // heading 专用: 1/2/3
-    String text,        // heading / paragraph / quote 专用
-    List<String> items, // list 专用
-    Boolean ordered,    // list 专用: true=有序, false=无序
-    String language,    // code 专用: 语言
-    String code,        // code 专用: 代码内容
-    List<String> headers,  // table 专用: 表头
-    List<List<String>> rows // table 专用: 二维数据
-)
-```
-
-**设计决策**：LLM 只输出 `sections`（结构化 JSON），不再输出 `response` 字段。后端通过 `deriveTextFromSections(sections)` 自动派生纯文本用于历史存储和 streaming chunk，避免 response/sections 双写不一致，节省约 40-50% token。
-
-SSE 流式输出时：`meta` 事件携带完整 `sections` 数组供前端完成后结构化渲染，`chunk` 事件逐字符发送 `deriveResponse()` 的纯文本用于打字机效果。
-
-#### 安全与可靠性
-
-| 机制 | 参数 | 说明 |
-|---|---|---|
-| 输入长度限制 | 10000 字符 | 超长拒绝 |
-| Prompt 注入检测 | `InputSanitizer` | 检测绕过系统约束的尝试 |
-| 单次调用超时 | 60 秒 | `AgentCallManager` |
-| 重试次数 | 2 次 | 指数退避 1s → 2s → 4s |
-| 最大模型调用 | 20 次 | `ModelCallLimitHook` 防死循环 |
-| SSE 流超时 | 300 秒 | `SseEmitter` |
-
-#### 典型使用场景
-
-- **故障排查**：「帮我分析任务 123 为什么失败了」→ Agent 自动调用 TaskTool + LogPreprocessingTool
-- **链路回溯**：「查询 traceId: xxx」→ Agent 调用 TraceQueryTool 返回完整调用链路
-- **业务咨询**：「当前空间有哪些测试场景」→ Agent 调用 SceneTool
-- **批量分析**：「列出最近 5 个失败任务并分析原因」→ Agent 多轮工具调用
-
-> 详细技术实现见 [`docs/agent-architecture.md`](docs/agent-architecture.md)。
-
----
-
-## 9. 本地非 Docker 启动
-
-不推荐新手使用这种方式，除非你已经本机准备好了 MySQL、Redis 和 MinIO。
-
-> 非 Docker 启动时 Spring Boot 不会自动读取根目录 `.env`；请先把 `.env` 里的变量导出到当前 shell，或使用 IDE 的 Environment variables 配置。Docker Compose 会自动注入这些变量。
-
-### 9.1 启动后端
+### 首次创建管理员
 
 ```bash
-cd playwright-platform-server
-mvn spring-boot:run -Dspring-boot.run.profiles=dev
-```
+# 临时开启注册
+sed -i 's/^PLATFORM_REGISTRATION_ENABLED=.*/PLATFORM_REGISTRATION_ENABLED=true/' .env
+docker compose -f docker-compose.prod.yml up -d --force-recreate server
 
-后端默认监听：
+# 浏览器 → http://localhost:5173 → 注册
 
-```text
-http://localhost:8080
-```
-
-### 9.2 启动前端
-
-```bash
-cd playwright-platform-web
-npm ci
-npm run dev
-```
-
-Vite 默认访问：
-
-```text
-http://localhost:5173
+# 关闭注册并重启
+sed -i 's/^PLATFORM_REGISTRATION_ENABLED=.*/PLATFORM_REGISTRATION_ENABLED=false/' .env
+docker compose -f docker-compose.prod.yml up -d --force-recreate server
 ```
 
 ---
 
-## 10. 测试与 CI
+## 🛠️ 技术栈
 
-### 10.1 本地测试
+| 分层 | 技术 |
+|------|------|
+| **前端** | Vue 3 · TypeScript · Vite · Pinia · Element Plus · Axios · marked + DOMPurify · highlight.js · Vitest |
+| **后端** | Spring Boot 3.5 · Spring Web · MyBatis（注解式）· Flyway · Spring Data Redis |
+| **AI Agent** | Spring AI Alibaba Agent 1.1.2 · ReAct 模式 · SSE 流式 |
+| **存储** | MySQL 8 · Redis 7 · MinIO（对象存储）|
+| **执行** | Docker Runner · Playwright Runner 镜像（`mcr.microsoft.com/playwright`）|
+| **工程化** | Docker · Docker Compose · GitHub Actions · JaCoCo |
+| **评测（建设中）** | Langfuse（LLM 可观测 + 评测平台）|
 
-后端：
+> ⚠️ 后端持久层**只使用注解式 MyBatis**，不使用 JPA，不使用 XML Mapper。
+
+---
+
+## 📁 项目结构
+
+```
+testplatform/
+├── playwright-platform-server/       # Spring Boot 后端
+│   ├── src/main/java/.../platform/
+│   │   ├── ai/                       # AI Agent 模块
+│   │   │   ├── config/               # ReactAgent / DeepSeek / SystemPrompt 配置
+│   │   │   ├── controller/           # AgentController（chat / chatStream / trace 查询）
+│   │   │   ├── service/              # AgentService（对话主入口）
+│   │   │   ├── tools/                # 7 个内置 Tool
+│   │   │   ├── hook/                 # SystemPromptHook
+│   │   │   ├── skill/                # SkillIndexLoader（按需加载）
+│   │   │   ├── session/              # ChatSessionManager（Caffeine + 30min TTL）
+│   │   │   ├── output/               # OutputFormatFallbackService（四层兜底）
+│   │   │   ├── ModelCallTraceAspect  # AOP 拦截 ChatModel.call()
+│   │   │   └── ToolTraceAspect       # AOP 拦截 @Tool 方法
+│   │   ├── task/                      # 任务模块（核心）
+│   │   ├── runner/                    # Docker Runner 执行器
+│   │   ├── scene/                     # 场景 + 定时调度（租约机制）
+│   │   ├── repository/                # 仓库 + 私有凭据加密
+│   │   ├── space/                     # Space + RBAC + 审批
+│   │   ├── auth/                      # 登录注册 + 会话
+│   │   ├── storage/                   # MinIO 对象存储
+│   │   ├── cache/                     # Redis 详情缓存（穿透/击穿/雪崩三防）
+│   │   ├── common/                    # ApiResponse / 异常处理 / 凭据加密
+│   │   └── audit/                     # 审计日志
+│   └── src/main/resources/
+│       ├── AGENT.md                   # Agent 系统提示词
+│       ├── application.yml
+│       ├── Dockerfile / Dockerfile.dev
+│       ├── pom.xml
+│       └── db/migration/              # Flyway 迁移（V1~V10）
+│
+├── playwright-platform-web/          # Vue 3 前端
+│   ├── src/
+│   │   ├── views/                     # 页面
+│   │   │   ├── auth/                  # 登录 / 注册
+│   │   │   ├── repository/            # 仓库管理
+│   │   │   ├── scene/                 # 场景管理
+│   │   │   ├── task/                  # 任务列表 / 详情
+│   │   │   ├── event/                 # 调度事件（日志追踪）
+│   │   │   ├── ai/                    # Agent Trace 时间线
+│   │   │   └── space/                 # 空间审批
+│   │   ├── components/ai/             # AiAssistantDialog（AI 对话框）
+│   │   ├── stores/                    # Pinia Store（auth · space · task · ai）
+│   │   ├── api/                       # API 封装（Axios + 统一响应解包）
+│   │   ├── types/                     # DTO 类型定义
+│   │   └── utils/                     # 工具函数（artifact / stage-log / task-display / space-permissions）
+│   ├── Dockerfile / Dockerfile.dev
+│   ├── vite.config.ts
+│   └── package.json
+│
+├── docker-compose.yml                 # 本地开发编排
+├── docker-compose.prod.yml            # 单机生产编排
+├── .env.example                       # 环境变量模板
+├── .github/workflows/                 # CI
+│   ├── backend-ci.yml                 # Maven test + JaCoCo
+│   └── frontend-ci.yml                # npm test --coverage + build + audit
+└── docs/
+    ├── prd-01-platform-foundation.md   # 平台基础（登录 / 权限 / Space / 审批）需求文档
+    ├── prd-02-ui-automation.md         # UI 自动化模块需求文档
+    ├── prd-03-ai-assistant.md          # AI 智能助手需求文档
+    └── prd-04-llm-evaluation-prd.md    # 大模型评测模块需求文档（v1.4 · Prompt 托管 + Langfuse + A/B）
+```
+
+---
+
+## 📖 文档导航
+
+| 文档 | 说明 |
+|------|------|
+| 🚀 **快速启动** | 本文档「快速开始」章节 |
+| 📦 **部署指南** | [DEPLOYMENT.md](DEPLOYMENT.md)（v2.0 · 单机 / 分机 / K8s / 云托管 · 监控 / CI-CD / 多实例）|
+| 📋 **需求文档 · 平台基础** | [docs/prd-01-platform-foundation.md](docs/prd-01-platform-foundation.md)（v1.0 · 登录 / 权限 / Space / 审批）|
+| 📋 **需求文档 · UI 自动化** | [docs/prd-02-ui-automation.md](docs/prd-02-ui-automation.md) |
+| 📋 **需求文档 · AI 助手** | [docs/prd-03-ai-assistant.md](docs/prd-03-ai-assistant.md) |
+| 📋 **需求文档 · 大模型评测** | [docs/prd-04-llm-evaluation-prd.md](docs/prd-04-llm-evaluation-prd.md)（v1.4 · Prompt 托管 + Langfuse + 离线/在线/A/B + 多租户并发）|
+
+---
+
+## 🧪 测试
 
 ```bash
+# 后端（Maven + JaCoCo）
 cd playwright-platform-server
 mvn test
-```
 
-前端：
-
-```bash
+# 前端（Vitest + Coverage）
 cd playwright-platform-web
-npm test
+npm ci
+npm test -- --coverage
 npm run build
+
+# CI 自动在每次 push / PR 时执行
+# 见 .github/workflows/
 ```
 
-### 10.2 GitHub Actions
+---
 
-项目使用 GitHub Actions 作为主干质量门禁。每次 `push` 和 `pull_request` 会执行：
+## 🧭 路线图（Roadmap）
 
-| Job | 步骤 |
-|---|---|
-| backend | Java 21、Maven cache、`mvn test`、上传 JaCoCo 覆盖率 |
-| frontend | Node 20、`npm ci`、`npm test -- --coverage`、`npm run build`、`npm audit` |
-
-覆盖率报告：
-
-- 后端：`playwright-platform-server/target/site/jacoco/index.html`。
-- 前端：`playwright-platform-web/coverage/index.html`。
+| 阶段 | 能力 | 状态 |
+|------|------|------|
+| **已完成** | UI 自动化测试（仓库 / 场景 / 任务 / Docker Runner / 产物归档）| ✅ |
+| **已完成** | AI 智能助手（ReAct / Tools / Skills / Trace / SSE）| ✅ |
+| **已完成** | 平台基础（登录 / 权限 / Space / 审批）| ✅ |
+| **建设中** | **大模型评测**（Langfuse / Prompt 托管 / 离线 + 在线 + A/B / 多租户并发 / 外部评测集）| 🚧 |
+| **规划中** | 性能测试 | 📋 |
+| **规划中** | 接口自动化 | 📋 |
+| **规划中** | K8s 多实例 + Runner 远程 DinD 调度 | 📋 |
+| **规划中** | Grafana + Prometheus 监控大盘上线 | 📋 |
 
 ---
 
-## 11. 核心接口
+## 🤝 贡献指南
 
-| 接口 | 说明 |
-|---|---|
-| `GET /api/auth/public-key` | 获取登录加密公钥 |
-| `POST /api/auth/login` | 登录 |
-| `POST /api/auth/register` | 注册 |
-| `GET /api/auth/me` | 获取当前用户 |
-| `PUT /api/auth/profile` | 更新当前用户资料 |
-| `POST /api/auth/avatar` | 上传当前用户头像 |
-| `POST /api/auth/logout` | 退出登录 |
-| `GET /api/spaces` | 当前用户空间列表 |
-| `GET /api/spaces/plaza` | 空间广场 |
-| `POST /api/spaces` | 创建空间 |
-| `GET /api/spaces/{spaceId}/access-requests` | 空间加入/权限申请列表 |
-| `POST /api/spaces/{spaceId}/access-requests` | 提交空间加入/权限申请 |
-| `POST /api/spaces/{spaceId}/access-requests/{requestId}/approve` | 审批通过空间申请 |
-| `POST /api/spaces/{spaceId}/access-requests/{requestId}/reject` | 拒绝空间申请 |
-| `GET /api/spaces/{spaceId}/repos` | 仓库列表 |
-| `POST /api/spaces/{spaceId}/repos` | 创建仓库 |
-| `GET /api/spaces/{spaceId}/scenes` | 场景列表 |
-| `POST /api/spaces/{spaceId}/scenes` | 创建场景 |
-| `POST /api/spaces/{spaceId}/scenes/{sceneId}/run` | 执行场景 |
-| `GET /api/spaces/{spaceId}/tasks` | 任务列表 |
-| `GET /api/spaces/{spaceId}/scenes/{sceneId}/tasks` | 某个场景的任务 |
-| `GET /api/spaces/{spaceId}/tasks/{taskId}` | 任务详情 |
-| `POST /api/spaces/{spaceId}/tasks/{taskId}/cancel` | 取消任务 |
-| `GET /api/spaces/{spaceId}/tasks/{taskId}/diagnostics` | 任务诊断信息 |
-| `GET /api/spaces/{spaceId}/tasks/{taskId}/artifacts` | 任务产物 |
-| `GET /api/spaces/{spaceId}/tasks/{taskId}/artifacts/{artifactId}/download` | 下载任务产物 |
-| `POST /api/spaces/{spaceId}/tasks/{taskId}/artifacts/{artifactId}/trace-share` | 创建 Trace 分享下载地址 |
-| `GET /api/public/traces/download` | 使用分享 token 下载 Trace |
-| `GET /api/spaces/{spaceId}/tasks/{taskId}/cases` | 用例结果 |
-| `GET /api/spaces/{spaceId}/tasks/{taskId}/cases/{caseResultId}/artifacts` | 某条用例关联产物 |
-| `GET /api/spaces/{spaceId}/tasks/{taskId}/logs` | 阶段日志 |
-| `GET /api/spaces/{spaceId}/tasks/{taskId}/logs/{logId}/download` | 下载阶段日志 |
-| `GET /api/spaces/{spaceId}/schedule-events` | 调度事件列表（支持 `scheduleType` 筛选 CRON/AGENT/MANUAL） |
-| `POST /api/spaces/{spaceId}/schedule-events/{eventId}/retry` | 重试调度事件 |
-| `POST /api/ai/chat` | 同步 AI 对话 |
-| `POST /api/ai/chat/stream` | 流式 AI 对话（SSE） |
-| `DELETE /api/ai/session/{sessionId}` | 清理会话 |
-| `GET /api/ai/sessions/count` | 查询活跃会话数 |
-| `GET /api/ai/trace` | 最近 Agent Trace 摘要列表（按时间倒序，limit 上限 100） |
-| `GET /api/ai/trace/{traceId}` | 某条 Trace 的完整时间线（Redis List，按时间升序） |
+欢迎 Issue 和 Pull Request！
+
+1. Fork 本仓库
+2. 从 `main` 创建 feature 分支（`git checkout -b feature/my-feature`）
+3. 提交变更（`git commit -m 'feat: add my feature'`）
+4. 推送到 Fork（`git push origin feature/my-feature`）
+5. 提交 Pull Request
+
+### 提交规范
+
+| 前缀 | 用途 |
+|------|------|
+| `feat:` | 新功能 |
+| `fix:` | Bug 修复 |
+| `docs:` | 文档变更 |
+| `refactor:` | 重构（不改行为）|
+| `test:` | 测试相关 |
+| `chore:` | 构建 / 工具变更 |
 
 ---
 
-## 12. 测试仓库接入建议
+## 📄 License
 
-平台中的“测试仓库”指被平台拉取并执行的 Playwright 自动化项目。接入时建议：
-
-- `仓库类型`：公有仓库直接 clone；私有仓库在仓库管理里配置 HTTPS Token 或 SSH Deploy Key。
-- `凭据安全`：Token/私钥使用 `PLATFORM_CREDENTIAL_KEY` 加密存储，API 不回显明文；不要把 token 写进 Git URL。
-- `工作目录`：单仓库项目可留空，Monorepo 填写子目录。
-- `安装命令`：建议使用 `npm ci` 或与测试仓库锁文件匹配的安装命令。
-- `测试执行命令`：例如 `npx playwright test`。
-- 自定义 / npm script 命令使用 `{target}`、`{project}`、`{testRoot}` 占位符接入平台参数，例如 `npm run test:e2e -- {target} --project {project}`；占位符会作为完整参数转义，不要写成 `{testRoot}/foo.spec.ts`。不含占位符的自定义命令会原样执行，平台不再自动追加 `--target`；只有 `npx/pnpm/yarn/npm exec playwright test` 这类 Playwright CLI 仍会自动追加 target/project。
-- `测试目录`：相对工作目录，例如 `tests`。
-- `结果索引文件`：相对工作目录，例如 `test-results/.playwright-results.json`。
-- `运行产物目录`：相对工作目录，例如 `.playwright-artifacts`。
-- Runner 镜像已包含浏览器环境时，不建议默认执行 `npx playwright install`，避免重复下载浏览器。
-- 测试仓库的 `@playwright/test` 版本建议与 Runner 镜像版本对齐。
+[MIT License](LICENSE)
 
 ---
 
-## 13. 文档导航
+## 📝 项目信息
 
-| 文档 | 内容 |
-|---|---|
-| `docs/guide.md` | 项目前后端架构、文件职责、核心业务链路、常见问题讲解 |
-| `docs/docker.md` | Dockerfile、Dockerfile.dev、.dockerignore 与 Compose 职责划分 |
-| `docs/deployment.md` | 单机生产部署、`.env`、验证、备份、回滚、域名 HTTPS、排障 |
-| `docs/agent-architecture.md` | AI Agent 技术架构、ReAct 循环、工具、上下文管理、输出兜底、工程约束 |
-
----
-
-## 14. AI 智能助手使用指南
-
-### 14.1 快速体验
-
-1. 启动 Docker Compose：`docker compose up -d`
-2. 访问 `http://localhost:5173`，登录系统
-3. 点击右下角 **AI 助手** 图标打开对话框
-4. 输入你的问题，例如：
-   - 「帮我分析任务 123 为什么失败了」
-   - 「当前空间有哪些测试场景」
-   - 「查询 traceId: xxx」
-
-### 14.2 功能特性
-
-| 特性 | 说明 |
-|---|---|
-| 流式响应 | SSE 打字机效果，边生成边显示 |
-| 多轮对话 | 会话持久化，支持上下文追问 |
-| 智能压缩 | 自动压缩历史消息，控制 Token 总量 |
-| 工具调用 | Agent 自动选择和调用平台工具 |
-| 故障诊断 | 结构化输出故障类型、根因、解决方案 |
-| 全链路追踪 | 每次对话生成 traceId，可 90 天内回溯 |
-| 会话管理 | 支持会话清除、历史保留、自动过期 |
-
-### 14.3 配置说明
-
-AI 相关配置通过 `application.yml` 注入：
-
-```yaml
-platform:
-  ai:
-    system-prompt-path: classpath:AGENT.md
-    call:
-      timeout-seconds: 60
-      max-retries: 2
-      retry-delay-ms: 1000
-    context:
-      max-tokens: 8000
-      max-messages: 50
-      compression-threshold: 0.8
-      keep-recent-messages: 3
-      max-message-content-length: 4000
-      use-llm-summary: true
-```
-
-| 配置项 | 默认值 | 说明 |
-|---|---|---|
-| `platform.ai.system-prompt-path` | `classpath:AGENT.md` | 系统提示词路径 |
-| `platform.ai.call.timeout-seconds` | 60 | 单次调用超时 |
-| `platform.ai.call.max-retries` | 2 | 失败重试次数 |
-| `platform.ai.context.max-tokens` | 8000 | 上下文 Token 上限 |
-| `platform.ai.context.max-messages` | 50 | 上下文消息数量上限 |
-| `platform.ai.context.compression-threshold` | 0.8 | 压缩触发阈值（80% × maxTokens） |
-| `platform.ai.context.keep-recent-messages` | 3 | 压缩时保留最近原始消息数 |
-| `platform.ai.context.max-message-content-length` | 4000 | 单条消息最大字符长度（超过自动截断） |
-| `platform.ai.context.use-llm-summary` | true | Smart 压缩是否优先用 LLM 生成结构化摘要（30s 超时，失败回退规则提取） |
-
-### 14.4 系统提示词
-
-系统提示词文件位于 `playwright-platform-server/src/main/resources/AGENT.md`，定义了：
-
-- Agent 角色（测试平台智能助手）
-- **输出格式**：LLM 必须只输出 `sections` 结构化数组（heading/paragraph/list/code/quote/table 六种块类型），不再输出 response 纯文本
-- 故障详情结构（FaultDetail）
-- 约束规则（安全、格式、行为边界）
-- 3 个 Few-shot 示例（含 table 示例）
-- 禁止普通文本中用 `|` 作分隔符，禁止输出 markdown 表格语法
-
-修改 `AGENT.md` 后重启后端即可生效。
-
-### 14.5 Skills 技能（按需加载）
-
-Agent 启动时由 `SkillIndexLoader` 扫描 `resources/skills/*/SKILL.md` 的 YAML frontmatter（`name` + `description`），生成技能索引追加到系统提示词。**正文不进入上下文**，LLM 判断需要某技能时调用 `loadSkill(name)` 加载 `SKILL.md` 正文，再按正文指引用 `loadSkillDocument(skillName, docName)` 加载子文档。
-
-| 技能 | 路径 | 子文档 | 说明 |
-|---|---|---|---|
-| `error-analysis` | `resources/skills/error-analysis/` | `playwright-error.md`、`scheduler-error.md`、`docker-error.md`、`cache-db-error.md`、`llm-agent-error.md` | 平台故障排查 SOP（Playwright/调度/Docker/基础设施/LLM-Agent 五大类） |
-| `business-knowledge` | `resources/skills/business-knowledge/` | `tech-architecture.md`、`data-model.md`、`business-functions.md`、`llm-agent.md` | 业务知识（技术架构、数据模型、业务功能、AI Agent 评测） |
-
-`SKILL.md` frontmatter 示例：
-
-```markdown
----
-name: error-analysis
-description: 平台故障排查技能。覆盖 Playwright UI 异常、调度冲突、Docker、基础设施、LLM-Agent 评测故障五大类排查 SOP。
----
-```
-
-新增技能只需在 `resources/skills/` 下新建目录并放入带 frontmatter 的 `SKILL.md`，重启后端即可被索引。
-
-### 14.6 前端组件
-
-AI 对话前端组件位于 `playwright-platform-web/src/components/ai/`：
-
-| 文件 | 职责 |
-|---|---|
-| `AiAssistantDialog.vue` | 对话框主组件（消息列表、输入框、工具调用展示、**结构化 sections 渲染**、highlight.js 代码高亮、DOMPurify XSS 消毒、打字机效果 + fade-in 过渡、代码块复制按钮） |
-
-相关支撑文件：
-
-| 文件 | 职责 |
-|---|---|
-| `stores/ai.ts` | AI 对话 Pinia store（消息状态、SSE 流处理、sections 接收、会话管理） |
-| `api/ai.ts` | AI 接口封装（同步/流式对话、会话清理、Trace 查询、ContentBlock 类型定义） |
-| `views/ai/AgentTraceDetailView.vue` | Agent Trace 时间线详情页（侧边栏固定、阶段名称中文化、响应耗时统一秒显示） |
-| `views/event/EventListView.vue` | 调度事件列表（含定时/Agent/手动三种动态列、traceId 筛选、场景名称筛选、列宽自适应） |
-| `utils/space-permissions.ts` | 侧边栏菜单权限（空间审批在日志追踪之上，仅管理员可见） |
-
-前端 AI 渲染三路分支：
-
-1. **流式打字中** → `marked.parse(content)` + `protectTablesAndEscape()` 智能保护表格、转义普通文本 `\|` 防误判 + DOMPurify 消毒
-2. **完成 + 有 sections** → Vue `v-for` 按 type 渲染（h1/h2/h3、p、ul/ol、pre.hljs、blockquote、table）+ fade-in 动画
-3. **完成 + 无 sections** → 降级到 `marked.parse(content)` + DOMPurify 消毒
-
----
-
-## 15. 注意事项
-
-- `.env` 保存本地或服务器真实配置，不要提交 GitHub。
-- 根目录提供脱敏模板 `.env.example`，首次部署可复制为 `.env` 后替换占位值；不要提交真实的 `.env`。
-- MySQL、Redis、MinIO 使用 Docker volume 初始化后，修改 `.env` 密码不会自动修改已有数据卷里的账号密码。
-- 不要公网开放 MySQL 和 Redis。
-- MinIO Console 只建议限制来源 IP 后开放。
-- Docker Runner 需要挂载 `/var/run/docker.sock`，该权限较高，只建议用于本地开发或受控服务器。
-- 前端项目内如果存在 Vite 模板说明，以本仓库根目录 README 为准。
+| 项 | 内容 |
+|----|------|
+| 仓库 | https://github.com/MenXiaoHuan/testplatform |
+| 技术栈 | Vue 3 + Spring Boot 3.5 + Docker + Langfuse（建设中）|
+| Runner | **只使用 Docker Runner**（无宿主机降级路径）|
+| 测试范围 | Node.js / TypeScript / JavaScript `@playwright/test` 项目 |
+| 状态 | 🟢 活跃开发 |
