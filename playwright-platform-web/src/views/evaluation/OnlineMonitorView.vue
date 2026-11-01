@@ -176,15 +176,11 @@ async function loadTraces() {
 }
 
 async function loadMetrics() {
-  if (!traceQueryTargetId.value) {
-    metrics.value = null
-    return
-  }
   metricsLoading.value = true
   try {
     metrics.value = await get<any>('/evaluation/online/monitor/metrics', {
       params: {
-        targetId: traceQueryTargetId.value,
+        targetId: traceQueryTargetId.value || '',
         from: from.value ? toBeijingDayStart(from.value).toISOString() : toBeijingDayStart(daysAgoDate(6)).toISOString(),
         to: to.value ? toBeijingDayEnd(to.value).toISOString() : toBeijingDayEnd(new Date()).toISOString(),
         granularity: 'HOUR',
@@ -398,7 +394,7 @@ function autoRefresh() {
   if (document.hidden) return
   if (activeTab.value === 'traces') {
     loadTraces()
-    if (traceQueryTargetId.value) loadMetrics()
+    loadMetrics()
   } else {
     loadPolicies()
   }

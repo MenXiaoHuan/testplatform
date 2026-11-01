@@ -13,6 +13,7 @@ import { formatBeijingClock } from '../../utils/datetime'
 import { getTask } from '../../api/task'
 import { getScene } from '../../api/scene'
 import { getRepository } from '../../api/repository'
+import assistantIcon from '../../assets/zhizhi.png'
 
 marked.setOptions({
   gfm: true,
@@ -414,12 +415,7 @@ function copyTraceId(traceId?: string) {
       <header class="ai-dialog__header">
         <div class="ai-dialog__header-left">
           <div class="ai-dialog__icon">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 2a8 8 0 0 0-8 8v6a4 4 0 0 0 4 4h8a4 4 0 0 0 4-4v-6a8 8 0 0 0-8-8z"/>
-              <circle cx="9" cy="11" r="1" fill="currentColor"/>
-              <circle cx="15" cy="11" r="1" fill="currentColor"/>
-              <path d="M9 15c1 1 2 1.5 3 1.5s2-.5 3-1.5"/>
-            </svg>
+            <img :src="assistantIcon" alt="知知" />
           </div>
           <div class="ai-dialog__title-group">
             <h3 class="ai-dialog__title">知知</h3>
@@ -453,14 +449,9 @@ function copyTraceId(traceId?: string) {
       <div ref="messagesContainerRef" class="ai-dialog__messages" @click="handleEntityClick">
         <div v-if="messages.length === 0" class="ai-dialog__welcome">
           <div class="ai-dialog__welcome-icon">
-            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 2a8 8 0 0 0-8 8v6a4 4 0 0 0 4 4h8a4 4 0 0 0 4-4v-6a8 8 0 0 0-8-8z"/>
-              <circle cx="9" cy="11" r="1" fill="currentColor"/>
-              <circle cx="15" cy="11" r="1" fill="currentColor"/>
-              <path d="M9 15c1 1 2 1.5 3 1.5s2-.5 3-1.5"/>
-            </svg>
+            <img :src="assistantIcon" alt="知知" />
           </div>
-          <h4>你好，有什么我能帮你的吗？</h4>
+          <h4>有什么我能帮你的吗？</h4>
           <div class="ai-dialog__quick-actions">
             <el-button
               v-for="action in quickActions"
@@ -506,11 +497,7 @@ function copyTraceId(traceId?: string) {
                 </svg>
               </div>
               <div v-else class="ai-message__avatar-ai">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M12 2a8 8 0 0 0-8 8v6a4 4 0 0 0 4 4h8a4 4 0 0 0 4-4v-6a8 8 0 0 0-8-8z"/>
-                  <circle cx="9" cy="11" r="1" fill="currentColor"/>
-                  <circle cx="15" cy="11" r="1" fill="currentColor"/>
-                </svg>
+                <img :src="assistantIcon" alt="知知" class="ai-avatar-assistant" />
               </div>
             </div>
             <div class="ai-message__content">
@@ -750,9 +737,9 @@ function copyTraceId(traceId?: string) {
 }
 
 .ai-dialog {
-  width: 560px;
+  width: 720px;
   max-width: calc(100vw - 48px);
-  height: min(760px, calc(100vh - 48px));
+  height: min(640px, calc(100vh - 48px));
   display: flex;
   flex-direction: column;
   background: #ffffff;
@@ -782,11 +769,16 @@ function copyTraceId(traceId?: string) {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 38px;
-  height: 38px;
-  border-radius: 12px;
-  background: linear-gradient(135deg, #14b8a6, #0f9f92);
-  color: #ffffff;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+}
+
+.ai-dialog__icon img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .ai-dialog__title-group {
@@ -843,11 +835,15 @@ function copyTraceId(traceId?: string) {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 72px;
-  height: 72px;
-  border-radius: 24px;
-  background: linear-gradient(135deg, rgba(20, 184, 166, 0.12), rgba(20, 184, 166, 0.04));
-  color: #14b8a6;
+  width: 84px;
+  height: 84px;
+}
+
+.ai-dialog__welcome-icon img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .ai-dialog__welcome h4 {
@@ -918,8 +914,14 @@ function copyTraceId(traceId?: string) {
 }
 
 .ai-message__avatar-ai {
-  background: linear-gradient(135deg, #14b8a6, #0f9f92);
-  color: #ffffff;
+  background: transparent;
+}
+
+.ai-avatar-assistant {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .ai-message__avatar-error {

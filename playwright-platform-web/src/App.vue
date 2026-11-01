@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import Cropper from 'cropperjs'
 import 'cropperjs/dist/cropper.css'
 import defaultAvatarUrl from './assets/default-avatar.svg'
+import assistantIcon from './assets/zhizhi.png'
 import SidebarUserPanel from './components/layout/SidebarUserPanel.vue'
 import SpaceSwitcher from './components/layout/SpaceSwitcher.vue'
 import AiAssistantDialog from './components/ai/AiAssistantDialog.vue'
@@ -56,6 +57,10 @@ const assistantContext = computed(() => {
 
   return null
 })
+
+const assistantFabLabel = computed(() =>
+  assistantContext.value?.taskId ? `分析任务 #${assistantContext.value.taskId}` : '知知',
+)
 
 function openAssistant() {
   if (typeof spaceStore.currentSpaceId !== 'number') {
@@ -268,15 +273,11 @@ onBeforeUnmount(() => {
         <button
           v-if="showAssistantButton && !aiStore.visible"
           class="ai-fab"
-          :title="assistantContext?.taskId ? `分析任务 #${assistantContext.taskId}` : '知知'"
+          :aria-label="assistantFabLabel"
           @click="openAssistant"
         >
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 2a8 8 0 0 0-8 8v6a4 4 0 0 0 4 4h8a4 4 0 0 0 4-4v-6a8 8 0 0 0-8-8z"/>
-            <circle cx="9" cy="11" r="1" fill="currentColor"/>
-            <circle cx="15" cy="11" r="1" fill="currentColor"/>
-            <path d="M9 15c1 1 2 1.5 3 1.5s2-.5 3-1.5"/>
-          </svg>
+          <img :src="assistantIcon" alt="知知" />
+          <span class="ai-fab__tooltip">{{ assistantFabLabel }}</span>
         </button>
       </Teleport>
 
@@ -575,27 +576,65 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 56px;
-  height: 56px;
+  width: 64px;
+  height: 64px;
   padding: 0;
   border: none;
-  border-radius: 18px;
-  background: linear-gradient(135deg, #14b8a6, #0f9f92);
-  color: #ffffff;
+  background: transparent;
   cursor: pointer;
-  box-shadow:
-    0 12px 32px rgba(20, 184, 166, 0.35),
-    0 4px 12px rgba(15, 23, 42, 0.12);
+  transition: transform 160ms ease;
+}
+
+.ai-fab img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 6px 14px rgba(15, 23, 42, 0.18));
+}
+
+.ai-fab__tooltip {
+  position: absolute;
+  right: calc(100% + 12px);
+  top: 50%;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.92);
+  color: #ffffff;
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-50%) translateX(4px);
   transition:
-    transform 160ms ease,
-    box-shadow 160ms ease;
+    opacity 140ms ease,
+    transform 140ms ease;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.18);
+}
+
+.ai-fab__tooltip::after {
+  content: '';
+  position: absolute;
+  left: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  border: 5px solid transparent;
+  border-left-color: rgba(15, 23, 42, 0.92);
+}
+
+.ai-fab:hover .ai-fab__tooltip,
+.ai-fab:focus-visible .ai-fab__tooltip {
+  opacity: 1;
+  transform: translateY(-50%) translateX(0);
 }
 
 .ai-fab:hover {
   transform: translateY(-2px) scale(1.04);
-  box-shadow:
-    0 16px 40px rgba(20, 184, 166, 0.45),
-    0 6px 16px rgba(15, 23, 42, 0.16);
+}
+
+.ai-fab:hover img {
+  filter: drop-shadow(0 10px 22px rgba(15, 23, 42, 0.24));
 }
 
 .ai-fab:active {

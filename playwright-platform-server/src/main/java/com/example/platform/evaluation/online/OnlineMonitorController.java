@@ -32,7 +32,7 @@ public class OnlineMonitorController {
 
     @GetMapping("/metrics")
     public ApiResponse<LangfuseMetricsResult> metrics(
-            @RequestParam String targetId,
+            @RequestParam(required = false) String targetId,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant from,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to,
             @RequestParam(defaultValue = "HOUR") MetricsQuery.Granularity granularity) {
@@ -40,10 +40,10 @@ public class OnlineMonitorController {
                 new MetricsQuery(resolveTraceTargetId(targetId), from, to, granularity)));
     }
 
-    /** 内置 Agent 的 Trace 统一按 target_id=builtin_agent 归档。 */
+    /** 内置 Agent 的 Trace 统一按 target_id=builtin_agent 归档；空值表示全部 Agent。 */
     private String resolveTraceTargetId(String targetId) {
         if (targetId == null || targetId.isBlank()) {
-            return targetId;
+            return null;
         }
         String normalized = targetId.trim();
         if (SOURCE_BUILTIN_AGENT.equalsIgnoreCase(normalized)) {

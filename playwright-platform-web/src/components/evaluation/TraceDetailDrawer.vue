@@ -181,44 +181,74 @@ watch(
       </el-alert>
 
       <template v-else-if="detail">
-        <el-descriptions :column="2" border size="small">
-          <el-descriptions-item label="Trace ID" :span="2">
-            <span class="mono">{{ detail.trace.traceId }}</span>
-            <el-button link type="primary" size="small" @click="copyTraceId(detail.trace.traceId)">复制</el-button>
-          </el-descriptions-item>
-          <el-descriptions-item label="名称">{{ detail.trace.name || '—' }}</el-descriptions-item>
-          <el-descriptions-item label="状态">
-            <el-tag :type="detail.trace.success ? 'success' : 'danger'" size="small" effect="plain">
-              {{ detail.trace.success ? '成功' : '失败' }}
-            </el-tag>
-          </el-descriptions-item>
-          <el-descriptions-item label="开始时间">{{ fmtTime(detail.trace.startTime) }}</el-descriptions-item>
-          <el-descriptions-item label="延迟">{{ fmtDuration(detail.trace.durationMs) }}</el-descriptions-item>
-          <el-descriptions-item label="Token 输入 / 输出">
-            {{ detail.trace.inputTokens ?? 0 }} / {{ detail.trace.outputTokens ?? 0 }}
-          </el-descriptions-item>
-          <el-descriptions-item label="会话">{{ detail.trace.sessionId || '—' }}</el-descriptions-item>
-          <el-descriptions-item label="标签" :span="2">
+        <section class="trace-summary">
+          <div class="trace-summary__top">
+            <div class="trace-summary__title">
+              <h3 class="trace-name">{{ detail.trace.name || '未命名 Trace' }}</h3>
+              <el-tag
+                :type="detail.trace.success ? 'success' : 'danger'"
+                size="small"
+                effect="light"
+                round
+              >
+                {{ detail.trace.success ? '成功' : '失败' }}
+              </el-tag>
+            </div>
+            <div class="trace-id">
+              <span class="trace-id__label">Trace ID</span>
+              <span class="mono trace-id__value">{{ detail.trace.traceId }}</span>
+              <el-button link type="primary" size="small" @click="copyTraceId(detail.trace.traceId)">复制</el-button>
+            </div>
+          </div>
+
+          <div class="trace-stats">
+            <div class="trace-stat">
+              <span class="trace-stat__label">延迟</span>
+              <span class="trace-stat__value">{{ fmtDuration(detail.trace.durationMs) }}</span>
+            </div>
+            <div class="trace-stat">
+              <span class="trace-stat__label">Token 输入 / 输出</span>
+              <span class="trace-stat__value">{{ detail.trace.inputTokens ?? 0 }} / {{ detail.trace.outputTokens ?? 0 }}</span>
+            </div>
+            <div class="trace-stat">
+              <span class="trace-stat__label">会话</span>
+              <span class="trace-stat__value mono trace-stat__value--truncate" :title="detail.trace.sessionId || ''">
+                {{ detail.trace.sessionId || '—' }}
+              </span>
+            </div>
+            <div class="trace-stat">
+              <span class="trace-stat__label">开始时间</span>
+              <span class="trace-stat__value">{{ fmtTime(detail.trace.startTime) }}</span>
+            </div>
+          </div>
+
+          <div v-if="(detail.trace.tags || []).length" class="trace-tags">
             <el-tag
               v-for="tag in detail.trace.tags || []"
               :key="tag"
               size="small"
               effect="plain"
+              round
               class="tag-item"
             >{{ tag }}</el-tag>
-            <span v-if="!(detail.trace.tags || []).length">—</span>
-          </el-descriptions-item>
-          <el-descriptions-item label="输入" :span="2">
-            <pre class="json-block">{{ prettyJson(detail.trace.input) || '—' }}</pre>
-          </el-descriptions-item>
-          <el-descriptions-item label="输出" :span="2">
-            <pre class="json-block">{{ prettyJson(detail.trace.output) || '—' }}</pre>
-          </el-descriptions-item>
-        </el-descriptions>
+          </div>
+        </section>
 
-        <el-divider content-position="left">
-          链路（{{ detail.observations?.length ?? 0 }} 个步骤）
-        </el-divider>
+        <section class="trace-section">
+          <div class="trace-section__head"><h4>输入</h4></div>
+          <pre class="json-block">{{ prettyJson(detail.trace.input) || '—' }}</pre>
+        </section>
+
+        <section class="trace-section">
+          <div class="trace-section__head"><h4>输出</h4></div>
+          <pre class="json-block">{{ prettyJson(detail.trace.output) || '—' }}</pre>
+        </section>
+
+        <section class="trace-section trace-section--chain">
+          <div class="trace-section__head">
+            <h4>链路</h4>
+            <span class="trace-section__count">{{ detail.observations?.length ?? 0 }} 个步骤</span>
+          </div>
 
         <el-empty
           v-if="!observationTree.length"
@@ -252,41 +282,65 @@ watch(
           </el-tree>
 
           <template v-if="selectedObservation">
-            <el-divider content-position="left">
-              步骤详情 · {{ selectedObservation.name || selectedObservation.observationId }}
-            </el-divider>
-            <el-descriptions :column="2" border size="small">
-              <el-descriptions-item label="类型">{{ obsTypeMeta(selectedObservation.type).label }}</el-descriptions-item>
-              <el-descriptions-item label="模型">{{ selectedObservation.model || '—' }}</el-descriptions-item>
-              <el-descriptions-item label="开始">{{ fmtTime(selectedObservation.startTime) }}</el-descriptions-item>
-              <el-descriptions-item label="延迟">{{ fmtDuration(selectedObservation.latencyMs) }}</el-descriptions-item>
-              <el-descriptions-item label="Token 输入 / 输出 / 合计">
-                {{ selectedObservation.inputTokens ?? 0 }} /
-                {{ selectedObservation.outputTokens ?? 0 }} /
-                {{ selectedObservation.totalTokens ?? 0 }}
-              </el-descriptions-item>
-              <el-descriptions-item label="状态">
+            <div class="obs-detail">
+              <div class="obs-detail__head">
+                <el-tag :type="obsTypeMeta(selectedObservation.type).tag" size="small" effect="plain">
+                  {{ obsTypeMeta(selectedObservation.type).label }}
+                </el-tag>
+                <span class="obs-detail__name">{{ selectedObservation.name || selectedObservation.observationId }}</span>
                 <el-tag
                   :type="selectedObservation.level === 'ERROR' ? 'danger' : 'success'"
                   size="small"
-                  effect="plain"
+                  effect="light"
+                  round
                 >{{ selectedObservation.level || 'DEFAULT' }}</el-tag>
-              </el-descriptions-item>
-              <el-descriptions-item v-if="selectedObservation.statusMessage" label="状态信息" :span="2">
+              </div>
+
+              <dl class="obs-facts">
+                <div class="obs-fact">
+                  <dt>模型</dt>
+                  <dd>{{ selectedObservation.model || '—' }}</dd>
+                </div>
+                <div class="obs-fact">
+                  <dt>开始</dt>
+                  <dd>{{ fmtTime(selectedObservation.startTime) }}</dd>
+                </div>
+                <div class="obs-fact">
+                  <dt>延迟</dt>
+                  <dd>{{ fmtDuration(selectedObservation.latencyMs) }}</dd>
+                </div>
+                <div class="obs-fact">
+                  <dt>Token 输入 / 输出 / 合计</dt>
+                  <dd>
+                    {{ selectedObservation.inputTokens ?? 0 }} /
+                    {{ selectedObservation.outputTokens ?? 0 }} /
+                    {{ selectedObservation.totalTokens ?? 0 }}
+                  </dd>
+                </div>
+              </dl>
+
+              <div v-if="selectedObservation.statusMessage" class="obs-status">
                 {{ selectedObservation.statusMessage }}
-              </el-descriptions-item>
-              <el-descriptions-item v-if="selectedObservation.metadata && Object.keys(selectedObservation.metadata).length" label="元数据" :span="2">
+              </div>
+
+              <div v-if="selectedObservation.metadata && Object.keys(selectedObservation.metadata).length" class="obs-subsection">
+                <span class="obs-subsection__label">元数据</span>
                 <pre class="json-block">{{ prettyJson(selectedObservation.metadata) }}</pre>
-              </el-descriptions-item>
-              <el-descriptions-item label="输入" :span="2">
+              </div>
+
+              <div class="obs-subsection">
+                <span class="obs-subsection__label">输入</span>
                 <pre class="json-block">{{ prettyJson(selectedObservation.input) || '—' }}</pre>
-              </el-descriptions-item>
-              <el-descriptions-item label="输出" :span="2">
+              </div>
+
+              <div class="obs-subsection">
+                <span class="obs-subsection__label">输出</span>
                 <pre class="json-block">{{ prettyJson(selectedObservation.output) || '—' }}</pre>
-              </el-descriptions-item>
-            </el-descriptions>
+              </div>
+            </div>
           </template>
         </template>
+        </section>
       </template>
 
       <el-empty v-else description="没有 Trace 数据" :image-size="80" />
@@ -295,19 +349,283 @@ watch(
 </template>
 
 <style scoped>
-.drawer-body { padding: 0 8px 24px; }
-.trace-alert { margin-bottom: 16px; }
-.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
-.tag-item { margin: 2px 4px 2px 0; }
-.json-block {
-  margin: 0; padding: 10px 12px; background: #f8fafc; border: 1px solid #e2e8f0;
-  border-radius: 8px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12.5px; color: #0f172a; line-height: 1.6;
-  white-space: pre-wrap; word-break: break-all; max-height: 320px; overflow: auto;
+.drawer-body {
+  display: grid;
+  gap: 18px;
+  padding: 4px 4px 28px;
 }
-.obs-tree { background: transparent; }
-.obs-node { display: flex; align-items: center; gap: 8px; padding: 2px 0; }
-.obs-node__name { font-weight: 600; color: #0f172a; font-size: 13px; }
-.obs-node__model { font-size: 12px; color: #64748b; }
-.obs-node__meta { font-size: 12px; color: #94a3b8; }
+
+.trace-alert { margin-bottom: 0; }
+
+.trace-summary {
+  padding: 18px 20px;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #f8fafc 0%, #ffffff 62%);
+}
+
+.trace-summary__top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px 20px;
+}
+
+.trace-summary__title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.trace-name {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: #0f172a;
+  word-break: break-all;
+}
+
+.trace-id {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.trace-id__label {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.trace-id__value {
+  color: #334155;
+  word-break: break-all;
+}
+
+.trace-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.trace-stat {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid #eef2f7;
+  border-radius: 10px;
+  background: #ffffff;
+}
+
+.trace-stat__label {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.trace-stat__value {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.trace-stat__value--truncate {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trace-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.trace-section {
+  display: grid;
+  gap: 10px;
+}
+
+.trace-section__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.trace-section__head h4 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.trace-section__count {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.trace-section--chain {
+  padding-top: 16px;
+  border-top: 1px solid #eef2f7;
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+}
+
+.tag-item { margin: 0; }
+
+.json-block {
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid #e8edf4;
+  border-radius: 10px;
+  background: #f8fafc;
+  color: #0f172a;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 280px;
+  overflow: auto;
+  transition: border-color 160ms ease;
+}
+
+.json-block:hover {
+  border-color: #cbd5e1;
+}
+
+.obs-tree {
+  background: transparent;
+}
+
+.obs-tree :deep(.el-tree-node__content) {
+  height: auto;
+  min-height: 38px;
+  padding: 2px 6px;
+  border-radius: 8px;
+}
+
+.obs-tree :deep(.el-tree-node__content:hover) {
+  background: #f1f5f9;
+}
+
+.obs-tree :deep(.el-tree-node.is-current > .el-tree-node__content) {
+  background: rgba(20, 184, 166, 0.1);
+}
+
+.obs-node {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.obs-node__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  color: #0f172a;
+  font-size: 13px;
+}
+
+.obs-node__model {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.obs-node__meta {
+  margin-left: auto;
+  font-size: 12px;
+  color: #94a3b8;
+  white-space: nowrap;
+}
+
+.obs-detail {
+  display: grid;
+  gap: 14px;
+  margin-top: 8px;
+  padding: 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.obs-detail__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.obs-detail__name {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+  word-break: break-all;
+}
+
+.obs-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 20px;
+  margin: 0;
+}
+
+.obs-fact {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.obs-fact dt {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.obs-fact dd {
+  margin: 0;
+  font-size: 13px;
+  color: #0f172a;
+  word-break: break-all;
+}
+
+.obs-status {
+  padding: 10px 12px;
+  border: 1px solid #fecaca;
+  border-radius: 10px;
+  background: #fef2f2;
+  color: #b91c1c;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.obs-subsection {
+  display: grid;
+  gap: 6px;
+}
+
+.obs-subsection__label {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+@media (max-width: 900px) {
+  .trace-stats,
+  .obs-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
 </style>
