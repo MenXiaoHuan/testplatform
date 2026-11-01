@@ -136,4 +136,16 @@ public interface SpaceMemberMapper {
             where space_id = #{spaceId}
             """)
     int deleteBySpaceId(@Param("spaceId") Long spaceId);
+
+    /**
+     * 删除指定用户的全部空间成员记录（用户被删除时清理）。
+     *
+     * @param userId 用户ID
+     * @return 受影响的行数
+     */
+    @Delete("""
+            delete from space_member
+            where user_id = #{userId}
+            """)
+    int deleteByUserId(@Param("userId") Long userId);
 }

@@ -10,6 +10,7 @@ import com.example.platform.ai.output.OutputFormatFallbackService;
 import com.example.platform.ai.session.*;
 import com.example.platform.ai.skill.SkillIndexLoader;
 import com.example.platform.ai.tools.ToolErrorFallback;
+import com.example.platform.ai.trace.AgentTraceRecorder;
 import com.example.platform.auth.context.AuthContextHolder;
 import com.example.platform.space.service.SpaceAuthorizationService;
 import com.example.platform.scene.service.ScheduleEventService;
@@ -39,7 +40,7 @@ import java.util.*;
  * <p>依赖：{@link ReactAgent}（智能助手）、{@link ChatSessionManager}、
  * {@link ContextCompressionService}、{@link OutputFormatFallbackService}、
  * {@link ToolErrorFallback}、{@link AgentCallManager}、{@link AgentObservability}、
- * {@link AgentTraceLogService}、{@link InputSanitizer}、{@link ScheduleEventService}。
+ * {@link AgentTraceRecorder}、{@link InputSanitizer}、{@link ScheduleEventService}。
  */
 @Service
 public class AgentService {
@@ -54,7 +55,7 @@ public class AgentService {
     private final AgentCallManager callManager;
     private final InputSanitizer inputSanitizer;
     private final AgentObservability observability;
-    private final AgentTraceLogService traceLogService;
+    private final AgentTraceRecorder traceRecorder;
     private final SkillIndexLoader skillIndexLoader;
     private final ScheduleEventService scheduleEventService;
     private final SpaceAuthorizationService spaceAuthorizationService;
@@ -70,7 +71,7 @@ public class AgentService {
             AgentCallManager callManager,
             InputSanitizer inputSanitizer,
             AgentObservability observability,
-            AgentTraceLogService traceLogService,
+            AgentTraceRecorder traceRecorder,
             SkillIndexLoader skillIndexLoader,
             ScheduleEventService scheduleEventService,
             SpaceAuthorizationService spaceAuthorizationService,
@@ -86,7 +87,7 @@ public class AgentService {
         this.callManager = callManager;
         this.inputSanitizer = inputSanitizer;
         this.observability = observability;
-        this.traceLogService = traceLogService;
+        this.traceRecorder = traceRecorder;
         this.skillIndexLoader = skillIndexLoader;
         this.scheduleEventService = scheduleEventService;
         this.spaceAuthorizationService = spaceAuthorizationService;
@@ -106,16 +107,25 @@ public class AgentService {
     }
 
     public ChatResponse chat(ChatRequest request) {
+        return chat(request, UUID.randomUUID().toString());
+    }
+
+    /**
+     * 带显式 traceId 的同步对话 —— 供评测平台的内置 Agent Adapter 复用，
+     * 使返回的 traceId 与写入 Langfuse 的 traceId 一致。
+     */
+    public ChatResponse chat(ChatRequest request, String traceId) {
         Instant startTime = Instant.now();
         String sessionId = request.sessionId();
-        String traceId = UUID.randomUUID().toString();
 
         String userMessage = request.message() != null ? request.message() : "";
 
         log.info("[TRACE:{}] Processing chat request: sessionId={}, spaceId={}, taskId={}, messageLength={}",
                 traceId, sessionId, request.spaceId(), request.taskId(), userMessage.length());
 
-        traceLogService.log(traceId, "INFO", "REQUEST_RECEIVED",
+        traceRecorder.startTrace(traceId, sessionId, currentUserId(), request.spaceId(), userMessage);
+
+        traceRecorder.recordStage(traceId, "INFO", "REQUEST_RECEIVED",
                 "Chat request received", Map.of(
                         "sessionId", sessionId != null ? sessionId : "new",
                         "spaceId", request.spaceId() != null ? request.spaceId() : 0,
@@ -143,16 +153,16 @@ public class AgentService {
             }
             Long userId = currentUserId();
             AgentRequestContext.register(traceId, userId, spaceId);
-            traceLogService.bindOwner(traceId, userId, spaceId);
 
             InputSanitizer.SanitizeResult sanitizeResult = inputSanitizer.sanitize(request.message());
             if (!sanitizeResult.valid()) {
                 log.warn("[TRACE:{}] Input sanitization failed: sessionId={}, reason={}",
                         traceId, sessionId, sanitizeResult.rejectionReason());
-                traceLogService.log(traceId, "ERROR", "SANITIZATION_FAILED",
+                traceRecorder.recordStage(traceId, "ERROR", "SANITIZATION_FAILED",
                         "Input sanitization failed: " + sanitizeResult.rejectionReason(),
                         Map.of("sessionId", sessionId != null ? sessionId : "new"));
                 observability.recordError(traceId, "SANITIZATION", sanitizeResult.rejectionReason());
+                traceRecorder.finishTrace(traceId, null, false, sanitizeResult.rejectionReason());
                 return buildErrorResponse(
                         traceId,
                         new IllegalArgumentException(sanitizeResult.rejectionReason()),
@@ -177,7 +187,7 @@ public class AgentService {
             sessionReadyMeta.put("hasSystemPrompt", session.systemPrompt() != null && !session.systemPrompt().isBlank());
             sessionReadyMeta.put("systemPromptTokens", session.systemPromptTokens());
             sessionReadyMeta.put("messageHistory", formatMessagesForTrace(session.messages()));
-            traceLogService.log(traceId, "INFO", "SESSION_READY",
+            traceRecorder.recordStage(traceId, "INFO", "SESSION_READY",
                     "Chat session loaded", sessionReadyMeta);
 
             ContextCompressionService.CompressionResult compressionResult =
@@ -187,7 +197,7 @@ public class AgentService {
                 sessionManager.updateMessages(sessionId, session.messages());
                 log.info("Session context compressed: sessionId={}, tokens={}->{}",
                         sessionId, compressionResult.originalTokens(), compressionResult.compressedTokens());
-                traceLogService.log(traceId, "INFO", "CONTEXT_COMPRESSED",
+                traceRecorder.recordStage(traceId, "INFO", "CONTEXT_COMPRESSED",
                         "Session context compressed",
                         Map.of("originalTokens", compressionResult.originalTokens(),
                                 "compressedTokens", compressionResult.compressedTokens(),
@@ -201,7 +211,7 @@ public class AgentService {
                 ctxMeta.put("systemPromptTokens", session.systemPromptTokens());
                 ctxMeta.put("sessionId", session.sessionId());
                 ctxMeta.put("messageHistory", formatMessagesForTrace(session.messages()));
-                traceLogService.log(traceId, "INFO", "CONTEXT_READY",
+                traceRecorder.recordStage(traceId, "INFO", "CONTEXT_READY",
                         "Session context ready (not compressed)", ctxMeta);
             }
 
@@ -220,7 +230,7 @@ public class AgentService {
                 systemPromptMeta.put("skillIndexText", skillIndexLoader.getIndexText());
             }
 
-            traceLogService.log(traceId, "INFO", "SYSTEM_PROMPT_LOADED",
+            traceRecorder.recordStage(traceId, "INFO", "SYSTEM_PROMPT_LOADED",
                     "System prompt + skill index prepared", systemPromptMeta);
 
             ChatMessage chatUserMessage = ChatMessage.user(sanitizeResult.sanitizedInput());
@@ -229,7 +239,7 @@ public class AgentService {
             int promptTokens = ChatSession.estimateTotalTokens(session.messages(), session.systemPrompt());
             int maxAllowedTokens = compressionService.getMaxTokens();
 
-            traceLogService.log(traceId, "INFO", "PROMPT_TOKEN_BUDGET",
+            traceRecorder.recordStage(traceId, "INFO", "PROMPT_TOKEN_BUDGET",
                     "Token budget check before Agent call",
                     Map.of(
                             "promptTokens", promptTokens,
@@ -246,7 +256,7 @@ public class AgentService {
                 sessionManager.updateMessages(sessionId, session.messages());
 
                 promptTokens = ChatSession.estimateTotalTokens(session.messages(), session.systemPrompt());
-                traceLogService.log(traceId, "WARN", "PROMPT_TRUNCATED",
+                traceRecorder.recordStage(traceId, "WARN", "PROMPT_TRUNCATED",
                         "Prompt truncated to fit token budget",
                         Map.of("truncatedTokens", promptTokens, "maxTokens", maxAllowedTokens));
 
@@ -275,10 +285,10 @@ public class AgentService {
             promptBuiltMeta.put("hasSummary", hasStructuredSummary(session));
             promptBuiltMeta.put("structuredSummary", extractStructuredSummaryText(session));
             promptBuiltMeta.put("recentMessages", extractRecentMessagesText(session));
-            traceLogService.log(traceId, "INFO", "PROMPT_BUILT",
+            traceRecorder.recordStage(traceId, "INFO", "PROMPT_BUILT",
                     "Full prompt constructed for Agent call", promptBuiltMeta);
 
-            traceLogService.log(traceId, "INFO", "AGENT_CALL_STARTING",
+            traceRecorder.recordStage(traceId, "INFO", "AGENT_CALL_STARTING",
                     "Starting Agent call with ReAct loop",
                     Map.of(
                             "model", "deepseek-chat",
@@ -311,7 +321,7 @@ public class AgentService {
 
             if (!callResult.success()) {
                 log.error("[TRACE:{}] Agent call failed: sessionId={}, error={}", traceId, sessionId, callResult.errorMessage());
-                traceLogService.log(traceId, "ERROR", "AGENT_CALL_FAILED",
+                traceRecorder.recordStage(traceId, "ERROR", "AGENT_CALL_FAILED",
                         "Agent call failed: " + callResult.errorMessage());
                 observability.recordError(traceId, "AGENT_CALL", callResult.errorMessage());
                 return buildErrorResponse(
@@ -324,7 +334,7 @@ public class AgentService {
 
             String responseText = callResult.data();
 
-            traceLogService.log(traceId, "INFO", "AGENT_CALL_SUCCESS",
+            traceRecorder.recordStage(traceId, "INFO", "AGENT_CALL_SUCCESS",
                     "Agent call completed successfully",
                     Map.of(
                             "responseLength", responseText != null ? responseText.length() : 0,
@@ -340,11 +350,11 @@ public class AgentService {
             if (!parseResult.success()) {
                 log.warn("[TRACE:{}] Output parsing used fallback: sessionId={}, strategy={}",
                         traceId, sessionId, parseResult.strategy());
-                traceLogService.log(traceId, "WARN", "OUTPUT_PARSE_FALLBACK",
+                traceRecorder.recordStage(traceId, "WARN", "OUTPUT_PARSE_FALLBACK",
                         "Output parsing used fallback: " + parseResult.strategy());
             }
 
-            traceLogService.log(traceId, "INFO", "OUTPUT_PARSED",
+            traceRecorder.recordStage(traceId, "INFO", "OUTPUT_PARSED",
                     "Agent output parsed",
                     Map.of(
                             "parsingStrategy", parseResult.strategy(),
@@ -382,7 +392,7 @@ public class AgentService {
                     result.responseType(),
                     compressionResult.compressed());
 
-            traceLogService.log(traceId, "INFO", "REQUEST_COMPLETED",
+            traceRecorder.recordStage(traceId, "INFO", "REQUEST_COMPLETED",
                     "Chat request completed",
                     Map.of("responseLength", responseText.length(),
                             "processingTime", processingTime,
@@ -395,6 +405,7 @@ public class AgentService {
                     session.messageCount(), false);
 
             success[0] = true;
+            traceRecorder.finishTrace(traceId, responseText, true, null);
             return new ChatResponse(
                     traceId,
                     responseText,
@@ -412,6 +423,9 @@ public class AgentService {
         } catch (Exception e) {
             Duration elapsed = Duration.between(startTime, Instant.now());
             log.error("[TRACE:{}] Unexpected error in chat: sessionId={}, time={}", traceId, sessionId, elapsed.toMillis(), e);
+            traceRecorder.recordStage(traceId, "ERROR", "UNEXPECTED_ERROR",
+                    "Unexpected error in chat: " + e.getMessage());
+            traceRecorder.finishTrace(traceId, null, false, e.getMessage());
             observability.recordError(traceId, "UNEXPECTED", e.getMessage());
             return buildErrorResponse(traceId, e, sessionId, false);
         } finally {
@@ -438,16 +452,28 @@ public class AgentService {
     }
 
     public ChatResponse chatStream(ChatRequest request, StreamCallback callback) {
+        return chatStream(request, callback, UUID.randomUUID().toString());
+    }
+
+    /**
+     * 带显式 traceId 的流式对话 —— 继承上游 traceparent 的 trace-id，
+     * 使外部调用方与 Langfuse 中的 trace 双向绑定。
+     */
+    public ChatResponse chatStream(ChatRequest request, StreamCallback callback, String upstreamTraceId) {
         Instant startTime = Instant.now();
         String sessionId = request.sessionId();
-        String traceId = UUID.randomUUID().toString();
+        String traceId = upstreamTraceId != null && !upstreamTraceId.isBlank()
+                ? upstreamTraceId
+                : UUID.randomUUID().toString();
 
         String userMessage = request.message() != null ? request.message() : "";
 
         log.info("[TRACE:{}] Processing streaming chat request: sessionId={}, spaceId={}, taskId={}, messageLength={}",
                 traceId, sessionId, request.spaceId(), request.taskId(), userMessage.length());
 
-        traceLogService.log(traceId, "INFO", "REQUEST_RECEIVED",
+        traceRecorder.startTrace(traceId, sessionId, currentUserId(), request.spaceId(), userMessage);
+
+        traceRecorder.recordStage(traceId, "INFO", "REQUEST_RECEIVED",
                 "Streaming chat request received", Map.of(
                         "sessionId", sessionId != null ? sessionId : "new",
                         "spaceId", request.spaceId() != null ? request.spaceId() : 0,
@@ -475,16 +501,16 @@ public class AgentService {
             }
             Long userId = currentUserId();
             AgentRequestContext.register(traceId, userId, spaceId);
-            traceLogService.bindOwner(traceId, userId, spaceId);
 
             InputSanitizer.SanitizeResult sanitizeResult = inputSanitizer.sanitize(request.message());
             if (!sanitizeResult.valid()) {
                 log.warn("[TRACE:{}] Input sanitization failed: sessionId={}, reason={}",
                         traceId, sessionId, sanitizeResult.rejectionReason());
-                traceLogService.log(traceId, "ERROR", "SANITIZATION_FAILED",
+                traceRecorder.recordStage(traceId, "ERROR", "SANITIZATION_FAILED",
                         "Input sanitization failed: " + sanitizeResult.rejectionReason(),
                         Map.of("sessionId", sessionId != null ? sessionId : "new"));
                 observability.recordError(traceId, "SANITIZATION", sanitizeResult.rejectionReason());
+                traceRecorder.finishTrace(traceId, null, false, sanitizeResult.rejectionReason());
                 callback.onError(sanitizeResult.rejectionReason());
                 return buildErrorResponse(
                         traceId,
@@ -510,7 +536,7 @@ public class AgentService {
             sessionReadyMeta.put("hasSystemPrompt", session.systemPrompt() != null && !session.systemPrompt().isBlank());
             sessionReadyMeta.put("systemPromptTokens", session.systemPromptTokens());
             sessionReadyMeta.put("messageHistory", formatMessagesForTrace(session.messages()));
-            traceLogService.log(traceId, "INFO", "SESSION_READY",
+            traceRecorder.recordStage(traceId, "INFO", "SESSION_READY",
                     "Chat session loaded (stream)", sessionReadyMeta);
 
             ContextCompressionService.CompressionResult compressionResult =
@@ -521,7 +547,7 @@ public class AgentService {
                 sessionManager.updateMessages(sessionId, session.messages());
                 log.info("Session context compressed (stream): sessionId={}, tokens={}->{}",
                         sessionId, compressionResult.originalTokens(), compressionResult.compressedTokens());
-                traceLogService.log(traceId, "INFO", "CONTEXT_COMPRESSED",
+                traceRecorder.recordStage(traceId, "INFO", "CONTEXT_COMPRESSED",
                         "Session context compressed (stream)",
                         Map.of("originalTokens", compressionResult.originalTokens(),
                                 "compressedTokens", compressionResult.compressedTokens(),
@@ -535,7 +561,7 @@ public class AgentService {
                 ctxMeta.put("systemPromptTokens", session.systemPromptTokens());
                 ctxMeta.put("sessionId", session.sessionId());
                 ctxMeta.put("messageHistory", formatMessagesForTrace(session.messages()));
-                traceLogService.log(traceId, "INFO", "CONTEXT_READY",
+                traceRecorder.recordStage(traceId, "INFO", "CONTEXT_READY",
                         "Session context ready (stream, not compressed)", ctxMeta);
             }
 
@@ -554,7 +580,7 @@ public class AgentService {
                 systemPromptMeta.put("skillIndexText", skillIndexLoader.getIndexText());
             }
 
-            traceLogService.log(traceId, "INFO", "SYSTEM_PROMPT_LOADED",
+            traceRecorder.recordStage(traceId, "INFO", "SYSTEM_PROMPT_LOADED",
                     "System prompt + skill index prepared (stream)", systemPromptMeta);
 
             ChatMessage chatUserMsg = ChatMessage.user(sanitizeResult.sanitizedInput());
@@ -563,7 +589,7 @@ public class AgentService {
             int promptTokens = ChatSession.estimateTotalTokens(session.messages(), session.systemPrompt());
             int maxAllowedTokens = compressionService.getMaxTokens();
 
-            traceLogService.log(traceId, "INFO", "PROMPT_TOKEN_BUDGET",
+            traceRecorder.recordStage(traceId, "INFO", "PROMPT_TOKEN_BUDGET",
                     "Token budget check before Agent call (stream)",
                     Map.of(
                             "promptTokens", promptTokens,
@@ -580,7 +606,7 @@ public class AgentService {
                 sessionManager.updateMessages(sessionId, session.messages());
                 promptTokens = ChatSession.estimateTotalTokens(session.messages(), session.systemPrompt());
 
-                traceLogService.log(traceId, "WARN", "PROMPT_TRUNCATED",
+                traceRecorder.recordStage(traceId, "WARN", "PROMPT_TRUNCATED",
                         "Prompt truncated to fit token budget (stream)",
                         Map.of("truncatedTokens", promptTokens, "maxTokens", maxAllowedTokens));
 
@@ -610,10 +636,10 @@ public class AgentService {
             promptBuiltMetaStream.put("hasSummary", hasStructuredSummary(session));
             promptBuiltMetaStream.put("structuredSummary", extractStructuredSummaryText(session));
             promptBuiltMetaStream.put("recentMessages", extractRecentMessagesText(session));
-            traceLogService.log(traceId, "INFO", "PROMPT_BUILT",
+            traceRecorder.recordStage(traceId, "INFO", "PROMPT_BUILT",
                     "Full prompt constructed for Agent call (stream)", promptBuiltMetaStream);
 
-            traceLogService.log(traceId, "INFO", "AGENT_CALL_STARTING",
+            traceRecorder.recordStage(traceId, "INFO", "AGENT_CALL_STARTING",
                     "Starting Agent call with ReAct loop (stream)",
                     Map.of(
                             "model", "deepseek-chat",
@@ -652,7 +678,7 @@ public class AgentService {
 
             if (!callResult.success()) {
                 log.error("[TRACE:{}] Agent call failed (stream): sessionId={}, error={}", traceId, sessionId, callResult.errorMessage());
-                traceLogService.log(traceId, "ERROR", "AGENT_CALL_FAILED",
+                traceRecorder.recordStage(traceId, "ERROR", "AGENT_CALL_FAILED",
                         "Agent call failed (stream): " + callResult.errorMessage());
                 observability.recordError(traceId, "AGENT_CALL", callResult.errorMessage());
                 callback.onError(callResult.errorMessage());
@@ -665,7 +691,7 @@ public class AgentService {
 
             String responseText = callResult.data();
 
-            traceLogService.log(traceId, "INFO", "AGENT_CALL_SUCCESS",
+            traceRecorder.recordStage(traceId, "INFO", "AGENT_CALL_SUCCESS",
                     "Agent call completed successfully (stream)",
                     Map.of(
                             "responseLength", responseText != null ? responseText.length() : 0,
@@ -680,13 +706,13 @@ public class AgentService {
             if (!parseResult.success()) {
                 log.warn("[TRACE:{}] Output parsing used fallback (stream): sessionId={}, strategy={}",
                         traceId, sessionId, parseResult.strategy());
-                traceLogService.log(traceId, "WARN", "OUTPUT_PARSE_FALLBACK",
+                traceRecorder.recordStage(traceId, "WARN", "OUTPUT_PARSE_FALLBACK",
                         "Output parsing used fallback (stream): " + parseResult.strategy());
             }
 
             String fullResponse = result.deriveResponse();
 
-            traceLogService.log(traceId, "INFO", "OUTPUT_PARSED",
+            traceRecorder.recordStage(traceId, "INFO", "OUTPUT_PARSED",
                     "Agent output parsed (stream)",
                     Map.of(
                             "parsingStrategy", parseResult.strategy(),
@@ -743,7 +769,7 @@ public class AgentService {
 
             callback.onComplete(traceId, processingTime, sessionId);
 
-            traceLogService.log(traceId, "INFO", "REQUEST_COMPLETED",
+            traceRecorder.recordStage(traceId, "INFO", "REQUEST_COMPLETED",
                     "Streaming chat request completed",
                     Map.of(
                             "responseLength", fullResponse.length(),
@@ -762,6 +788,7 @@ public class AgentService {
                     session.messageCount(), false);
 
             success[0] = true;
+            traceRecorder.finishTrace(traceId, fullResponse, true, null);
             return new ChatResponse(
                     traceId,
                     fullResponse,
@@ -779,8 +806,9 @@ public class AgentService {
         } catch (Exception e) {
             Duration elapsed = Duration.between(startTime, Instant.now());
             log.error("[TRACE:{}] Unexpected error in streaming chat: sessionId={}, time={}", traceId, sessionId, elapsed.toMillis(), e);
-            traceLogService.log(traceId, "ERROR", "UNEXPECTED_ERROR",
+            traceRecorder.recordStage(traceId, "ERROR", "UNEXPECTED_ERROR",
                     "Unexpected error in streaming chat: " + e.getMessage());
+            traceRecorder.finishTrace(traceId, null, false, e.getMessage());
             observability.recordError(traceId, "UNEXPECTED", e.getMessage());
             callback.onError(e.getMessage());
             return buildErrorResponse(traceId, e, sessionId, false);
@@ -936,6 +964,7 @@ public class AgentService {
     }
 
     private ChatResponse buildErrorResponse(String traceId, Exception e, String sessionId, boolean contextCompressed) {
+        traceRecorder.finishTrace(traceId, null, false, e != null ? e.getMessage() : null);
         if (e instanceof IllegalArgumentException) {
             return new ChatResponse(
                     traceId,

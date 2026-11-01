@@ -9,6 +9,7 @@ import type { TaskStageLogRecord } from '../../types/task'
 import { toErrorMessage } from '../../utils/error'
 import { fetchStageLogContent } from '../../utils/stage-log'
 import { showAppToast } from '../../utils/ui-feedback'
+import { formatBeijingClock } from '../../utils/datetime'
 import {
   caseFilterLabel,
   caseStatusText,
@@ -197,12 +198,7 @@ function stageStatusText(status?: string | null) {
 }
 
 function formatTime(isoString: string) {
-  try {
-    const date = new Date(isoString)
-    return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-  } catch {
-    return isoString
-  }
+  return formatBeijingClock(isoString, true)
 }
 
 async function loadStageLogContent(item: TaskStageLogRecord) {

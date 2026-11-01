@@ -148,3 +148,46 @@ platform:
     mutex-ttl: ${PLATFORM_CACHE_MUTEX_TTL:5s}
     lock-retry-times: ${PLATFORM_CACHE_LOCK_RETRY_TIMES:3}
     lock-wait-millis: ${PLATFORM_CACHE_LOCK_WAIT_MILLIS:50}
+
+  # === 大模型评测模块配置 ===
+  evaluation:
+    offline:
+      max-concurrent: ${PLATFORM_EVAL_OFFLINE_MAX_CONCURRENT:4}
+      run-timeout-seconds: ${PLATFORM_EVAL_OFFLINE_RUN_TIMEOUT:7200}
+      sample-timeout-seconds: ${PLATFORM_EVAL_OFFLINE_SAMPLE_TIMEOUT:120}
+      judge-max-retries: ${PLATFORM_EVAL_OFFLINE_JUDGE_RETRIES:2}
+      max-running-per-space: ${PLATFORM_EVAL_OFFLINE_MAX_SPACE_RUNS:3}
+      max-target-concurrent-runs: ${PLATFORM_EVAL_OFFLINE_MAX_TARGET_RUNS:2}
+    online:
+      langfuse-gatekeeper-max-concurrent: ${PLATFORM_EVAL_ONLINE_GATE_MAX:8}
+      langfuse-query-cache-ttl-seconds: ${PLATFORM_EVAL_ONLINE_GATE_TTL:60}
+      metrics-cache-ttl-seconds: ${PLATFORM_EVAL_ONLINE_METRICS_TTL:60}
+      policy-scan-base-interval-minutes: ${PLATFORM_EVAL_ONLINE_SCAN_INTERVAL:5}
+      policy-scan-jitter-percent: ${PLATFORM_EVAL_ONLINE_SCAN_JITTER:20}
+    judge:
+      global-daily-tokens: ${PLATFORM_EVAL_JUDGE_GLOBAL_DAILY:5000000}
+      space-daily-tokens-default-fraction: ${PLATFORM_EVAL_JUDGE_SPACE_FRACTION:0.5}
+      auto-downgrade-on-budget-exhausted: ${PLATFORM_EVAL_JUDGE_DOWNGRADE:true}
+    # === 内置评测集官方全集自动同步 ===
+    builtin-sync:
+      # 官方数据源地址；受限网络下可指向自建代理/镜像
+      base-url: ${PLATFORM_EVAL_BUILTIN_SYNC_BASE_URL:https://datasets-server.huggingface.co}
+      # 单页请求失败时的最大尝试次数（含首次）
+      max-retries: ${PLATFORM_EVAL_BUILTIN_SYNC_MAX_RETRIES:3}
+      # 启动时若上次同步已超过该小时数则自动重新同步
+      refresh-hours: ${PLATFORM_EVAL_BUILTIN_SYNC_REFRESH_HOURS:24}
+      # datasets-server 不可达时，回退到镜像站下载官方 Parquet 并本地解析
+      mirror-base-url: ${PLATFORM_EVAL_BUILTIN_SYNC_MIRROR_BASE_URL:https://hf-mirror.com}
+      mirror-fallback-enabled: ${PLATFORM_EVAL_BUILTIN_SYNC_MIRROR_FALLBACK:true}
+    prompt:
+      cache-max-size: ${PLATFORM_EVAL_PROMPT_CACHE_MAX:1000}
+      cache-expire-after-write-seconds: ${PLATFORM_EVAL_PROMPT_CACHE_TTL:300}
+      seed-from-classpath-agent-md: ${PLATFORM_EVAL_PROMPT_SEED:true}
+    langfuse:
+      enabled: ${PLATFORM_EVAL_LANGFUSE_ENABLED:true}
+      host: ${LANGFUSE_HOST:http://localhost:3000}
+      public-key: ${LANGFUSE_PUBLIC_KEY:}
+      secret-key: ${LANGFUSE_SECRET_KEY:}
+      read-key-separated: ${LANGFUSE_READ_KEY_ENABLED:false}
+      read-public-key: ${LANGFUSE_READ_PUBLIC_KEY:}
+      read-secret-key: ${LANGFUSE_READ_SECRET_KEY:}

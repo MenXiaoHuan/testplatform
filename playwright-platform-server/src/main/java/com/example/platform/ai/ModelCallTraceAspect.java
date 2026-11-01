@@ -1,5 +1,6 @@
 package com.example.platform.ai;
 
+import com.example.platform.ai.trace.AgentTraceRecorder;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
@@ -16,10 +17,10 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 模型调用链路切面 —— 拦截 {@code ChatModel.call(Prompt)} 调用，记录开始/完成/失败三类日志。
+ * 模型调用链路切面 —— 拦截 {@code ChatModel.call(Prompt)} 调用，写入 Langfuse Observation。
  *
- * <p>记录内容：模型类名、消息角色列表、首条消息预览、估算输入 token 数、实际 prompt/completion token 数、
- * 生成文本预览、调用耗时。所有日志写入 {@link AgentTraceLogService}，traceId 来自 {@link AgentTraceContext}。
+ * <p>记录内容：模型类名、消息角色列表、完整 prompt、实际 prompt/completion token 数、生成文本、
+ * 工具调用信息与调用耗时。traceId 来自 {@link AgentTraceContext}。
  *
  * <p>token 用量同步给 {@link AgentObservability} 做会话级统计。
  */
@@ -29,11 +30,11 @@ public class ModelCallTraceAspect {
 
     private static final Logger log = LoggerFactory.getLogger(ModelCallTraceAspect.class);
 
-    private final AgentTraceLogService traceLogService;
+    private final AgentTraceRecorder traceRecorder;
     private final AgentObservability observability;
 
-    public ModelCallTraceAspect(AgentTraceLogService traceLogService, AgentObservability observability) {
-        this.traceLogService = traceLogService;
+    public ModelCallTraceAspect(AgentTraceRecorder traceRecorder, AgentObservability observability) {
+        this.traceRecorder = traceRecorder;
         this.observability = observability;
     }
 
@@ -47,25 +48,25 @@ public class ModelCallTraceAspect {
         Object[] args = joinPoint.getArgs();
         Prompt prompt = (Prompt) args[0];
 
+        String modelName = joinPoint.getTarget().getClass().getSimpleName();
+        String promptFull = buildPromptFullText(prompt.getInstructions());
+        int estimatedInputTokens = estimatePromptTokens(prompt);
+
         Map<String, Object> requestMeta = new LinkedHashMap<>();
-        requestMeta.put("model", joinPoint.getTarget().getClass().getSimpleName());
+        requestMeta.put("model", modelName);
         requestMeta.put("messageCount", prompt.getInstructions().size());
         requestMeta.put("messageRoles", extractRoles(prompt.getInstructions()));
-        requestMeta.put("firstMessageFull", getFirstMessageText(prompt.getInstructions()));
-        requestMeta.put("promptFull", buildPromptFullText(prompt.getInstructions()));
-        int estimatedInputTokens = estimatePromptTokens(prompt);
         requestMeta.put("estimatedInputTokens", estimatedInputTokens);
 
-        traceLogService.log(traceId, "INFO", "MODEL_CALL_STARTING",
-                "LLM model call starting", requestMeta);
-
         Instant start = Instant.now();
+        String observationId = traceRecorder.newObservationId();
+        AgentTraceContext.pushObservation(observationId);
         try {
             ChatResponse response = (ChatResponse) joinPoint.proceed();
             long durationMs = java.time.Duration.between(start, Instant.now()).toMillis();
 
             Map<String, Object> responseMeta = new LinkedHashMap<>();
-            responseMeta.put("model", joinPoint.getTarget().getClass().getSimpleName());
+            responseMeta.put("model", modelName);
             responseMeta.put("durationMs", durationMs);
 
             int promptTokens = 0;
@@ -113,17 +114,24 @@ public class ModelCallTraceAspect {
             responseMeta.put("completionTokens", completionTokens);
             responseMeta.put("totalTokens", totalTokens);
             responseMeta.put("generationLength", generationText.length());
-            responseMeta.put("generationFull", generationText);
             if (!toolCallsJson.isEmpty()) {
                 responseMeta.put("toolCalls", toolCallsJson);
                 responseMeta.put("toolCallCount", countToolCalls(toolCallsJson));
             }
-            responseMeta.put("estimatedInputTokens", estimatedInputTokens);
             responseMeta.put("tokenDiffVsEstimate", totalTokens - estimatedInputTokens);
 
-            traceLogService.log(traceId, "INFO", "MODEL_CALL_COMPLETED",
-                    "LLM model call completed in " + durationMs + "ms, tokens: " + totalTokens,
-                    responseMeta);
+            // 工具调用轮次的生成文本通常为空，此时输出 tool_calls JSON，避免观测节点输出为空
+            String observedOutput = generationText;
+            if (!toolCallsJson.isEmpty()) {
+                observedOutput = (generationText.isBlank() ? "" : generationText + "\n\n")
+                        + "tool_calls: " + toolCallsJson;
+            }
+
+            // 先出栈再写观测，保证 parentObservationId 指向调用方观测而非自身
+            AgentTraceContext.popObservation();
+            traceRecorder.recordSpan(traceId, "llm.call", promptFull,
+                    observedOutput, start, Instant.now(), true, null,
+                    (long) promptTokens, (long) completionTokens, modelName, responseMeta);
 
             if (promptTokens > 0 || completionTokens > 0) {
                 observability.recordTokenUsage(traceId, promptTokens, completionTokens);
@@ -134,14 +142,16 @@ public class ModelCallTraceAspect {
             long durationMs = java.time.Duration.between(start, Instant.now()).toMillis();
 
             Map<String, Object> errorMeta = new LinkedHashMap<>();
-            errorMeta.put("model", joinPoint.getTarget().getClass().getSimpleName());
+            errorMeta.put("model", modelName);
             errorMeta.put("durationMs", durationMs);
             errorMeta.put("errorType", t.getClass().getSimpleName());
             errorMeta.put("errorMessage", t.getMessage());
             errorMeta.put("estimatedInputTokens", estimatedInputTokens);
 
-            traceLogService.log(traceId, "ERROR", "MODEL_CALL_FAILED",
-                    "LLM model call failed: " + t.getMessage(), errorMeta);
+            AgentTraceContext.popObservation();
+            traceRecorder.recordSpan(traceId, "llm.call", promptFull,
+                    t.getMessage(), start, Instant.now(), false, "ERROR",
+                    null, null, modelName, errorMeta);
 
             throw t;
         }
@@ -156,15 +166,6 @@ public class ModelCallTraceAspect {
         }
         sb.append("]");
         return sb.toString();
-    }
-
-    /**
-     * 获取第一条消息的完整文本
-     */
-    private String getFirstMessageText(List<Message> messages) {
-        if (messages == null || messages.isEmpty()) return "";
-        String text = messages.get(0).getText();
-        return text != null ? text : "";
     }
 
     /**

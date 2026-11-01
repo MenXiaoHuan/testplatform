@@ -127,11 +127,12 @@ describe('LoginView', () => {
     })
 
     expect(wrapper.text()).toContain('测试平台')
-    expect(wrapper.text()).toContain('自动化测试协作平台')
-    expect(wrapper.text()).toContain('一站式自动化测试协作解决方案')
-    expect(wrapper.text()).toContain('空间与权限协作')
-    expect(wrapper.text()).toContain('场景执行与调度')
-    expect(wrapper.text()).toContain('结果留痕与产物归档')
+    expect(wrapper.text()).toContain('让每一次调用')
+    expect(wrapper.text()).toContain('自动化测试 · 大模型评测')
+    expect(wrapper.text()).toContain('接入与追踪')
+    expect(wrapper.text()).toContain('Prompt 管理')
+    expect(wrapper.text()).toContain('评测闭环')
+    expect(wrapper.text()).toContain('UI 自动化执行')
     expect(wrapper.text()).toContain('欢迎回来')
   })
 

@@ -41,4 +41,6 @@ export interface AuthUser {
   lastSpaceId: number | null
   /** 后端总是返回；测试 fixture 可省略，默认按已初始化处理。 */
   needsSetup?: boolean
+  /** 平台超管：可访问任意空间、管理内置 Agent 与内置 Agent 在线监控。 */
+  superAdmin?: boolean
 }

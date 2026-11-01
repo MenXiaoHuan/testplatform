@@ -48,7 +48,7 @@ class SpaceServiceTest {
                 "qa-report");
 
         SpaceSummaryResponse response = service.createSpace(
-                new AuthContext(1L, "admin", "平台管理员", "avatars/admin.png", null),
+                new AuthContext(1L, "admin", "平台管理员", "avatars/admin.png", null, false),
                 new CreateSpaceRequest("默认空间", "desc"));
 
         assertThat(response.id()).isEqualTo(1L);
@@ -74,17 +74,17 @@ class SpaceServiceTest {
                 mockObjectStorageService(),
                 "qa-report");
 
-        service.createSpace(new AuthContext(1L, "admin", "平台管理员", "avatars/admin.png", null), new CreateSpaceRequest("默认空间", "desc"));
+        service.createSpace(new AuthContext(1L, "admin", "平台管理员", "avatars/admin.png", null, false), new CreateSpaceRequest("默认空间", "desc"));
 
         SpaceSummaryResponse updated = service.updateSpace(
-                new AuthContext(1L, "admin", "平台管理员", "avatars/admin.png", null),
+                new AuthContext(1L, "admin", "平台管理员", "avatars/admin.png", null, false),
                 1L,
                 new CreateSpaceRequest("新的空间", "新的说明"));
 
         assertThat(updated.name()).isEqualTo("新的空间");
         assertThat(spaceMapper.findById(1L)).map(SpaceEntity::getDescription).contains("新的说明");
 
-        service.deleteSpace(new AuthContext(1L, "admin", "平台管理员", "avatars/admin.png", null), 1L);
+        service.deleteSpace(new AuthContext(1L, "admin", "平台管理员", "avatars/admin.png", null, false), 1L);
         assertThat(spaceMapper.findById(1L)).isEmpty();
     }
 
@@ -108,7 +108,7 @@ class SpaceServiceTest {
                 "qa-report");
 
         SpaceSummaryResponse created = service.createSpace(
-                new AuthContext(1L, "admin", "平台管理员", "avatars/admin.png", null),
+                new AuthContext(1L, "admin", "平台管理员", "avatars/admin.png", null, false),
                 new CreateSpaceRequest("默认空间", "desc"));
 
         com.example.platform.space.model.SpaceAccessRequestEntity pending = new com.example.platform.space.model.SpaceAccessRequestEntity();
@@ -130,7 +130,7 @@ class SpaceServiceTest {
         repository.setSpaceId(created.id());
         Mockito.when(repositoryMapper.findAllBySpaceId(created.id())).thenReturn(List.of(repository));
 
-        service.deleteSpace(new AuthContext(1L, "admin", "平台管理员", "avatars/admin.png", null), created.id());
+        service.deleteSpace(new AuthContext(1L, "admin", "平台管理员", "avatars/admin.png", null, false), created.id());
 
         assertThat(spaceMapper.findById(created.id())).isEmpty();
         assertThat(memberMapper.findBySpaceId(created.id())).isEmpty();
@@ -177,7 +177,7 @@ class SpaceServiceTest {
         pending.setStatus("PENDING");
         requestMapper.insert(pending);
 
-        List<SpacePlazaResponse> result = service.listSpacePlaza(new AuthContext(1L, "admin", "平台管理员", "avatars/admin.png", null));
+        List<SpacePlazaResponse> result = service.listSpacePlaza(new AuthContext(1L, "admin", "平台管理员", "avatars/admin.png", null, false));
 
         assertThat(result).hasSize(2);
         assertThat(result.get(0).accessible()).isTrue();
@@ -312,6 +312,13 @@ class SpaceServiceTest {
             members.removeIf(item -> item.getSpaceId().equals(spaceId));
             return before - members.size();
         }
+
+        @Override
+        public int deleteByUserId(Long userId) {
+            int before = members.size();
+            members.removeIf(item -> item.getUserId().equals(userId));
+            return before - members.size();
+        }
     }
 
     private static final class InMemorySpaceAccessRequestMapper implements SpaceAccessRequestMapper {
@@ -377,6 +384,13 @@ class SpaceServiceTest {
         public int deleteBySpaceId(Long spaceId) {
             int before = requests.size();
             requests.removeIf(item -> item.getSpaceId().equals(spaceId));
+            return before - requests.size();
+        }
+
+        @Override
+        public int deleteByApplicantUserId(Long userId) {
+            int before = requests.size();
+            requests.removeIf(item -> item.getApplicantUserId().equals(userId));
             return before - requests.size();
         }
     }

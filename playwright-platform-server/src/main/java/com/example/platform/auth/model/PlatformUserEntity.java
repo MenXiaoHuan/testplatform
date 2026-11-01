@@ -9,6 +9,7 @@ public class PlatformUserEntity {
     private String passwordHash;
     private String avatarObjectKey;
     private Boolean enabled;
+    private Boolean superAdmin;
     private Long lastSpaceId;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
@@ -25,6 +26,8 @@ public class PlatformUserEntity {
     public void setAvatarObjectKey(String avatarObjectKey) { this.avatarObjectKey = avatarObjectKey; }
     public Boolean getEnabled() { return enabled; }
     public void setEnabled(Boolean enabled) { this.enabled = enabled; }
+    public Boolean getSuperAdmin() { return superAdmin; }
+    public void setSuperAdmin(Boolean superAdmin) { this.superAdmin = superAdmin; }
     public Long getLastSpaceId() { return lastSpaceId; }
     public void setLastSpaceId(Long lastSpaceId) { this.lastSpaceId = lastSpaceId; }
     public LocalDateTime getCreatedAt() { return createdAt; }

@@ -44,7 +44,8 @@ public class AuthSessionFilter extends OncePerRequestFilter {
                 session.username(),
                 session.nickname(),
                 session.avatarObjectKey(),
-                session.lastSpaceId()));
+                session.lastSpaceId(),
+                session.superAdmin()));
     }
 
     private String readSessionId(HttpServletRequest request) {

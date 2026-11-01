@@ -1,5 +1,6 @@
 package com.example.platform.auth;
 
+import com.example.platform.admin.service.PlatformSettingsService;
 import com.example.platform.auth.config.AuthProperties;
 import com.example.platform.auth.controller.AuthController;
 import com.example.platform.auth.crypto.AuthKeyProvider;
@@ -40,6 +41,9 @@ class AuthControllerTest {
     @Autowired
     private MockMvc mockMvc;
 
+    @MockitoBean private com.example.platform.admin.mapper.PlatformSettingMapper platformSettingMapper;
+    @MockitoBean private com.example.platform.admin.mapper.PlatformUserAdminMapper platformUserAdminMapper;
+
     @MockitoBean
     private AuthService authService;
 
@@ -48,6 +52,8 @@ class AuthControllerTest {
 
     @MockitoBean
     private AuthProperties authProperties;
+    @MockitoBean
+    private PlatformSettingsService platformSettingsService;
     @MockitoBean
     private ObjectStorageService objectStorageService;
     @MockitoBean private PlatformUserMapper platformUserMapper;
@@ -85,7 +91,7 @@ class AuthControllerTest {
         Mockito.when(objectStorageService.createPresignedGetUrl(Mockito.anyString(), Mockito.eq("avatars/admin.png")))
                 .thenReturn("http://localhost:10000/qa-report/avatars/admin.png?X-Amz-Signature=demo");
         Mockito.when(authService.login("admin", "ciphertext"))
-                .thenReturn(new AuthService.LoginResult("session-1", 1L, "admin", "平台管理员", "avatars/admin.png", 8L, false));
+                .thenReturn(new AuthService.LoginResult("session-1", 1L, "admin", "平台管理员", "avatars/admin.png", 8L, false, true));
 
         mockMvc.perform(post("/api/auth/login")
                         .contentType("application/json")
@@ -109,7 +115,7 @@ class AuthControllerTest {
         Mockito.when(authProperties.getCookieName()).thenReturn("platform_session");
         Mockito.when(authProperties.getSlidingDays()).thenReturn(14);
         Mockito.when(authService.register("zhangsan", "ciphertext"))
-                .thenReturn(new AuthService.LoginResult("session-2", 2L, "zhangsan", null, null, null, true));
+                .thenReturn(new AuthService.LoginResult("session-2", 2L, "zhangsan", null, null, null, true, false));
 
         mockMvc.perform(post("/api/auth/register")
                         .contentType("application/json")
@@ -132,7 +138,7 @@ class AuthControllerTest {
         Mockito.when(objectStorageService.createPresignedGetUrl(Mockito.anyString(), Mockito.eq("avatars/admin.png")))
                 .thenReturn("http://localhost:10000/qa-report/avatars/admin.png?X-Amz-Signature=demo");
         Mockito.when(authService.currentUser("session-1"))
-                .thenReturn(java.util.Optional.of(new AuthService.LoginUser(1L, "admin", "平台管理员", "avatars/admin.png", 8L, false)));
+                .thenReturn(java.util.Optional.of(new AuthService.LoginUser(1L, "admin", "平台管理员", "avatars/admin.png", 8L, false, true)));
 
         mockMvc.perform(get("/api/auth/me").cookie(new jakarta.servlet.http.Cookie("platform_session", "session-1")))
                 .andExpect(status().isOk())
@@ -146,7 +152,7 @@ class AuthControllerTest {
     void shouldUpdateNicknameFromSessionCookie() throws Exception {
         Mockito.when(authProperties.getCookieName()).thenReturn("platform_session");
         Mockito.when(authService.updateNickname("session-1", "新昵称"))
-                .thenReturn(java.util.Optional.of(new AuthService.LoginUser(1L, "admin", "新昵称", "avatars/admin.png", 8L, false)));
+                .thenReturn(java.util.Optional.of(new AuthService.LoginUser(1L, "admin", "新昵称", "avatars/admin.png", 8L, false, false)));
         Mockito.when(objectStorageService.createPresignedGetUrl(Mockito.anyString(), Mockito.eq("avatars/admin.png")))
                 .thenReturn("http://localhost:10000/qa-report/avatars/admin.png?X-Amz-Signature=demo");
 
@@ -168,7 +174,7 @@ class AuthControllerTest {
     void shouldUploadAvatarThroughBackendAndReturnProfile() throws Exception {
         Mockito.when(authProperties.getCookieName()).thenReturn("platform_session");
         Mockito.when(authService.currentUser("session-1"))
-                .thenReturn(java.util.Optional.of(new AuthService.LoginUser(1L, "admin", "平台管理员", "avatars/admin.png", 8L, false)));
+                .thenReturn(java.util.Optional.of(new AuthService.LoginUser(1L, "admin", "平台管理员", "avatars/admin.png", 8L, false, false)));
         Mockito.when(objectStorageService.uploadFile(Mockito.anyString(), Mockito.anyString(), Mockito.any()))
                 .thenReturn("http://localhost:10000/qa-report/avatars/users/1/avatar.png");
         Mockito.when(objectStorageService.createPresignedGetUrl(Mockito.anyString(), Mockito.contains("avatars/users/1/")))
@@ -180,6 +186,7 @@ class AuthControllerTest {
                         "平台管理员",
                         "avatars/users/1/avatar.png",
                         8L,
+                        false,
                         false)));
 
         MockMultipartFile file = new MockMultipartFile("file", "avatar.png", "image/png", "avatar".getBytes());

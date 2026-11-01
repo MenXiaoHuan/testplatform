@@ -107,36 +107,16 @@ Space (空间/租户)
 | processedAt | LocalDateTime | 审批时间 |
 | processedBy | Long | 审批人 |
 
-## AI Trace 数据结构（Redis）
+## AI Trace 数据结构（Langfuse）
 
-### Agent Trace Log Entry（Redis List）
-```redis
-Key: agent:trace:{traceId}
-TTL: 90 days
-Type: List<JSON>
-```
-每个日志条目：
-```json
-{
-  "id": "uuid",
-  "traceId": "5f847f51-...",
-  "timestamp": "2026-08-13T11:00:00Z",
-  "level": "INFO|WARN|ERROR",
-  "stage": "REQUEST_RECEIVED|CONTEXT_READY|AGENT_CALL_SUCCESS|OUTPUT_PARSED|REQUEST_COMPLETED",
-  "message": "Chat request received",
-  "metadata": { "sessionId": "xxx", "spaceId": 1, "taskId": 123 }
-}
-```
+内置 Agent 的 trace 不再写入 Redis，统一通过 Langfuse ingestion API 落库：
 
-### Trace Index（Redis ZSet）
-```redis
-Key: agent:trace:index
-TTL: 90 days
-Type: ZSet
-Score: timestamp (epoch millis)
-Member: traceId
-```
-用于按时间范围查询最近的 trace 记录。
+- **Trace**：`id=traceId`、`name=agent.chat`，tags `source=builtin_agent` + `target_id=builtin_agent`，metadata 含 `sessionId` / `userId` / `spaceId`，input=用户消息、output=最终回复
+- **Observation**：每个阶段一条观测（`request_received`、`session_ready`、`context_*`、`prompt_*`、`agent_call_*`、`output_*`、`request_completed`、`unexpected_error`），通过 `parentObservationId` 组成调用树
+- **LLM / 工具观测**：`llm.call` / `tool.<toolName>` 记录起止时间、入参、结果与真实 token 用量
+- **查询入口**：「模型评测 → 在线监控」，按 Agent（内置 Agent 选「智能助手（内置 Agent）」）或 Trace ID 查询
+- **上游 `traceparent`**：请求头携带时直接复用其 trace-id，与外部 OTel 链路和 Langfuse 双向绑定
+- **保留策略**：由 Langfuse 项目配置决定
 
 ## 缓存策略
 - 任务详情：5min TTL + 随机抖动（±60s）

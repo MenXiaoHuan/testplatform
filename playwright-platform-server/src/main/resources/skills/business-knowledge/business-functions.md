@@ -61,8 +61,8 @@
 - 功能：故障排查、业务咨询、任务分析、链路回溯
 - 流式响应：SSE 打字机效果
 - 对话历史：会话持久化 + 上下文压缩
-- 工具调用：自动调用 TaskTool / SceneTool / LogPreprocessingTool / TraceQueryTool
-- 全链路追踪：每次对话生成 traceId，90 天内可通过 TraceQueryTool 查询完整调用链路
+- 工具调用：自动调用 TaskTool / SceneTool / LogPreprocessingTool
+- 全链路追踪：每次对话写入 Langfuse，可在「模型评测 → 在线监控」查看完整调用链路
 
 ## API 端点速查
 
@@ -87,10 +87,10 @@
 4. 根据 AI 给出的故障类型查阅对应的 SOP
 
 ### 如何查询 Agent 调用链路？
-1. 从 AI 回答底部复制 traceId
-2. 告诉 AI 助手：「查询 traceId: {traceId}」
-3. AI 会调用 queryTrace(traceId) 返回完整链路
-4. 包含所有阶段日志、耗时、工具调用信息
+1. 打开「模型评测 → 在线监控」
+2. 来源筛选选「内置 Agent」（仅平台超管可用）
+3. 按时间范围 / sessionId / 关键字找到对应 Trace，点击查看完整链路
+4. 包含所有阶段日志、耗时、模型 Token 与工具调用信息
 
 ### 如何修改个人信息？
 1. 点击右上角用户头像

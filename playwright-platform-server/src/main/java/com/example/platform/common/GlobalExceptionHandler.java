@@ -45,12 +45,21 @@ public class GlobalExceptionHandler {
     }
 
     /**
-     * 处理业务异常，按错误码映射为 BAD_REQUEST 或 CONFLICT。
+     * 处理业务异常，按错误码映射为 BAD_REQUEST / CONFLICT / NOT_FOUND / UNAVAILABLE。
      */
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ApiErrorResponse> handleBusinessException(BusinessException ex) {
         HttpStatus status = switch (ex.getCode()) {
-            case "BAD_REQUEST", "INVALID_PASSWORD", "ACCESS_REQUEST_LIST_FAILED" -> HttpStatus.BAD_REQUEST;
+            case "BAD_REQUEST", "INVALID_PASSWORD", "ACCESS_REQUEST_LIST_FAILED",
+                 "TARGET_INVOKE_FAILED", "SSRF_VIOLATION", "PROMPT_VERSION_CONFLICT",
+                 "DATASET_IMPORT_FAILED", "INGEST_INVALID" -> HttpStatus.BAD_REQUEST;
+            case "PROMPT_NOT_FOUND", "TARGET_NOT_FOUND", "DATASET_NOT_FOUND", "AGENT_NOT_FOUND" -> HttpStatus.NOT_FOUND;
+            case "AGENT_UNAUTHORIZED" -> HttpStatus.UNAUTHORIZED;
+            case "AGENT_DISABLED" -> HttpStatus.FORBIDDEN;
+            case "LANGFUSE_UNAVAILABLE" -> HttpStatus.SERVICE_UNAVAILABLE;
+            case "LANGFUSE_UPSTREAM_FAILED" -> HttpStatus.BAD_GATEWAY;
+            case "SPACE_GUARDIAN_HIT", "TARGET_GUARDIAN_HIT",
+                 "RUN_DEDUPLICATED", "RUN_VERSION_CONFLICT", "CONFLICT" -> HttpStatus.CONFLICT;
             default -> HttpStatus.CONFLICT;
         };
         return ResponseEntity.status(status)

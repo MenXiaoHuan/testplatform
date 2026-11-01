@@ -1,5 +1,6 @@
 package com.example.platform.auth.controller;
 
+import com.example.platform.admin.service.PlatformSettingsService;
 import com.example.platform.auth.config.AuthProperties;
 import com.example.platform.auth.crypto.AuthKeyProvider;
 import com.example.platform.auth.service.AuthService;
@@ -36,6 +37,7 @@ public class AuthController {
     private final AuthService authService;
     private final AuthKeyProvider authKeyProvider;
     private final AuthProperties authProperties;
+    private final PlatformSettingsService platformSettingsService;
     private final ObjectStorageService objectStorageService;
     private final String storageBucket;
 
@@ -43,11 +45,13 @@ public class AuthController {
             AuthService authService,
             AuthKeyProvider authKeyProvider,
             AuthProperties authProperties,
+            PlatformSettingsService platformSettingsService,
             ObjectStorageService objectStorageService,
             @Value("${platform.storage.bucket:qa-report}") String storageBucket) {
         this.authService = authService;
         this.authKeyProvider = authKeyProvider;
         this.authProperties = authProperties;
+        this.platformSettingsService = platformSettingsService;
         this.objectStorageService = objectStorageService;
         this.storageBucket = storageBucket;
     }
@@ -55,7 +59,7 @@ public class AuthController {
     @GetMapping("/public-key")
     public ApiResponse<PublicKeyResponse> publicKey() {
         return ApiResponse.ok(new PublicKeyResponse(
-                "RSA", authKeyProvider.publicKeyPem(), authProperties.isRegistrationEnabled()));
+                "RSA", authKeyProvider.publicKeyPem(), platformSettingsService.isRegistrationEnabled()));
     }
 
     @PostMapping("/login")
@@ -161,7 +165,8 @@ public class AuthController {
             String nickname,
             String avatarObjectKey,
             Long lastSpaceId,
-            boolean needsSetup) {
+            boolean needsSetup,
+            boolean superAdmin) {
     }
 
     public record UpdateProfileRequest(String nickname) {
@@ -204,7 +209,8 @@ public class AuthController {
                 currentUser.nickname(),
                 resolveAvatarUrl(currentUser.avatarObjectKey()),
                 currentUser.lastSpaceId(),
-                currentUser.needsSetup());
+                currentUser.needsSetup(),
+                currentUser.superAdmin());
     }
 
     private LoginUserResponse toLoginUserResponse(AuthService.LoginResult result) {
@@ -214,7 +220,8 @@ public class AuthController {
                 result.nickname(),
                 resolveAvatarUrl(result.avatarObjectKey()),
                 result.lastSpaceId(),
-                result.needsSetup());
+                result.needsSetup(),
+                result.superAdmin());
     }
 
     private void validateAvatar(MultipartFile file) {

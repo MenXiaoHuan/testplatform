@@ -1,6 +1,7 @@
 package com.example.platform.auth;
 
 import com.example.platform.auth.config.AuthProperties;
+import com.example.platform.admin.service.PlatformSettingsService;
 import com.example.platform.auth.crypto.AuthKeyProvider;
 import com.example.platform.auth.mapper.PlatformUserMapper;
 import com.example.platform.auth.mapper.UserSessionMapper;
@@ -40,6 +41,7 @@ class AuthServiceTest {
         userMapper.save(user(1L, "admin", "平台管理员"));
         AuthService service = new AuthServiceImpl(
                 authProperties(),
+                settings(true),
                 keyProvider,
                 userMapper,
                 sessionMapper,
@@ -68,6 +70,7 @@ class AuthServiceTest {
         userMapper.save(user(1L, "admin", ""));
         AuthService service = new AuthServiceImpl(
                 authProperties(),
+                settings(true),
                 keyProvider,
                 userMapper,
                 sessionMapper,
@@ -93,6 +96,7 @@ class AuthServiceTest {
         userMapper.save(user(2L, "tester", " "));
         AuthService service = new AuthServiceImpl(
                 authProperties(),
+                settings(true),
                 keyProvider,
                 userMapper,
                 sessionMapper,
@@ -116,6 +120,7 @@ class AuthServiceTest {
         sessionMapper.bindUsers(userMapper);
         AuthService service = new AuthServiceImpl(
                 authProperties(),
+                settings(true),
                 keyProvider,
                 userMapper,
                 sessionMapper,
@@ -150,6 +155,20 @@ class AuthServiceTest {
         properties.setSlidingDays(14);
         properties.setRegistrationEnabled(true);
         return properties;
+    }
+
+    private static PlatformSettingsService settings(boolean registrationEnabled) {
+        return new PlatformSettingsService() {
+            @Override
+            public boolean isRegistrationEnabled() {
+                return registrationEnabled;
+            }
+
+            @Override
+            public void setRegistrationEnabled(boolean enabled, Long operatorId, String operatorName) {
+                // 测试桩：不持久化
+            }
+        };
     }
 
     private static PlatformUserEntity user(Long id, String username, String nickname) {
@@ -274,7 +293,8 @@ class AuthServiceTest {
                                         user.getAvatarObjectKey(),
                                         user.getLastSpaceId(),
                                         item.getExpiresAt(),
-                                        needsSetup);
+                                        needsSetup,
+                                        Boolean.TRUE.equals(user.getSuperAdmin()));
                             }));
         }
 
@@ -298,6 +318,11 @@ class AuthServiceTest {
         @Override
         public int deleteExpired(LocalDateTime now) {
             return sessions.removeIf(item -> item.getExpiresAt().isBefore(now)) ? 1 : 0;
+        }
+
+        @Override
+        public int deleteByUserId(Long userId) {
+            return sessions.removeIf(item -> item.getUserId().equals(userId)) ? 1 : 0;
         }
     }
 
@@ -362,5 +387,10 @@ class AuthServiceTest {
 
         @Override
         public int deleteBySpaceId(Long spaceId) { return 0; }
+
+        @Override
+        public int deleteByUserId(Long userId) {
+            return members.removeIf(item -> item.getUserId().equals(userId)) ? 1 : 0;
+        }
     }
 }

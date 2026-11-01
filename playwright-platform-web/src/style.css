@@ -160,6 +160,63 @@ select {
   color: #ffffff;
 }
 
+.registration-confirm-dialog .el-message-box__message {
+  min-height: 0;
+}
+
+.registration-confirm-dialog .el-message-box__message > p {
+  margin: 0 0 16px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: #4b5563;
+  text-align: center;
+}
+
+.registration-confirm-dialog .reg-confirm__flow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 14px;
+  border-radius: 12px;
+  background: #f8fafc;
+  border: 1px dashed #dbe4ee;
+}
+
+.registration-confirm-dialog .reg-confirm__state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-width: 88px;
+}
+
+.registration-confirm-dialog .reg-confirm__state span {
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.registration-confirm-dialog .reg-confirm__state strong {
+  color: #475569;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.registration-confirm-dialog .reg-confirm__state strong.reg-confirm__state--on {
+  color: #0f766e;
+}
+
+.registration-confirm-dialog .reg-confirm__arrow {
+  color: #94a3b8;
+  font-size: 15px;
+}
+
+.registration-confirm-dialog__confirm--on {
+  border-color: #14b8a6 !important;
+  background: #14b8a6 !important;
+  color: #ffffff !important;
+}
+
 .shell {
   min-height: 100vh;
   color: var(--app-text);
@@ -539,14 +596,27 @@ select {
   border-radius: 10px !important;
 }
 
-.el-button--primary {
+.el-button--primary:not(.is-plain):not(.is-link) {
   background: var(--app-accent) !important;
   border-color: var(--app-accent) !important;
 }
 
-.el-button--primary:hover,
-.el-button--primary:focus-visible {
+.el-button--primary:not(.is-plain):not(.is-link):hover,
+.el-button--primary:not(.is-plain):not(.is-link):focus-visible {
   background: var(--app-accent-hover) !important;
+  border-color: var(--app-accent-hover) !important;
+}
+
+.el-button--primary.is-plain {
+  color: var(--app-accent) !important;
+  background: #ffffff !important;
+  border-color: var(--app-accent) !important;
+}
+
+.el-button--primary.is-plain:hover,
+.el-button--primary.is-plain:focus-visible {
+  color: var(--app-accent-hover) !important;
+  background: #ecfdf5 !important;
   border-color: var(--app-accent-hover) !important;
 }
 

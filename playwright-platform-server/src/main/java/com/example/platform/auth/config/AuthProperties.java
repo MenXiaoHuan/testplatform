@@ -9,8 +9,8 @@ public class AuthProperties {
     private String cookieName = "platform_session";
     private int slidingDays = 14;
     /**
-     * 是否允许自助注册。默认关闭，避免公网部署时任何人注册后获得执行命令的能力。
-     * 首次部署可临时设为 true，注册完成后改回 false。
+     * 注册开关的默认值。运行时以数据库 platform_setting 表为准（超管在用户管理页维护），
+     * 该配置只在数据库尚未写入时作为首次启动的兜底。
      */
     private boolean registrationEnabled = false;
     private List<UserConfig> users = new ArrayList<>();

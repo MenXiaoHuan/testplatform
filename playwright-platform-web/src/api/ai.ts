@@ -1,4 +1,4 @@
-import { del, get, post } from './http'
+import { del, post } from './http'
 
 export interface ChatRequestPayload {
   sessionId?: string
@@ -139,32 +139,4 @@ export const clearChatSession = async (sessionId: string) => {
 
 export const terminateChatSession = async (sessionId: string) => {
   return post(`/ai/session/${sessionId}/terminate`)
-}
-
-/** 单条 trace 日志条目，对应后端 AgentTraceLogService.TraceLogEntry。 */
-export interface TraceLogEntry {
-  id: string
-  traceId: string
-  timestamp: string
-  level: string
-  stage: string
-  message: string
-  metadata: Record<string, unknown>
-}
-
-/** trace 摘要，对应后端 AgentTraceLogService.TraceSummary。 */
-export interface TraceSummary {
-  traceId: string
-  entryCount: number
-  lastUpdatedAt: string
-}
-
-/** 拉取某条 trace 的完整时间线（所有日志条目按时间升序）。 */
-export const getTrace = async (traceId: string) => {
-  return get<TraceLogEntry[]>(`/ai/trace/${encodeURIComponent(traceId)}`)
-}
-
-/** 拉取最近的 trace 摘要列表（按时间倒序）。 */
-export const listRecentTraces = async (limit = 20) => {
-  return get<TraceSummary[]>('/ai/trace', { params: { limit } })
 }

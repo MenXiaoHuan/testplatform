@@ -1,5 +1,6 @@
 package com.example.platform.auth.service;
 
+import com.example.platform.admin.service.PlatformSettingsService;
 import com.example.platform.auth.config.AuthProperties;
 import com.example.platform.auth.crypto.AuthKeyProvider;
 import com.example.platform.auth.mapper.PlatformUserMapper;
@@ -26,6 +27,7 @@ public class AuthServiceImpl implements AuthService {
     private static final int MAX_NICKNAME_LENGTH = 10;
 
     private final AuthProperties authProperties;
+    private final PlatformSettingsService settingsService;
     private final AuthKeyProvider keyProvider;
     private final PlatformUserMapper platformUserMapper;
     private final UserSessionMapper userSessionMapper;
@@ -37,16 +39,18 @@ public class AuthServiceImpl implements AuthService {
     @Autowired
     public AuthServiceImpl(
             AuthProperties authProperties,
+            PlatformSettingsService settingsService,
             AuthKeyProvider keyProvider,
             PlatformUserMapper platformUserMapper,
             UserSessionMapper userSessionMapper,
             SpaceMapper spaceMapper,
             SpaceMemberMapper spaceMemberMapper) {
-        this(authProperties, keyProvider, platformUserMapper, userSessionMapper, spaceMapper, spaceMemberMapper, LocalDateTime::now);
+        this(authProperties, settingsService, keyProvider, platformUserMapper, userSessionMapper, spaceMapper, spaceMemberMapper, LocalDateTime::now);
     }
 
     public AuthServiceImpl(
             AuthProperties authProperties,
+            PlatformSettingsService settingsService,
             AuthKeyProvider keyProvider,
             PlatformUserMapper platformUserMapper,
             UserSessionMapper userSessionMapper,
@@ -54,6 +58,7 @@ public class AuthServiceImpl implements AuthService {
             SpaceMemberMapper spaceMemberMapper,
             Supplier<LocalDateTime> nowSupplier) {
         this.authProperties = authProperties;
+        this.settingsService = settingsService;
         this.keyProvider = keyProvider;
         this.platformUserMapper = platformUserMapper;
         this.userSessionMapper = userSessionMapper;
@@ -77,7 +82,7 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional
     public LoginResult register(String username, String encryptedPassword) {
-        if (!authProperties.isRegistrationEnabled()) {
+        if (!settingsService.isRegistrationEnabled()) {
             throw new BusinessException("REGISTRATION_DISABLED", "注册已关闭，请联系管理员");
         }
         String normalizedUsername = normalizeRequiredValue(username, "请输入用户名");
@@ -118,7 +123,8 @@ public class AuthServiceImpl implements AuthService {
                 normalizedNickname,
                 session.avatarObjectKey(),
                 space.getId(),
-                false);
+                false,
+                session.superAdmin());
     }
 
     @Override
@@ -152,7 +158,8 @@ public class AuthServiceImpl implements AuthService {
                 session.avatarObjectKey(),
                 session.lastSpaceId(),
                 refreshedExpiresAt,
-                needsSetup));
+                needsSetup,
+                session.superAdmin()));
     }
 
     @Override
@@ -164,7 +171,8 @@ public class AuthServiceImpl implements AuthService {
                         session.nickname(),
                         session.avatarObjectKey(),
                         session.lastSpaceId(),
-                        session.needsSetup()));
+                        session.needsSetup(),
+                        session.superAdmin()));
     }
 
     @Override
@@ -179,7 +187,8 @@ public class AuthServiceImpl implements AuthService {
                     normalizedNickname,
                     session.avatarObjectKey(),
                     session.lastSpaceId(),
-                    false);
+                    false,
+                    session.superAdmin());
         });
     }
 
@@ -193,7 +202,8 @@ public class AuthServiceImpl implements AuthService {
                     session.nickname(),
                     avatarObjectKey,
                     session.lastSpaceId(),
-                    session.needsSetup());
+                    session.needsSetup(),
+                    session.superAdmin());
         });
     }
 
@@ -248,7 +258,8 @@ public class AuthServiceImpl implements AuthService {
                 resolveNicknameForLogin(user.getNickname(), user.getUsername()),
                 user.getAvatarObjectKey(),
                 user.getLastSpaceId(),
-                needsSetup);
+                needsSetup,
+                Boolean.TRUE.equals(user.getSuperAdmin()));
     }
 
     private SpaceEntity createPersonalSpace(Long userId, String nickname) {

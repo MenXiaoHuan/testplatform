@@ -1,6 +1,7 @@
 package com.example.platform;
 
 import com.example.platform.auth.config.AuthProperties;
+import org.apache.ibatis.annotations.Mapper;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -10,7 +11,8 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 @SpringBootApplication
 @EnableScheduling
 @EnableConfigurationProperties(AuthProperties.class)
-@MapperScan("com.example.platform.**.mapper")
+@MapperScan(basePackages = {"com.example.platform.**.mapper", "com.example.platform.evaluation"},
+            annotationClass = Mapper.class)
 public class PlatformApplication {
     public static void main(String[] args) {
         SpringApplication.run(PlatformApplication.class, args);

@@ -10,7 +10,7 @@ import AiAssistantDialog from './components/ai/AiAssistantDialog.vue'
 import { useAuthStore } from './stores/auth'
 import { useSpaceStore } from './stores/space'
 import { useAiStore } from './stores/ai'
-import { getActiveSpaceMenuIndex, getSpaceMenuItems } from './utils/space-permissions'
+import { getActiveSpaceMenuIndex, getSpaceMenuGroups, type SpaceMenuGroup } from './utils/space-permissions'
 import { toErrorMessage } from './utils/error'
 import { showAppToast } from './utils/ui-feedback'
 
@@ -65,19 +65,24 @@ function openAssistant() {
   aiStore.open(spaceStore.currentSpaceId, context ?? undefined)
 }
 
-const menuItems = computed(() => {
+const menuGroups = computed<SpaceMenuGroup[] | null>(() => {
   const spaceId = spaceStore.currentSpaceId
-  if (typeof spaceId !== 'number') {
-    return [{ index: '/home', label: '空间广场' }]
-  }
-  return getSpaceMenuItems(spaceId, spaceStore.currentSpaceRole)
+  if (typeof spaceId !== 'number') return null
+  return getSpaceMenuGroups(spaceId, spaceStore.currentSpaceRole, authStore.isSuperAdmin)
 })
 
 const activeMenu = computed(() => {
-  if (route.path === '/home') {
-    return '/home'
-  }
-  return getActiveSpaceMenuIndex(route.path, menuItems.value)
+  if (route.path === '/home') return '/home'
+  if (menuGroups.value) return getActiveSpaceMenuIndex(route.path, menuGroups.value)
+  return ''
+})
+
+/** 默认只展开当前路由所属分组，el-menu 的 unique-opened 保证手动展开时也只有一个。 */
+const defaultOpenedGroups = computed(() => {
+  if (!menuGroups.value) return []
+  return menuGroups.value
+    .filter((group) => group.children.some((item) => item.index === activeMenu.value))
+    .map((group) => group.group)
 })
 
 function handleSelect(index: string) {
@@ -214,8 +219,28 @@ onBeforeUnmount(() => {
       <el-aside width="264px" class="shell-aside">
         <SpaceSwitcher v-if="hasActiveSpace" class="shell-space-switcher" />
 
-        <el-menu :default-active="activeMenu" class="nav-menu" @select="handleSelect">
-          <el-menu-item v-for="item in menuItems" :key="item.index" :index="item.index">{{ item.label }}</el-menu-item>
+        <el-menu
+          v-if="menuGroups"
+          :default-active="activeMenu"
+          class="nav-menu nav-menu--grouped"
+          :default-openeds="defaultOpenedGroups"
+          unique-opened
+          @select="handleSelect"
+        >
+          <template v-for="group in menuGroups" :key="group.group">
+            <el-sub-menu :index="group.group">
+              <template #title>
+                <span class="nav-menu-group">
+                  <span class="nav-menu-group__label">{{ group.group }}</span>
+                </span>
+              </template>
+              <el-menu-item
+                v-for="item in group.children"
+                :key="item.index"
+                :index="item.index"
+              >{{ item.label }}</el-menu-item>
+            </el-sub-menu>
+          </template>
         </el-menu>
 
         <div v-if="!hasActiveSpace" class="shell-onboarding">

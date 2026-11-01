@@ -9,6 +9,7 @@ import { useAiStore, type ChatMessage } from '../../stores/ai'
 import { useSpaceStore } from '../../stores/space'
 import { useAuthStore } from '../../stores/auth'
 import { showAppToast } from '../../utils/ui-feedback'
+import { formatBeijingClock } from '../../utils/datetime'
 import { getTask } from '../../api/task'
 import { getScene } from '../../api/scene'
 import { getRepository } from '../../api/repository'
@@ -322,10 +323,7 @@ function handleStopStreaming() {
 }
 
 function formatTime(timestamp: number) {
-  const date = new Date(timestamp)
-  const hours = String(date.getHours()).padStart(2, '0')
-  const minutes = String(date.getMinutes()).padStart(2, '0')
-  return `${hours}:${minutes}`
+  return formatBeijingClock(timestamp)
 }
 
 function renderContent(content: string): string {

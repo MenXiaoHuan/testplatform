@@ -38,7 +38,7 @@ class SpaceAccessRequestServiceTest {
                 "qa-report");
 
         assertThatThrownBy(() -> service.submitRequest(
-                new AuthContext(2L, "alice", "徐个愿", "avatars/alice.png", null),
+                new AuthContext(2L, "alice", "徐个愿", "avatars/alice.png", null, false),
                 7L,
                 new SubmitSpaceAccessRequestRequest("OPERATOR", "需要查看并处理任务")))
                 .isInstanceOf(IllegalStateException.class)
@@ -61,7 +61,7 @@ class SpaceAccessRequestServiceTest {
                 "qa-report");
 
         service.approveRequest(
-                new AuthContext(1L, "admin", "平台管理员", "avatars/admin.png", null),
+                new AuthContext(1L, "admin", "平台管理员", "avatars/admin.png", null, false),
                 7L,
                 entity.getId(),
                 new ReviewSpaceAccessRequestRequest("同意加入"));
@@ -95,13 +95,13 @@ class SpaceAccessRequestServiceTest {
                 "qa-report");
 
         service.submitRequest(
-                new AuthContext(2L, "alice", "徐个愿", "avatars/alice.png", null),
+                new AuthContext(2L, "alice", "徐个愿", "avatars/alice.png", null, false),
                 7L,
                 new SubmitSpaceAccessRequestRequest("OPERATOR", "需要处理任务"));
 
         SpaceAccessRequestEntity request = requestMapper.findPendingBySpaceIdAndApplicantUserId(7L, 2L).orElseThrow();
         service.approveRequest(
-                new AuthContext(1L, "admin", "平台管理员", "avatars/admin.png", null),
+                new AuthContext(1L, "admin", "平台管理员", "avatars/admin.png", null, false),
                 7L,
                 request.getId(),
                 new ReviewSpaceAccessRequestRequest("升级权限"));
@@ -220,6 +220,13 @@ class SpaceAccessRequestServiceTest {
             members.removeIf(item -> item.getSpaceId().equals(spaceId));
             return before - members.size();
         }
+
+        @Override
+        public int deleteByUserId(Long userId) {
+            int before = members.size();
+            members.removeIf(item -> item.getUserId().equals(userId));
+            return before - members.size();
+        }
     }
 
     private static final class InMemorySpaceAccessRequestMapper implements SpaceAccessRequestMapper {
@@ -295,6 +302,13 @@ class SpaceAccessRequestServiceTest {
         public int deleteBySpaceId(Long spaceId) {
             int before = requests.size();
             requests.removeIf(item -> item.getSpaceId().equals(spaceId));
+            return before - requests.size();
+        }
+
+        @Override
+        public int deleteByApplicantUserId(Long userId) {
+            int before = requests.size();
+            requests.removeIf(item -> item.getApplicantUserId().equals(userId));
             return before - requests.size();
         }
     }

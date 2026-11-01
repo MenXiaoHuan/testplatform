@@ -39,6 +39,7 @@ export const useAuthStore = defineStore('auth', {
   }),
   getters: {
     isAuthenticated: (state) => Boolean(state.user),
+    isSuperAdmin: (state) => Boolean(state.user?.superAdmin),
   },
   actions: {
     async ensurePublicKey(force = false) {

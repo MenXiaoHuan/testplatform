@@ -52,10 +52,10 @@
 - 上下文压缩：token 数超 80% 阈值时自动压缩历史对话
 
 ### 全链路追踪（Agent Trace）
-- 存储：Redis List（按 traceId 分组）+ ZSet 索引（按时间排序）
-- TTL：90 天自动过期
+- 存储：Langfuse（内置 Agent 的 trace 统一打 `source=builtin_agent` 标签）
+- 保留策略：由 Langfuse 项目配置决定
 - 覆盖阶段：REQUEST_RECEIVED → CONTEXT_READY → AGENT_CALL → OUTPUT_PARSED → REQUEST_COMPLETED
-- 查询：通过 TraceQueryTool.queryTrace(traceId) 在对话中直接查询
+- 查询：在「模型评测 → 在线监控」按来源 `内置 Agent` 筛选查看 Trace 链路
 - 用途：故障排查、Agent 评测、链路回溯
 
 ### SSE 流式响应
@@ -75,5 +75,4 @@
 | OutputFormatFallbackService | 四层输出解析兜底 |
 | InputSanitizer | 输入清洗 + Prompt 注入检测 |
 | AgentObservability | 调用量/错误率/token 使用量监控 |
-| AgentTraceLogService | 全链路 traceId 日志存储（Redis，90天 TTL） |
-| TraceQueryTool | 按 traceId 查询调用链路的 Agent 工具 |
+| AgentTraceRecorder | 全链路 trace 异步写入 Langfuse（有界队列，故障静默丢弃） |

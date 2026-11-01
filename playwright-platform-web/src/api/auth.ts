@@ -8,6 +8,7 @@ interface AuthUserResponse {
   avatarObjectKey: string | null
   lastSpaceId: number | null
   needsSetup: boolean
+  superAdmin?: boolean
 }
 
 function normalizeUser(payload: AuthUserResponse): AuthUser {
@@ -18,6 +19,7 @@ function normalizeUser(payload: AuthUserResponse): AuthUser {
     avatarUrl: payload.avatarObjectKey ?? null,
     lastSpaceId: payload.lastSpaceId ?? null,
     needsSetup: payload.needsSetup ?? false,
+    superAdmin: payload.superAdmin ?? false,
   }
 }
 

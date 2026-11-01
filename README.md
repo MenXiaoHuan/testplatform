@@ -27,10 +27,10 @@
 
 - **ReAct 循环推理**：Spring AI Alibaba Agent · 思考 → 调用工具 → 观察 → 回答（最多 20 次模型调用熔断）
 - **结构化输出**：sections-only（heading / paragraph / list / code / quote / table 六种块）· 省 40-50% Token
-- **内置工具集**：TaskTool / SceneTool / RepositoryTool / LogPreprocessingTool / TraceQueryTool
+- **内置工具集**：TaskTool / SceneTool / RepositoryTool / LogPreprocessingTool
 - **Skills 按需加载**：启动时只扫 frontmatter 生成索引，LLM 判断需要时才加载正文（error-analysis / business-knowledge）
 - **上下文压缩**：Smart 压缩（LLM 摘要优先，30s 超时 → 规则提取回退）+ Aggressive 压缩
-- **全链路 Trace**：Redis 90 天 TTL · 21 个阶段结构化日志 · AOP 拦截真实 Token 用量
+- **全链路 Trace**：Langfuse · 21 个阶段结构化日志 · AOP 拦截真实 Token 用量 · 支持上游 `traceparent` 继承（trace-id 与 Langfuse 双向绑定）· 在「模型评测 → 在线监控」统一查看
 - **故障排查**：「帮我分析任务 123 为什么失败了」→ 自动调 TaskTool + LogPreprocessingTool → 输出结构化故障详情
 - **SSE 流式**：meta + chunk + complete 事件 · 打字机效果 + fade-in 动画
 
@@ -72,7 +72,7 @@ flowchart TD
         Server -->|ReactAgent| LLM[LLM API deepseek-chat]
         LLM -->|Tool Call| Tools[TaskTool SceneTool LogPreprocessingTool]
         Tools --> Redis
-        Server -->|AgentTraceLogService| Redis
+        Server -->|AgentTraceRecorder| Langfuse
     end
 
     subgraph Eval[大模型评测 建设中]
@@ -91,7 +91,7 @@ flowchart TD
 | **详情缓存三防**（穿透 / 击穿 / 雪崩）| 空值缓存 + 互斥锁 + TTL 抖动 |
 | **Flyway + MyBatis 注解 Mapper**（不用 JPA）| SQL 可控 · 任务状态和分页查询更透明 · 纯注解避免 XML 分散 |
 | **sections-only 输出**（不派 response）| LLM 只输出结构化 JSON，后端派生纯文本 · 省 40-50% Token · 避免双写不一致 |
-| **Agent Trace 存 Redis**（90 天 TTL）| 比 MySQL 快 · 过期自动清理 · List + ZSet 双索引 |
+| **Agent Trace 存 Langfuse**（统一在线监控查看）| 无需自建存储 · 与评测 Trace 同源 · 保留策略由 Langfuse 项目配置决定 |
 | **Prompt 托管中心 API 拉取**（不硬编码）| 版本可回滚 · Langfuse Trace 自动关联 Prompt 版本 · A/B 实验强制注入 |
 
 ---
@@ -177,9 +177,9 @@ testplatform/
 │   ├── src/main/java/.../platform/
 │   │   ├── ai/                       # AI Agent 模块
 │   │   │   ├── config/               # ReactAgent / DeepSeek / SystemPrompt 配置
-│   │   │   ├── controller/           # AgentController（chat / chatStream / trace 查询）
+│   │   │   ├── controller/           # AgentController（chat / chatStream）
 │   │   │   ├── service/              # AgentService（对话主入口）
-│   │   │   ├── tools/                # 7 个内置 Tool
+│   │   │   ├── tools/                # 内置 Tool
 │   │   │   ├── hook/                 # SystemPromptHook
 │   │   │   ├── skill/                # SkillIndexLoader（按需加载）
 │   │   │   ├── session/              # ChatSessionManager（Caffeine + 30min TTL）
@@ -210,8 +210,6 @@ testplatform/
 │   │   │   ├── repository/            # 仓库管理
 │   │   │   ├── scene/                 # 场景管理
 │   │   │   ├── task/                  # 任务列表 / 详情
-│   │   │   ├── event/                 # 调度事件（日志追踪）
-│   │   │   ├── ai/                    # Agent Trace 时间线
 │   │   │   └── space/                 # 空间审批
 │   │   ├── components/ai/             # AiAssistantDialog（AI 对话框）
 │   │   ├── stores/                    # Pinia Store（auth · space · task · ai）
@@ -237,20 +235,7 @@ testplatform/
 
 ---
 
-## 📖 文档导航
-
-| 文档 | 说明 |
-|------|------|
-| 🚀 **快速启动** | 本文档「快速开始」章节 |
-| 📦 **部署指南** | [DEPLOYMENT.md](DEPLOYMENT.md)（v2.0 · 单机 / 分机 / K8s / 云托管 · 监控 / CI-CD / 多实例）|
-| 📋 **需求文档 · 平台基础** | [docs/prd-01-platform-foundation.md](docs/prd-01-platform-foundation.md)（v1.0 · 登录 / 权限 / Space / 审批）|
-| 📋 **需求文档 · UI 自动化** | [docs/prd-02-ui-automation.md](docs/prd-02-ui-automation.md) |
-| 📋 **需求文档 · AI 助手** | [docs/prd-03-ai-assistant.md](docs/prd-03-ai-assistant.md) |
-| 📋 **需求文档 · 大模型评测** | [docs/prd-04-llm-evaluation-prd.md](docs/prd-04-llm-evaluation-prd.md)（v1.4 · Prompt 托管 + Langfuse + 离线/在线/A/B + 多租户并发）|
-
----
-
-## 🧪 测试
+# 🧪 测试
 
 ```bash
 # 后端（Maven + JaCoCo）

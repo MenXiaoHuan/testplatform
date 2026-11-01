@@ -38,6 +38,11 @@ const router = createRouter({
       meta: { title: '空间审批', requiresAuth: true },
     },
     {
+      path: '/spaces/:spaceId/users',
+      component: () => import('../views/admin/UserManagementView.vue'),
+      meta: { title: '用户管理', requiresAuth: true, superAdminOnly: true },
+    },
+    {
       path: '/spaces/:spaceId/repos',
       component: () => import('../views/repository/RepositoryListView.vue'),
       meta: { title: '代码仓库管理', requiresAuth: true },
@@ -48,15 +53,33 @@ const router = createRouter({
       meta: { title: 'E2E场景管理', requiresAuth: true },
     },
     {
-      path: '/spaces/:spaceId/schedule-events',
-      component: () => import('../views/event/EventListView.vue'),
-      meta: { title: '调度事件', requiresAuth: true },
+      path: '/spaces/:spaceId/evaluation',
+      redirect: (to) => `/spaces/${to.params.spaceId}/evaluation/targets`,
     },
     {
-      path: '/ai/trace/:traceId',
-      name: 'agent-trace-detail',
-      component: () => import('../views/ai/AgentTraceDetailView.vue'),
-      meta: { title: 'Agent Trace 时间线', requiresAuth: true },
+      path: '/spaces/:spaceId/evaluation/targets',
+      component: () => import('../views/evaluation/TargetListView.vue'),
+      meta: { title: '目标管理', requiresAuth: true },
+    },
+    {
+      path: '/spaces/:spaceId/evaluation/datasets',
+      component: () => import('../views/evaluation/DatasetListView.vue'),
+      meta: { title: '评测集', requiresAuth: true },
+    },
+    {
+      path: '/spaces/:spaceId/evaluation/prompts',
+      component: () => import('../views/evaluation/PromptListView.vue'),
+      meta: { title: 'Prompt 托管', requiresAuth: true },
+    },
+    {
+      path: '/spaces/:spaceId/evaluation/runs',
+      component: () => import('../views/evaluation/OfflineRunListView.vue'),
+      meta: { title: '离线运行', requiresAuth: true },
+    },
+    {
+      path: '/spaces/:spaceId/evaluation/monitor',
+      component: () => import('../views/evaluation/OnlineMonitorView.vue'),
+      meta: { title: '在线监控', requiresAuth: true },
     },
     {
       path: '/spaces/:spaceId/scenes/:sceneId/tasks',
@@ -135,7 +158,7 @@ router.beforeEach(async (to) => {
     spaceStore.setCurrentSpace(rawSpaceId)
 
     const currentRole = spaceStore.plazaItems.find((item) => item.id === rawSpaceId)?.currentRole ?? null
-    if (!canAccessSpaceRoute(to.path, currentRole)) {
+    if (!canAccessSpaceRoute(to.path, currentRole, authStore.isSuperAdmin)) {
       showAppToast('你当前没有该模块访问权限', 'warning')
       return getDefaultSpaceRoute(rawSpaceId, currentRole)
     }

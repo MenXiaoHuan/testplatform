@@ -1,3 +1,33 @@
+x-langfuse-env: &langfuse-env
+  DATABASE_URL: postgresql://postgres:${LANGFUSE_POSTGRES_PASSWORD:?Set LANGFUSE_POSTGRES_PASSWORD in .env}@langfuse-postgres:5432/postgres
+  SALT: ${LANGFUSE_SALT:?Set LANGFUSE_SALT in .env}
+  ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY:?Set LANGFUSE_ENCRYPTION_KEY in .env}
+  TELEMETRY_ENABLED: "false"
+  LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "false"
+  CLICKHOUSE_MIGRATION_URL: clickhouse://langfuse-clickhouse:9000
+  CLICKHOUSE_URL: http://langfuse-clickhouse:8123
+  CLICKHOUSE_USER: clickhouse
+  CLICKHOUSE_PASSWORD: ${LANGFUSE_CLICKHOUSE_PASSWORD:?Set LANGFUSE_CLICKHOUSE_PASSWORD in .env}
+  CLICKHOUSE_CLUSTER_ENABLED: "false"
+  REDIS_HOST: langfuse-redis
+  REDIS_PORT: "6379"
+  REDIS_AUTH: ${LANGFUSE_REDIS_PASSWORD:?Set LANGFUSE_REDIS_PASSWORD in .env}
+  REDIS_TLS_ENABLED: "false"
+  LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+  LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
+  LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: ${PLATFORM_MINIO_ACCESS_KEY:?Set PLATFORM_MINIO_ACCESS_KEY in .env}
+  LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ${PLATFORM_MINIO_SECRET_KEY:?Set PLATFORM_MINIO_SECRET_KEY in .env}
+  LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://minio:9000
+  LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+  LANGFUSE_S3_EVENT_UPLOAD_PREFIX: events/
+  LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: langfuse
+  LANGFUSE_S3_MEDIA_UPLOAD_REGION: auto
+  LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: ${PLATFORM_MINIO_ACCESS_KEY:?Set PLATFORM_MINIO_ACCESS_KEY in .env}
+  LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: ${PLATFORM_MINIO_SECRET_KEY:?Set PLATFORM_MINIO_SECRET_KEY in .env}
+  LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://minio:9000
+  LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
+  LANGFUSE_S3_MEDIA_UPLOAD_PREFIX: media/
+
 services:
   mysql:
     image: mysql:8.0
@@ -50,6 +80,91 @@ services:
       retries: 10
       start_period: 5s
 
+  # ================= Langfuse（自建观测后端） =================
+  langfuse-postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${LANGFUSE_POSTGRES_PASSWORD:?Set LANGFUSE_POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: postgres
+    volumes:
+      - langfuse-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  langfuse-clickhouse:
+    image: clickhouse/clickhouse-server:24.3-alpine
+    environment:
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: ${LANGFUSE_CLICKHOUSE_PASSWORD:?Set LANGFUSE_CLICKHOUSE_PASSWORD in .env}
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    volumes:
+      - langfuse-clickhouse-data:/var/lib/clickhouse
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:8123/ping || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+  langfuse-redis:
+    image: redis:7-alpine
+    command: >
+      sh -c 'redis-server --requirepass "$$LANGFUSE_REDIS_PASSWORD"'
+    environment:
+      LANGFUSE_REDIS_PASSWORD: ${LANGFUSE_REDIS_PASSWORD:?Set LANGFUSE_REDIS_PASSWORD in .env}
+    volumes:
+      - langfuse-redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$${LANGFUSE_REDIS_PASSWORD}\" ping | grep PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  # 复用现有 MinIO；bucket 需提前创建（见 README/部署命令：mc mb 或 S3 CreateBucket）
+  langfuse-web:
+    image: docker.io/langfuse/langfuse:3
+    depends_on:
+      langfuse-postgres:
+        condition: service_healthy
+      langfuse-clickhouse:
+        condition: service_healthy
+      langfuse-redis:
+        condition: service_healthy
+    environment:
+      <<: *langfuse-env
+      NEXTAUTH_URL: ${LANGFUSE_NEXTAUTH_URL:-http://localhost:3000}
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:?Set LANGFUSE_NEXTAUTH_SECRET in .env}
+      LANGFUSE_INIT_ORG_ID: platform
+      LANGFUSE_INIT_ORG_NAME: Platform
+      LANGFUSE_INIT_PROJECT_ID: platform-eval
+      LANGFUSE_INIT_PROJECT_NAME: Platform Eval
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:?Set LANGFUSE_PUBLIC_KEY in .env}
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_SECRET_KEY:?Set LANGFUSE_SECRET_KEY in .env}
+      LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_INIT_USER_EMAIL:?Set LANGFUSE_INIT_USER_EMAIL in .env}
+      LANGFUSE_INIT_USER_NAME: ${LANGFUSE_INIT_USER_NAME:-admin}
+      LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_USER_PASSWORD:?Set LANGFUSE_INIT_USER_PASSWORD in .env}
+    ports:
+      - "${LANGFUSE_HOST_PORT:-3000}:3000"
+
+  langfuse-worker:
+    image: docker.io/langfuse/langfuse-worker:3
+    depends_on:
+      langfuse-postgres:
+        condition: service_healthy
+      langfuse-clickhouse:
+        condition: service_healthy
+      langfuse-redis:
+        condition: service_healthy
+    environment:
+      <<: *langfuse-env
+
   server:
     build:
       context: ./playwright-platform-server
@@ -90,6 +205,10 @@ services:
       PLATFORM_DEEPSEEK_BASE_URL: ${PLATFORM_DEEPSEEK_BASE_URL:-https://api.deepseek.com}
       PLATFORM_DEEPSEEK_MODEL: ${PLATFORM_DEEPSEEK_MODEL:-deepseek-chat}
       PLATFORM_DEEPSEEK_TEMPERATURE: ${PLATFORM_DEEPSEEK_TEMPERATURE:-0.7}
+      LANGFUSE_HOST: ${LANGFUSE_HOST:-http://langfuse-web:3000}
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+      LANGFUSE_READ_KEY_ENABLED: ${LANGFUSE_READ_KEY_ENABLED:-false}
     ports:
       - "${PLATFORM_SERVER_HOST_PORT:?Set PLATFORM_SERVER_HOST_PORT in .env}:8080"
     volumes:
@@ -118,3 +237,6 @@ volumes:
   redis-data:
   maven-cache:
   web-node-modules:
+  langfuse-postgres-data:
+  langfuse-clickhouse-data:
+  langfuse-redis-data:

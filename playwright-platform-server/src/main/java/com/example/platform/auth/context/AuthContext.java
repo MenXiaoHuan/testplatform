@@ -5,5 +5,6 @@ public record AuthContext(
         String username,
         String nickname,
         String avatarObjectKey,
-        Long lastSpaceId) {
+        Long lastSpaceId,
+        boolean superAdmin) {
 }

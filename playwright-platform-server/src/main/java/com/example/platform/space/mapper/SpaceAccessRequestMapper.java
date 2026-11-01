@@ -195,4 +195,16 @@ public interface SpaceAccessRequestMapper {
             where space_id = #{spaceId}
             """)
     int deleteBySpaceId(@Param("spaceId") Long spaceId);
+
+    /**
+     * 删除指定用户提交的全部访问申请（用户被删除时清理）。
+     *
+     * @param userId 申请人用户ID
+     * @return 受影响的行数
+     */
+    @Delete("""
+            delete from space_access_request
+            where applicant_user_id = #{userId}
+            """)
+    int deleteByApplicantUserId(@Param("userId") Long userId);
 }

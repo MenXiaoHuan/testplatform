@@ -14,7 +14,7 @@ import org.apache.ibatis.annotations.Update;
 @Mapper
 public interface PlatformUserMapper {
     @Select("""
-            select id, username, nickname, password_hash, avatar_object_key, enabled, last_space_id, created_at, updated_at
+            select id, username, nickname, password_hash, avatar_object_key, enabled, is_super_admin, last_space_id, created_at, updated_at
             from platform_user
             where username = #{username}
               and enabled = 1
@@ -27,6 +27,7 @@ public interface PlatformUserMapper {
             @Result(property = "passwordHash", column = "password_hash"),
             @Result(property = "avatarObjectKey", column = "avatar_object_key"),
             @Result(property = "enabled", column = "enabled"),
+            @Result(property = "superAdmin", column = "is_super_admin"),
             @Result(property = "lastSpaceId", column = "last_space_id"),
             @Result(property = "createdAt", column = "created_at"),
             @Result(property = "updatedAt", column = "updated_at")
@@ -34,7 +35,7 @@ public interface PlatformUserMapper {
     Optional<PlatformUserEntity> findEnabledByUsername(@Param("username") String username);
 
     @Select("""
-            select id, username, nickname, password_hash, avatar_object_key, enabled, last_space_id, created_at, updated_at
+            select id, username, nickname, password_hash, avatar_object_key, enabled, is_super_admin, last_space_id, created_at, updated_at
             from platform_user
             where username = #{username}
             limit 1
@@ -43,7 +44,7 @@ public interface PlatformUserMapper {
     Optional<PlatformUserEntity> findByUsername(@Param("username") String username);
 
     @Select("""
-            select id, username, nickname, password_hash, avatar_object_key, enabled, last_space_id, created_at, updated_at
+            select id, username, nickname, password_hash, avatar_object_key, enabled, is_super_admin, last_space_id, created_at, updated_at
             from platform_user
             where nickname = #{nickname}
             limit 1
@@ -62,7 +63,7 @@ public interface PlatformUserMapper {
     int insert(PlatformUserEntity entity);
 
     @Select("""
-            select id, username, nickname, password_hash, avatar_object_key, enabled, last_space_id, created_at, updated_at
+            select id, username, nickname, password_hash, avatar_object_key, enabled, is_super_admin, last_space_id, created_at, updated_at
             from platform_user
             where id = #{id}
             limit 1

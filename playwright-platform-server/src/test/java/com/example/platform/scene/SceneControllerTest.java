@@ -47,6 +47,9 @@ class SceneControllerTest {
     @Autowired
     private MockMvc mockMvc;
 
+    @MockitoBean private com.example.platform.admin.mapper.PlatformSettingMapper platformSettingMapper;
+    @MockitoBean private com.example.platform.admin.mapper.PlatformUserAdminMapper platformUserAdminMapper;
+
     @MockitoBean
     private SceneService sceneService;
     @MockitoBean private AuthService authService;
@@ -367,6 +370,7 @@ class SceneControllerTest {
                         "avatars/admin.png",
                         7L,
                         LocalDateTime.now().plusDays(14),
+                        false,
                         false)));
         return builder.cookie(new jakarta.servlet.http.Cookie("platform_session", "session-1"));
     }

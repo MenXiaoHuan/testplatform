@@ -31,6 +31,8 @@ public interface UserSessionMapper {
                    pu.username,
                    pu.nickname,
                    pu.avatar_object_key,
+                   pu.enabled,
+                   pu.is_super_admin,
                    pu.last_space_id,
                    us.expires_at,
                    case when pu.nickname is null or pu.nickname = '' or pu.last_space_id is null then 1 else 0 end as needs_setup
@@ -48,7 +50,8 @@ public interface UserSessionMapper {
             @Arg(column = "avatar_object_key", javaType = String.class, jdbcType = JdbcType.VARCHAR),
             @Arg(column = "last_space_id", javaType = Long.class, jdbcType = JdbcType.BIGINT),
             @Arg(column = "expires_at", javaType = LocalDateTime.class, jdbcType = JdbcType.TIMESTAMP),
-            @Arg(column = "needs_setup", javaType = boolean.class, jdbcType = JdbcType.BIT)
+            @Arg(column = "needs_setup", javaType = boolean.class, jdbcType = JdbcType.BIT),
+            @Arg(column = "is_super_admin", javaType = boolean.class, jdbcType = JdbcType.BIT)
     })
     Optional<AuthSession> findAuthSessionBySessionId(@Param("sessionId") String sessionId);
 
@@ -70,4 +73,10 @@ public interface UserSessionMapper {
             where expires_at &lt; #{now}
             """)
     int deleteExpired(@Param("now") LocalDateTime now);
+
+    @Delete("""
+            delete from user_session
+            where user_id = #{userId}
+            """)
+    int deleteByUserId(@Param("userId") Long userId);
 }

@@ -119,6 +119,11 @@ public class SpaceServiceImpl implements SpaceService {
      */
     @Override
     public List<SpaceSummaryResponse> listMySpaces(AuthContext actor) {
+        if (actor.superAdmin()) {
+            return spaceMapper.findAll().stream()
+                    .map(SpaceSummaryResponse::from)
+                    .toList();
+        }
         return spaceMapper.findByUserId(actor.userId()).stream()
                 .map(SpaceSummaryResponse::from)
                 .toList();
@@ -141,7 +146,7 @@ public class SpaceServiceImpl implements SpaceService {
                     boolean isOwner = actor.userId().equals(space.getOwnerUserId())
                             || actor.userId().equals(space.getCreatedBy());
                     // 获取当前用户在空间中的角色
-                    String currentRole = isOwner
+                    String currentRole = (isOwner || actor.superAdmin())
                             ? "ADMIN"
                             : spaceMemberMapper.findActiveBySpaceIdAndUserId(space.getId(), actor.userId())
                                     .map(SpaceMemberEntity::getRole)
@@ -158,7 +163,7 @@ public class SpaceServiceImpl implements SpaceService {
                             resolveNickname(owner == null ? null : owner.getNickname(), owner == null ? null : owner.getUsername()),
                             resolveAvatarUrl(owner == null ? null : owner.getAvatarObjectKey()),
                             currentRole != null,
-                            isOwner,
+                            isOwner || actor.superAdmin(),
                             currentRole,
                             pendingRequestedRole);
                 })
@@ -217,7 +222,7 @@ public class SpaceServiceImpl implements SpaceService {
     private SpaceEntity requireOwnedSpace(AuthContext actor, Long spaceId) {
         SpaceEntity entity = spaceMapper.findById(spaceId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Space not found: " + spaceId));
-        if (!actor.userId().equals(entity.getOwnerUserId()) && !actor.userId().equals(entity.getCreatedBy())) {
+        if (!actor.superAdmin() && !actor.userId().equals(entity.getOwnerUserId()) && !actor.userId().equals(entity.getCreatedBy())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "space admin required");
         }
         return entity;

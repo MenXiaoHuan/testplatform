@@ -42,6 +42,9 @@ class SpaceAccessRequestControllerTest {
     @Autowired
     private MockMvc mockMvc;
 
+    @MockitoBean private com.example.platform.admin.mapper.PlatformSettingMapper platformSettingMapper;
+    @MockitoBean private com.example.platform.admin.mapper.PlatformUserAdminMapper platformUserAdminMapper;
+
     @MockitoBean private SpaceAccessRequestService spaceAccessRequestService;
     @MockitoBean private AuthService authService;
     @MockitoBean private AuthKeyProvider authKeyProvider;
@@ -143,6 +146,7 @@ class SpaceAccessRequestControllerTest {
                         "avatars/admin.png",
                         7L,
                         LocalDateTime.now().plusDays(14),
+                        false,
                         false)));
     }
 }

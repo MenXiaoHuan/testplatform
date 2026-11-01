@@ -90,6 +90,15 @@ public class SpaceAuthorizationServiceImpl implements SpaceAuthorizationService 
         // 校验空间存在性
         spaceMapper.findById(spaceId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Space not found: " + spaceId));
+        // 平台超管可访问任何空间，视为该空间的 ADMIN
+        if (actor.superAdmin()) {
+            SpaceMemberEntity synthetic = new SpaceMemberEntity();
+            synthetic.setSpaceId(spaceId);
+            synthetic.setUserId(actor.userId());
+            synthetic.setRole("ADMIN");
+            synthetic.setStatus("ACTIVE");
+            return synthetic;
+        }
         // 校验用户是否为活跃成员
         return spaceMemberMapper.findActiveBySpaceIdAndUserId(spaceId, actor.userId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "space access denied"));

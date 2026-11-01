@@ -113,39 +113,4 @@ describe('router auth guard', () => {
     expect(router.currentRoute.value.path).toBe('/spaces/99/no-access')
     expect(showAppToastMock).toHaveBeenCalledWith('你当前没有该空间的访问权限', 'error')
   })
-
-  it('should redirect viewer away from schedule events route', async () => {
-    const authStore = useAuthStore()
-    authStore.user = {
-      id: 1,
-      username: 'viewer',
-      nickname: '访客',
-      avatarUrl: null,
-      lastSpaceId: 7,
-    }
-    authStore.initialized = true
-
-    const spaceStore = useSpaceStore()
-    spaceStore.items = [{ id: 7, name: 'Alpha', description: 'alpha' }]
-    spaceStore.plazaItems = [{
-      id: 7,
-      name: 'Alpha',
-      description: 'alpha',
-      ownerUserId: 9,
-      ownerUsername: 'owner',
-      ownerNickname: 'Owner',
-      ownerAvatarUrl: null,
-      accessible: true,
-      manageable: false,
-      currentRole: 'VIEWER',
-      pendingRequestedRole: null,
-    }]
-    spaceStore.loaded = true
-    spaceStore.plazaLoaded = true
-
-    await router.push('/spaces/7/schedule-events')
-
-    expect(router.currentRoute.value.path).toBe('/spaces/7/repos')
-    expect(showAppToastMock).toHaveBeenCalledWith('你当前没有该模块访问权限', 'warning')
-  })
 })

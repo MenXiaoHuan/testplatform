@@ -4,7 +4,6 @@ import { useSpaceStore } from '../../src/stores/space'
 import { useRepositoryStore } from '../../src/stores/repository'
 import { useSceneStore } from '../../src/stores/scene'
 import { useTaskStore } from '../../src/stores/task'
-import { useScheduleEventStore } from '../../src/stores/schedule-event'
 
 vi.mock('../../src/api/repository', () => ({
   createRepository: vi.fn(),
@@ -32,10 +31,6 @@ vi.mock('../../src/api/task', () => ({
   runScene: vi.fn(),
 }))
 
-vi.mock('../../src/api/schedule-event', () => ({
-  listScheduleEvents: vi.fn(),
-  retryScheduleEvent: vi.fn(),
-}))
 vi.mock('../../src/api/space', () => ({
   createSpace: vi.fn(),
   updateSpace: vi.fn(),
@@ -50,7 +45,6 @@ vi.mock('../../src/api/space', () => ({
 import { listRepositories } from '../../src/api/repository'
 import { listScenes } from '../../src/api/scene'
 import { listTasks } from '../../src/api/task'
-import { listScheduleEvents } from '../../src/api/schedule-event'
 import { createSpace, updateSpace, deleteSpace } from '../../src/api/space'
 
 describe('space-aware stores', () => {
@@ -62,7 +56,7 @@ describe('space-aware stores', () => {
     spaceStore.currentSpaceId = 7
   })
 
-  it('should call repository, scene, task and schedule event APIs with current spaceId', async () => {
+  it('should call repository, scene and task APIs with current spaceId', async () => {
     vi.mocked(listRepositories).mockResolvedValue({
       items: [],
       total: 0,
@@ -90,35 +84,15 @@ describe('space-aware stores', () => {
       hasNext: false,
       hasPrevious: false,
     })
-    vi.mocked(listScheduleEvents).mockResolvedValue({
-      items: [],
-      total: 0,
-      page: 1,
-      size: 20,
-      totalPages: 0,
-      hasNext: false,
-      hasPrevious: false,
-    })
-
     await Promise.all([
       useRepositoryStore().fetchAll(),
       useSceneStore().fetchAll(),
       useTaskStore().fetchAll(),
-      useScheduleEventStore().fetchAll(),
     ])
 
     expect(listRepositories).toHaveBeenCalledWith(7, 1, 10)
     expect(listScenes).toHaveBeenCalledWith(7, 1, 10)
     expect(listTasks).toHaveBeenCalledWith(7, 1, 10)
-    expect(listScheduleEvents).toHaveBeenCalledWith({
-      spaceId: 7,
-      scheduleType: 'AGENT',
-      sceneId: null,
-      sceneName: '',
-      traceId: '',
-      page: 1,
-      limit: 20,
-    })
   })
 
   it('should call space CRUD APIs through the space store', async () => {

@@ -1,13 +1,14 @@
 package com.example.platform.ai.controller;
 
-import com.example.platform.ai.AgentTraceLogService;
 import com.example.platform.ai.dto.ChatRequest;
 import com.example.platform.ai.dto.ChatResponse;
 import com.example.platform.ai.service.AgentService;
+import com.example.platform.ai.trace.W3cTraceContext;
 import com.example.platform.auth.context.AuthContext;
 import com.example.platform.auth.context.AuthContextHolder;
 import com.example.platform.common.ApiResponse;
 import com.example.platform.space.service.SpaceAuthorizationService;
+import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
@@ -30,7 +31,6 @@ import java.util.concurrent.Executors;
  *   <li>{@code POST /api/ai/session/{id}/terminate} —— 主动终止会话（标记后端停止发送 chunk）</li>
  *   <li>{@code GET /api/ai/session/{id}/status} —— 查询会话终止状态</li>
  *   <li>{@code GET /api/ai/sessions/count} —— 当前活跃会话数</li>
- *   <li>{@code GET /api/ai/trace} / {@code /api/ai/trace/{traceId}} —— trace 链路查询</li>
  * </ul>
  *
  * <p>SSE 使用虚拟线程池执行，超时 300s。
@@ -40,27 +40,34 @@ import java.util.concurrent.Executors;
 public class AgentController {
 
     private static final Logger log = LoggerFactory.getLogger(AgentController.class);
+
     private final AgentService agentService;
-    private final AgentTraceLogService traceLogService;
     private final SpaceAuthorizationService spaceAuthorizationService;
     private final ExecutorService executorService;
 
-    public AgentController(AgentService agentService, AgentTraceLogService traceLogService, SpaceAuthorizationService spaceAuthorizationService) {
+    public AgentController(AgentService agentService,
+                           SpaceAuthorizationService spaceAuthorizationService) {
         this.agentService = agentService;
-        this.traceLogService = traceLogService;
         this.spaceAuthorizationService = spaceAuthorizationService;
         this.executorService = Executors.newVirtualThreadPerTaskExecutor();
     }
 
     @PostMapping("/chat")
-    public ApiResponse<ChatResponse> chat(@RequestBody ChatRequest request) {
-        log.info("Chat request: sessionId={}, messageLength={}, taskId={}, sceneId={}, spaceId={}",
+    public ApiResponse<ChatResponse> chat(
+            @RequestBody ChatRequest request,
+            @RequestHeader(value = W3cTraceContext.HEADER, required = false) String traceparent,
+            HttpServletResponse response) {
+        W3cTraceContext traceContext = W3cTraceContext.fromHeader(traceparent);
+        writeTraceHeaders(response, traceContext);
+        log.info("[TRACE:{}] Chat request: sessionId={}, messageLength={}, taskId={}, sceneId={}, spaceId={}, upstreamTraceparent={}",
+                traceContext.traceId(),
                 request.sessionId(),
                 request.message() != null ? request.message().length() : 0,
-                request.taskId(), request.sceneId(), request.spaceId());
+                request.taskId(), request.sceneId(), request.spaceId(),
+                traceparent != null && !traceparent.isBlank());
         try {
-            ChatResponse response = agentService.chat(request);
-            return ApiResponse.ok(response);
+            ChatResponse chatResponse = agentService.chat(request, traceContext.traceId());
+            return ApiResponse.ok(chatResponse);
         } catch (Exception e) {
             log.error("Failed to process chat request", e);
             return ApiResponse.error("CHAT_ERROR", e.getMessage());
@@ -68,7 +75,12 @@ public class AgentController {
     }
 
     @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter streamChat(@RequestBody ChatRequest request) {
+    public SseEmitter streamChat(
+            @RequestBody ChatRequest request,
+            @RequestHeader(value = W3cTraceContext.HEADER, required = false) String traceparent,
+            HttpServletResponse response) {
+        W3cTraceContext traceContext = W3cTraceContext.fromHeader(traceparent);
+        writeTraceHeaders(response, traceContext);
         SseEmitter emitter = new SseEmitter(300_000L);
 
         // 在主线程中先完成空间成员校验（ThreadLocal 在线程池异步线程中会丢失）
@@ -169,7 +181,7 @@ public class AgentController {
                         }
                         emitter.completeWithError(new RuntimeException(error));
                     }
-                });
+                }, traceContext.traceId());
             } catch (Exception e) {
                 log.error("Stream chat error", e);
                 try {
@@ -226,26 +238,9 @@ public class AgentController {
         return ApiResponse.ok(Map.of("activeSessions", count));
     }
 
-    /** 返回最近的 trace 摘要列表（按时间倒序），用于前端调度事件模块里的 Agent 调度事件列表。 */
-    @GetMapping("/trace")
-    public ApiResponse<List<AgentTraceLogService.TraceSummary>> listRecentTraces(
-            @RequestParam(defaultValue = "20") int limit) {
-        int safeLimit = Math.max(1, Math.min(limit, 100));
-        Long userId = AuthContextHolder.require().userId();
-        return ApiResponse.ok(traceLogService.queryRecentTraces(userId, safeLimit));
-    }
-
-    /** 返回某条 trace 的完整时间线（所有日志条目按时间升序）。 */
-    @GetMapping("/trace/{traceId}")
-    public ApiResponse<List<AgentTraceLogService.TraceLogEntry>> getTrace(@PathVariable String traceId) {
-        if (traceId == null || traceId.isBlank()) {
-            return ApiResponse.error("BAD_REQUEST", "traceId is required");
-        }
-        Long userId = AuthContextHolder.require().userId();
-        List<AgentTraceLogService.TraceLogEntry> entries = traceLogService.queryByTraceId(traceId, userId);
-        if (entries.isEmpty()) {
-            return ApiResponse.error("NOT_FOUND", "trace not found: " + traceId);
-        }
-        return ApiResponse.ok(entries);
+    /** 回写 trace-id：外部系统按同一 trace-id 在 Langfuse 检索，实现双向绑定。 */
+    private void writeTraceHeaders(HttpServletResponse response, W3cTraceContext traceContext) {
+        response.setHeader(W3cTraceContext.HEADER, traceContext.toHeader(W3cTraceContext.newSpanId()));
+        response.setHeader("X-Trace-Id", traceContext.traceId());
     }
 }

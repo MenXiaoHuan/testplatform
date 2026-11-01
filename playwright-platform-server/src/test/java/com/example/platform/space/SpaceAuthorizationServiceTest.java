@@ -20,7 +20,7 @@ class SpaceAuthorizationServiceTest {
         SpaceMapper spaceMapper = Mockito.mock(SpaceMapper.class);
         SpaceMemberMapper memberMapper = Mockito.mock(SpaceMemberMapper.class);
         SpaceAuthorizationServiceImpl service = new SpaceAuthorizationServiceImpl(spaceMapper, memberMapper);
-        AuthContext actor = new AuthContext(1L, "alice", "Alice", null, 7L);
+        AuthContext actor = new AuthContext(1L, "alice", "Alice", null, 7L, false);
 
         SpaceEntity space = new SpaceEntity();
         space.setId(7L);
@@ -44,7 +44,7 @@ class SpaceAuthorizationServiceTest {
         SpaceMapper spaceMapper = Mockito.mock(SpaceMapper.class);
         SpaceMemberMapper memberMapper = Mockito.mock(SpaceMemberMapper.class);
         SpaceAuthorizationServiceImpl service = new SpaceAuthorizationServiceImpl(spaceMapper, memberMapper);
-        AuthContext actor = new AuthContext(1L, "alice", "Alice", null, null);
+        AuthContext actor = new AuthContext(1L, "alice", "Alice", null, null, false);
 
         Mockito.when(spaceMapper.findById(99L)).thenReturn(Optional.empty());
         assertThatThrownBy(() -> service.requireReadableSpace(99L, actor))

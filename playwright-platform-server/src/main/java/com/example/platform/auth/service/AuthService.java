@@ -27,7 +27,8 @@ public interface AuthService {
             String nickname,
             String avatarObjectKey,
             Long lastSpaceId,
-            boolean needsSetup) {
+            boolean needsSetup,
+            boolean superAdmin) {
     }
 
     record LoginUser(
@@ -36,6 +37,7 @@ public interface AuthService {
             String nickname,
             String avatarObjectKey,
             Long lastSpaceId,
-            boolean needsSetup) {
+            boolean needsSetup,
+            boolean superAdmin) {
     }
 }

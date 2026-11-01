@@ -8,6 +8,7 @@ import { useSceneStore } from '../../stores/scene'
 import { useSpaceStore } from '../../stores/space'
 import type { SceneForm, SceneRecord } from '../../types/scene'
 import { toErrorMessage } from '../../utils/error'
+import { formatBeijingDateTime } from '../../utils/datetime'
 import { confirmDangerAction, showAppToast } from '../../utils/ui-feedback'
 import { isPositiveId, isRequired } from '../../utils/validators'
 
@@ -138,13 +139,7 @@ function openCreate() {
 }
 
 function formatLastRunAt(value: string | null) {
-  if (!value) {
-    return '未执行'
-  }
-  return new Intl.DateTimeFormat('zh-CN', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(new Date(value))
+  return formatBeijingDateTime(value, '未执行')
 }
 
 function executionMode(row: SceneRecord) {

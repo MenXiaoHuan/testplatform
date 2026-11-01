@@ -10,5 +10,6 @@ public record AuthSession(
         String avatarObjectKey,
         Long lastSpaceId,
         LocalDateTime expiresAt,
-        boolean needsSetup) {
+        boolean needsSetup,
+        boolean superAdmin) {
 }
