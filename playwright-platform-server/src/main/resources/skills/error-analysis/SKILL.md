@@ -1,94 +1,95 @@
 ---
 name: error-analysis
-description: 平台故障排查技能。覆盖 Playwright UI 自动化异常、分布式调度冲突、Docker 容器资源、Redis/MySQL/MinIO 基础设施、LLM-Agent 评测故障五大类排查 SOP。当用户请求"排查故障""分析报错""任务失败""排查异常""看看日志""为什么失败"时，使用此技能。核心原则：先获取任务详情(getTask)→再分析日志(analyzeLogs)→最后检查配置(getSceneDetail/getRepository)，按此优先级顺序定位根因。
+description: 易测平台错误排查技能，覆盖 UI 自动化用例失败、分布式调度冲突、容器资源异常、数据库与缓存异常、平台配置与权限异常、LLM-Agent 与模型评测故障六类 SOP。当用户说任务失败、用例失败、报错、异常、超时、一直排队、评测失败、AI 回答异常时使用。核心原则：先 getTask 再 analyzeLogs 后查配置，证据优先，不臆测根因。
 ---
 
-# 故障排查技能（Error Analysis Skill）
+# 错误排查技能（Error Analysis）
 
-## 触发条件
-当用户请求中包含以下关键词时，自动激活本技能：
-- 排查/分析/诊断 故障、错误、异常、报错
-- 任务失败、执行超时、自动化失败
-- 日志分析、看看日志、为什么报错
-- 排查 SOP、故障定位
+## 适用范围
 
-## 排查核心原则（必须遵循的顺序）
+- UI 自动化：任务失败、阶段卡住、用例失败、浏览器异常、产物缺失
+- 平台基建：任务长期 `QUEUED`、定时不触发、重复执行、容器 OOM、数据库/缓存/对象存储异常
+- 模型评测：Target 调用失败、评分异常、离线运行卡住、Langfuse/在线策略异常
+- AI 助手：知知回答超时、格式异常、工具调用异常、会话上下文异常
 
-### 通用排查三步曲
+**不适用**：纯业务规则咨询（用 `business-knowledge`）；代码缺陷修复与数据库手工改数（只给建议，不执行）。
+
+## 核心原则
+
+1. **证据优先**：没有工具返回的事实，不下根因结论；只能写「可能原因」并标 `confidence=LOW/MEDIUM`。
+2. **先分阶段**：`PREPARING` / `INSTALLING` / `TESTING` / `ARCHIVING` 决定根因域，避免一上来就猜测试代码。
+3. **区分任务级与用例级**：
+   - 任务 `FAILED` 且 `failedCount=0` → 优先看环境、安装、归档。
+   - 任务 `SUCCESS` 但有用例 `FAILED` → 进入用例级根因推断。
+4. **区分事实与推测**：日志明确写出根因给 `HIGH`；由多个现象交叉推断给 `MEDIUM`；信息缺失给 `LOW`。
+5. **方案要可执行**：临时恢复 + 长期优化 + 测试风险，三者齐全。
+6. **只读边界**：不修改配置、不取消/重跑任务、不查其他空间。
+
+## 取证顺序
+
 ```
-第1步：获取任务详情 → TaskTool.getTask(taskId, spaceId)
-         ↓ 确定故障阶段和状态
-第2步：分析错误日志 → LogPreprocessingTool.analyzeLogs(taskId, spaceId)
-         ↓ 提取错误摘要和失败用例
-第3步：检查配置信息 → SceneTool.getSceneDetail() / RepositoryTool.getRepository()
-         ↓ 定位配置层面根因
+第 1 步  getTask(taskId)              → 状态、阶段、统计、结果码、结果消息
+第 2 步  analyzeLogs(taskId)          → 错误行、失败用例、阶段日志摘要
+第 3 步  getSceneDetail(sceneId)      → 分支、选择器、浏览器、Cron、环境变量
+第 4 步  getRepository(repoId)        → Git 地址、安装/执行命令、测试根目录、启用状态
+辅助    listTasks(sceneId)            → 同场景历史任务，判断是否偶发/批量
+辅助    loadSkillDocument(...)        → 加载对应分类的详细 SOP
 ```
 
-### 工具调用优先级
-1. **TaskTool.getTask** — 最先调用，获取任务状态和阶段信息
-2. **LogPreprocessingTool.analyzeLogs** — 第二调用，分析日志提取错误
-3. **SceneTool.getSceneDetail** — 第三调用，检查场景配置
-4. **RepositoryTool.getRepository** — 第四调用，检查仓库配置
-5. **TaskTool.listTasks** — 辅助调用，查看任务列表
+**不要跳过第 1、2 步直接猜配置。** 如果用户没有给 taskId，先追问任务 ID；如果是评测问题，追问运行记录或 traceId。
 
 ## 故障分类与路由
 
-根据故障现象，将用户引导到对应的 SOP 子文档：
+| fault_type | 典型现象 | 加载 SOP |
+|------------|----------|----------|
+| `UI自动化异常` | 用例失败、选择器/断言/超时、浏览器启动失败、产物缺失 | `playwright-error.md` |
+| `分布式调度冲突` | 长期 `QUEUED`、定时不触发、重复执行、取消无效、队列满 | `scheduler-error.md` |
+| `容器资源异常` | OOM、容器启动失败、磁盘满、网络/权限问题 | `docker-error.md` |
+| `数据库缓存问题` | MySQL/Redis/MinIO/Flyway 连接、超时、迁移、缓存不一致 | `cache-db-error.md` |
+| `平台配置与权限异常` | 空间/角色/审批、仓库凭据、场景保存校验、Prompt/Target/Dataset 配置 | `config-permission-error.md` |
+| `LLM-Agent评测故障` | 知知对话异常、Target 调用失败、评分异常、Langfuse/在线策略故障 | `llm-agent-error.md` |
 
-### 故障决策树
+### 决策树
+
 ```
 用户描述故障
     │
-    ├── 提到"Playwright/浏览器/选择器/断言/超时"？
-    │   → 路由到 [playwright-error.md] Playwright UI自动化异常排查
+    ├── 有任务 ID / 明确是 UI 回归？ → 先 getTask + analyzeLogs
+    │       ├── PREPARING 失败        → 先查仓库与凭据（UI自动化异常 / 配置权限异常）
+    │       ├── INSTALLING 失败       → 依赖、网络、命令（UI自动化异常）
+    │       ├── TESTING 阶段用例失败  → 用例级根因推断（playwright-error）
+    │       ├── ARCHIVING 失败        → 产物/结果路径、存储（UI自动化异常）
+    │       └── 阶段未开始、长期排队  → 调度/容器（scheduler-error / docker-error）
     │
-    ├── 提到"排队/不执行/重复执行/调度/Redis锁"？
-    │   → 路由到 [scheduler-error.md] 分布式调度冲突排查
-    │
-    ├── 提到"Docker/容器/OOM/内存/浏览器启动"？
-    │   → 路由到 [docker-error.md] 容器资源异常排查
-    │
-    ├── 提到"Redis/MySQL/数据库/Flyway/MinIO/缓存"？
-    │   → 路由到 [cache-db-error.md] 数据库与缓存异常排查
-    │
-    ├── 提到"AI/Agent/对话/评测/模型/超时"？
-    │   → 路由到 [llm-agent-error.md] LLM-Agent评测故障排查
-    │
-    └── 不确定类型？
-        → 先执行通用排查三步曲，根据结果再路由
+    ├── 提到定时、重复、取消、队列  → scheduler-error
+    ├── 提到 Docker、OOM、磁盘      → docker-error
+    ├── 提到 MySQL、Redis、MinIO、迁移 → cache-db-error
+    ├── 提到 403、无权限、保存报错、凭据、状态机 → config-permission-error
+    └── 提到 AI、知知、评测、评分、Langfuse、traceId → llm-agent-error
 ```
 
-## 各分类 SOP 概要
-
-### 1. Playwright UI 自动化异常
-- **典型现象**：浏览器启动失败、选择器找不到、页面超时、断言失败
-- **排查路径**：getTask → analyzeLogs → getSceneDetail → getRepository
-- **详见**：[playwright-error.md](./playwright-error.md)
-
-### 2. 分布式调度冲突
-- **典型现象**：任务一直 QUEUED、重复执行、Runner 失联
-- **排查路径**：getTask → listTasks → analyzeLogs → 检查 Redis 锁配置
-- **详见**：[scheduler-error.md](./scheduler-error.md)
-
-### 3. 容器资源异常
-- **典型现象**：OOM、浏览器启动失败、容器网络超时
-- **排查路径**：getTask → getSceneDetail(检查容器参数) → analyzeLogs
-- **详见**：[docker-error.md](./docker-error.md)
-
-### 4. 数据库与缓存异常
-- **典型现象**：Redis 连接失败、MySQL 池耗尽、Flyway 迁移失败、MinIO 异常
-- **排查路径**：健康检查 → getTask → analyzeLogs → 检查配置
-- **详见**：[cache-db-error.md](./cache-db-error.md)
-
-### 5. LLM-Agent 评测故障
-- **典型现象**：对话超时、输出格式错误、工具调用失败、上下文过长
-- **排查路径**：会话状态 → Agent 调用日志 → 检查 AI 配置
-- **详见**：[llm-agent-error.md](./llm-agent-error.md)
-
 ## 输出要求
-按 AGENT.md 定义的 JSON 格式输出，fault_type 对应故障分类：
-- `UI自动化异常` → playwright-error
-- `分布式调度冲突` → scheduler-error
-- `容器资源异常` → docker-error
-- `数据库缓存问题` → cache-db-error
-- `LLM-Agent评测故障` → llm-agent-error
+
+按 `AGENT.md` 的 JSON 规范输出，故障分析时必须提供 `faultDetail`：
+
+| 字段 | 要求 |
+|------|------|
+| `fault_type` | 必须是上表六类之一 |
+| `root_cause` | 一句话根因，≤150 字；推测需注明「可能」 |
+| `immediate_solution` | 分号分隔的可执行止血动作 |
+| `long_term_optimize` | 分号分隔的防复发措施 |
+| `test_risk` | 对回归、覆盖率、发布的影响 |
+| `reproduce_steps` | 可复现步骤；无法复现填「无」 |
+
+`responseType` 固定为 `FAULT_ANALYSIS`；`sections` 至少包含「现象 → 证据 → 结论 → 建议」四段。
+
+## 排查质量检查清单
+
+- [ ] 是否真的调用了 `getTask` 和 `analyzeLogs`？
+- [ ] 是否写清了失败阶段与结果码？
+- [ ] 是否引用了日志中的具体错误关键字，而不是泛泛而谈？
+- [ ] 是否区分了任务级失败与用例级失败？
+- [ ] 根因是否可能被反证？有没有遗漏更早阶段的错误？
+- [ ] 置信度是否与证据量匹配？
+- [ ] 是否给出了临时恢复与长期优化？
+- [ ] 是否泄露了密钥、Token 或完整 Git 地址？

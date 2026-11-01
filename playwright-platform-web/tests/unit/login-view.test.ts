@@ -126,7 +126,7 @@ describe('LoginView', () => {
       },
     })
 
-    expect(wrapper.text()).toContain('测试平台')
+    expect(wrapper.text()).toContain('易测')
     expect(wrapper.text()).toContain('让每一次调用')
     expect(wrapper.text()).toContain('自动化测试 · 大模型评测')
     expect(wrapper.text()).toContain('接入与追踪')

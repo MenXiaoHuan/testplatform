@@ -23,7 +23,7 @@ const TYPE_META: Record<TargetType, { label: string; icon: string; tag: string; 
     label: '内置 Agent',
     icon: '🤖',
     tag: 'info',
-    desc: '直接调用平台自己的 AgentService，适合回归测试平台内置智能体。',
+    desc: '直接调用平台自己的 AgentService，适合回归测试易测内置的「知知」智能体。',
   },
   LLM_API: {
     label: 'LLM 接口',

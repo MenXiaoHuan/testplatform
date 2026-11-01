@@ -97,9 +97,9 @@ function toggleMode() {
       <aside class="login-left">
         <div class="login-left__inner">
           <div class="brand">
-            <span class="brand__mark">测</span>
+            <span class="brand__mark">易</span>
             <div class="brand__meta">
-              <span class="brand__name">测试平台</span>
+              <span class="brand__name">易测</span>
               <span class="brand__tag">AI QUALITY WORKSPACE</span>
             </div>
           </div>
@@ -144,7 +144,7 @@ function toggleMode() {
           </ul>
         </div>
 
-        <p class="login-left__footer">© 2026 测试平台 · AI 质量与评测工作台</p>
+        <p class="login-left__footer">© 2026 易测 · AI 质量与评测工作台</p>
       </aside>
 
       <main class="login-right">

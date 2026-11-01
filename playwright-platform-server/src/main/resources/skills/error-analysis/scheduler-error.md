@@ -1,53 +1,125 @@
-# 分布式调度冲突排查 SOP
+# 分布式调度与任务排队排查 SOP
 
-## 适用场景
-任务长期排队不执行、同一任务被重复调度、Redis 租约锁抢占失败、Runner 节点异常失联等。
+## 1. 适用场景
 
-## 排查步骤（按优先级）
+- 任务长期停在 `QUEUED`，一直不开始
+- 同一场景被重复触发
+- 定时任务到点不执行
+- 调度事件失败或反复重试
+- 取消任务后仍显示 `RUNNING`
+- 提示队列已满、系统繁忙
 
-### 第1步：确认任务状态和队列位置
+## 2. 先区分：任务触发与调度事件
+
+| 概念 | 说明 |
+|------|------|
+| 任务触发方式 | `MANUAL`（手动）、`SCHEDULED`（定时） |
+| 调度事件 | 定时触发、失败重试与 AI 对话都会产生调度事件记录 |
+| 场景调度 | 服务每 60 秒扫描一次到期场景，按 `nextRunAt` 触发 |
+| 调度租约 | 同一场景 + 同一触发时刻，2 分钟内不会被再次触发 |
+| 场景互斥 | 同一场景已有 `QUEUED`/`RUNNING` 任务时，新任务会被拒绝 |
+
+> AI 对话写的是 `scheduleType=AGENT` 的调度事件，不是任务触发方式；不要把二者混淆。
+
+## 3. 排查步骤
+
+### 第 1 步：确认任务状态与时间线
+
 ```
-调用：TaskTool.getTask(taskId, spaceId)
-关注：status / queuedAt / startedAt / runnerName / currentStage
+调用：getTask(taskId)
 ```
-- status=QUEUED + startedAt=null：任务在队列中未被消费
-- status=RUNNING + runnerName=null：已分配但 Runner 未确认
-- status=RUNNING + 长时间无更新：Runner 可能失联，Redis 租约到期未释放
 
-### 第2步：检查是否存在重复任务
+| 观察 | 判断 |
+|------|------|
+| `status=QUEUED`，`startedAt` 为空 | 尚未被线程池消费 |
+| `status=QUEUED`，`queuedAt` 很久以前 | 队列积压或调度未派发 |
+| `status=RUNNING`，长时间无阶段变化 | Runner 卡住、失联或阶段超时 |
+| `status=RUNNING` 且 `cancelRequested=true` | 等待当前阶段协作式退出 |
+| `status=FAILED`，`resultCode=PREPARE_FAILED` | 不是调度问题，转 `playwright-error.md` |
+
+### 第 2 步：看同场景是否重复/堆积
+
 ```
-调用：TaskTool.listTasks(sceneId, spaceId)
-关注：同一 sceneId 下是否有多个 QUEUED/RUNNING 状态任务
+调用：listTasks(sceneId)
 ```
-- 同一场景同时有多个任务排队：可能是并发调度冲突
-- 检查 triggerType：是 MANUAL / SCHEDULED / API 触发？
 
-### 第3步：分析任务日志
+- 同一场景是否同时存在多个 `QUEUED`/`RUNNING`？
+- 是否存在同一时间点产生多个任务？可能是多个场景配置了相同 Cron。
+- 历史任务是否在同一时刻批量失败？可能是 Runner 或依赖服务一起不可用。
+
+### 第 3 步：分析日志
+
 ```
-调用：LogPreprocessingTool.analyzeLogs(taskId, spaceId)
-关注：stage 执行日志中是否有锁冲突/超时日志
+调用：analyzeLogs(taskId)
 ```
-常见错误模式：
-- `Redis lock acquisition failed` → 租约锁被其他 Runner 持有
-- `Lease expired but task not completed` → Runner 崩溃，锁未正常释放
-- `Duplicate task detection` → 幂等校验触发
 
-## 常见故障 → 根因映射表
-| 现象 | 可能根因 | 排查动作 |
-|------|---------|---------|
-| 任务一直 QUEUED | Runner 池满/无可用 Runner | 检查 Runner 健康状态；等待空闲 Runner |
-| 任务被重复执行 | 调度器重试 + 租约未及时更新 | 检查 Redis 锁TTL；确保任务幂等 |
-| 任务 RUNNING 但无进度 | Runner 崩溃，状态未回写 | 标记任务失败后重新触发 |
-| 同一任务日志出现两次 | API 重试 + 服务端未幂等 | 检查 triggerType 和幂等键 |
+关注：
 
-## 关键配置项
-- `platform.runner.docker.memory`：容器内存，过小会导致 Runner 频繁 OOM
-- `platform.cache.mutex-ttl`：分布式锁 TTL（秒），默认 5s
-- `platform.cache.lock-retry-times`：锁获取重试次数，默认 3
-- `platform.cache.lock-wait-millis`：锁获取等待间隔，默认 50ms
+- `Task execution queue is full` → 队列满
+- `系统繁忙` / `system busy` → 线程池或资源繁忙
+- `当前场景已有执行中的任务` → 场景互斥
+- 阶段日志长时间无新增 → Runner 卡住
 
-## 快速恢复方案
-1. 手动取消卡死任务（cancelRequested=true）后重新触发
-2. 等待 Redis 租约自然过期（默认 TTL 5s）
-3. 重启服务清理残留状态（谨慎使用）
-4. 调整并发配置降低调度冲突概率
+### 第 4 步：检查场景调度配置
+
+```
+调用：getSceneDetail(sceneId)
+```
+
+| 检查项 | 说明 |
+|--------|------|
+| `scheduleEnabled` | 是否为开启状态 |
+| `cronExpression` | 是否合法、是否符合预期时区 |
+| `lastRunAt` / `lastTaskStatus` | 上次是否正常触发 |
+| `nextRunAt` | 是否已推进；长期不推进说明调度未生效 |
+| 多个场景同 Cron | 会各自产生任务，不是重复触发 bug |
+
+## 4. 调度事件失败分类
+
+调度事件失败后会按类别决定是否重试，单轮最多重试 20 条：
+
+| 分类 | 含义 | 典型错误 | 处理 |
+|------|------|----------|------|
+| `RETRYABLE_SYSTEM` | 系统繁忙，可重试 | 队列已满、系统繁忙 | 等待资源释放，降低并发 |
+| `RETRYABLE_CONFLICT` | 并发冲突，可重试 | 当前场景已有执行中的任务 | 等待在途任务结束 |
+| `NON_RETRYABLE_CONFIG` | 配置错误，不可重试 | 场景不存在、仓库停用、Cron 非法 | 修正场景/仓库配置 |
+| `NON_RETRYABLE_RESOURCE` | 资源问题，不可重试 | Runner、磁盘、依赖不可用 | 修复资源后手动重试 |
+
+## 5. 故障现象 → 根因映射
+
+| 现象 | 可能根因 | 验证动作 |
+|------|----------|----------|
+| 一直 `QUEUED` | 执行线程池已满（核心 2 / 最大 4 / 队列 50） | 看服务日志队列统计与活跃任务数 |
+| 一直 `QUEUED` 且队列未满 | 调度未派发、服务刚启动、Runner 预检未通过 | 看启动恢复与 Runner 预检日志 |
+| 到点不触发 | `scheduleEnabled=false`、Cron 非法、`nextRunAt` 为空、服务未运行 | 核对场景配置与调度扫描日志 |
+| 同一场景重复执行 | 多个场景同 Cron；或手动触发 + 定时触发叠加 | 用 `listTasks` 对比 sceneId 与触发方式 |
+| 同一时刻重复任务 | 调度租约失效或重复创建 | 检查调度事件与租约记录 |
+| 取消后仍 `RUNNING` | 协作式取消，当前阶段未结束 | 等待阶段结束或超时；确认取消标记 |
+| 服务重启后任务 `FAILED` | 启动恢复把遗留 `RUNNING` 标记失败 | 重新执行；检查上次是否异常退出 |
+| 任务被拒绝「已有执行中的任务」 | 场景互斥保护 | 等待当前任务结束，避免手动连点 |
+
+## 6. 关键限制
+
+| 项 | 默认值 |
+|----|--------|
+| 调度扫描间隔 | 60 秒 |
+| 调度租约 | 2 分钟 |
+| 执行线程池 | 核心 2、最大 4、队列 50 |
+| 失败事件单轮重试上限 | 20 条 |
+| 安装超时 | 600 秒 |
+| 测试超时 | 1800 秒 |
+
+## 7. 快速恢复
+
+1. 队列满：等待在途任务结束，或由管理员降低并发/扩容 Runner。
+2. 场景互斥：等待当前任务结束，不要连续手动触发。
+3. Cron 配置错误：修正表达式并确认 `nextRunAt` 已重新计算。
+4. 资源类不可重试：修复 Runner/磁盘/依赖后，在调度事件中手动重试。
+5. 卡死任务：确认取消标记后等待阶段超时；不要直接改数据库状态。
+6. 服务刚重启：确认启动恢复已完成，`QUEUED` 任务会被重新派发。
+
+## 8. 不要做的事
+
+- 不要手工修改任务状态或调度租约来「修复」。
+- 不要把多个场景共享同一 Cron 误判为重复调度缺陷。
+- 不要在没有队列统计与调度日志时断言是线程池问题。

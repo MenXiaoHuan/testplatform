@@ -410,7 +410,7 @@ function copyTraceId(traceId?: string) {
 
 <template>
   <div v-if="aiStore.visible" class="ai-dialog-overlay" @click.self="aiStore.close()">
-    <div class="ai-dialog" role="dialog" aria-label="智能助手">
+    <div class="ai-dialog" role="dialog" aria-label="知知">
       <header class="ai-dialog__header">
         <div class="ai-dialog__header-left">
           <div class="ai-dialog__icon">
@@ -422,7 +422,7 @@ function copyTraceId(traceId?: string) {
             </svg>
           </div>
           <div class="ai-dialog__title-group">
-            <h3 class="ai-dialog__title">智能测试助手</h3>
+            <h3 class="ai-dialog__title">知知</h3>
             <span class="ai-dialog__subtitle">
               {{ currentUserNickname }} · {{ currentSpaceName }}
               <template v-if="aiStore.hasTaskContext">
@@ -516,7 +516,7 @@ function copyTraceId(traceId?: string) {
             <div class="ai-message__content">
               <div class="ai-message__header">
                 <span class="ai-message__role">
-                  {{ msg.role === 'user' ? '你' : msg.role === 'error' ? '错误' : '助手' }}
+                  {{ msg.role === 'user' ? '你' : msg.role === 'error' ? '错误' : '知知' }}
                 </span>
                 <el-tag
                   v-if="msg.responseType"

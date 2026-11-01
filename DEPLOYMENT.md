@@ -1,13 +1,15 @@
-# 智能自动化测试平台 · 部署指南
+# 易测 · 部署指南
 
-> 版本 v2.0 · 2026-10-28
+> 版本 v2.1 · 2026-11-01
 > 
 > 本指南覆盖从**本地开发**到 **Kubernetes / 云托管** 的主流部署模式。选择哪种模式取决于团队规模、业务流量、运维能力和预算。
 > 
 > 相关文档：
 > - `README.md`：项目概览、快速启动
-> - `docs/docker.md`：Dockerfile / Compose 职责划分
-> - `docs/prd-03-platform-foundation.md`：平台用户体系与权限设计
+> - `docs/README.md`：模块 playbook 导航
+> - `docs/playbooks/01-account-and-space.md`：账号、空间与权限设计
+> - `docs/playbooks/11-platform-admin.md`：超管用户管理与注册开关
+> - `docs/code-style.md`：代码编写规范
 
 ---
 
@@ -80,6 +82,9 @@
 
 ### 1.2 各模式的组件分布差异
 
+> 本地 `docker-compose.yml` 除业务组件外，还包含 Langfuse 自托管栈（`langfuse-web` / `langfuse-worker` / `langfuse-postgres` / `langfuse-clickhouse` / `langfuse-redis`）。Langfuse 仅用于「模型评测 → 在线监控」与 Agent Trace；不使用评测能力时可在 `.env` 中关闭相关服务（把对应块从 compose 中注释或设置 `profiles`）。
+
+
 | 组件 | A 本地开发 | B 单机 Compose | C 分机部署 | D Kubernetes | E 云托管 |
 |------|-----------|---------------|-----------|-------------|---------|
 | 前端 Web | Vite dev server | Nginx (Docker) | Nginx (Docker) | Nginx Pod + Service | S3 + CloudFront |
@@ -88,6 +93,7 @@
 | Redis | Docker (Compose) | Docker (Compose) | **独立服务器 / 容器** | StatefulSet + PVC | **ElastiCache** |
 | MinIO | Docker (Compose) | Docker (Compose) | **独立服务器 / MinIO** | StatefulSet + PVC | **S3** |
 | Docker Runner | 本地 Docker | 同机 Docker | **同机 Docker** | **DinD / 远程 Docker** | **ECS + DinD** |
+| Langfuse（评测 Trace） | Compose 自托管 | Compose 自托管 | 独立服务 / 云 Langfuse | 独立 Deployment | Langfuse Cloud |
 
 > ⚠️ **Runner 特殊说明**：平台只使用 Docker Runner——Server 通过 Docker socket 启动短生命周期 Playwright 容器。Kubernetes 模式下有两种方案（见第 14 节）：
 > - **方案 1（推荐）**：Server Pod 挂载宿主机 Docker socket，Runner 容器与 Server Pod 在同一节点
@@ -117,6 +123,10 @@
 | MinIO Secret Key | `openssl rand -base64 32` | 对象存储根密码 | 第一次初始化后可改 |
 | 凭据加密密钥 | `openssl rand -base64 32` | `PLATFORM_CREDENTIAL_KEY`（AES-256-GCM，加密私有仓库凭据） | 换密钥 = 旧凭据全部作废，需重新保存 |
 | DeepSeek API Key | 从 https://platform.deepseek.com 获取 | AI 助手 | 直接替换，即时生效 |
+| Langfuse 初始化管理员 | 自定义邮箱 + 强密码 | `LANGFUSE_INIT_USER_EMAIL` / `LANGFUSE_INIT_USER_PASSWORD` | 首次启动后可在 Langfuse 控制台调整 |
+| Langfuse Public / Secret Key | 自定义强随机串 | 平台读取 Trace 的 API Key | 轮换需同步更新 `.env` |
+| Langfuse 加密/盐值 | `openssl rand -hex 32` / `openssl rand -base64 32` | `LANGFUSE_ENCRYPTION_KEY` / `LANGFUSE_SALT` | 换 `ENCRYPTION_KEY` 会导致既有 Langfuse 数据不可读 |
+| Langfuse 依赖密码 | `openssl rand -hex 24` | Postgres / ClickHouse / Redis 密码 | 首次初始化后可改 |
 
 ### 2.3 环境变量模板（所有模式通用）
 
@@ -133,7 +143,7 @@ cp .env.example .env
 |----|------|
 | `.env` 提交到 Git | ❌ 绝对禁止，加入 `.gitignore` |
 | MySQL / Redis / MinIO 暴露公网 | ❌ 禁止，只在内部网络访问 |
-| 自助注册开关 | 生产环境 `PLATFORM_REGISTRATION_ENABLED=false` |
+| 自助注册开关 | 上线后由超管在「平台运维 → 用户管理」关闭；值持久化在 `platform_setting`，重启后仍生效 |
 | HTTPS | 正式环境强制启用 |
 | Docker socket 权限 | 只在受控服务器上部署；不要暴露 socket 到公网 |
 | Runner 镜像来源 | 只用可信源，建议私有 registry 镜像扫描 |
@@ -224,17 +234,27 @@ curl -s http://127.0.0.1/api/auth/public-key         # 后端接口可达
 docker compose -f docker-compose.prod.yml exec server docker version  # Runner 预检通过
 ```
 
-### 4.4 首次注册管理员
+### 4.4 首次创建超级管理员
+
+注册开关默认关闭，且首次启动时数据库无记录；初始化顺序如下：
 
 ```bash
-# 1) 临时打开注册
+# 1) 临时打开注册（该环境变量仅作为「数据库无记录时」的默认值）
 sed -i 's/^PLATFORM_REGISTRATION_ENABLED=.*/PLATFORM_REGISTRATION_ENABLED=true/' .env
 docker compose -f docker-compose.prod.yml up -d --force-recreate server
-# 2) 浏览器注册管理员账号
-# 3) 关闭注册并重启
-sed -i 's/^PLATFORM_REGISTRATION_ENABLED=.*/PLATFORM_REGISTRATION_ENABLED=false/' .env
-docker compose -f docker-compose.prod.yml up -d --force-recreate server
+
+# 2) 浏览器注册账号并设置昵称
+# 3) 把该账号升级为超级管理员
+docker compose -f docker-compose.prod.yml exec mysql \
+  mysql -uroot -p"$PLATFORM_DB_PASSWORD" "$PLATFORM_DB_NAME" \
+  -e "UPDATE platform_user SET is_super_admin = 1 WHERE username = '<你的用户名>';"
+
+# 4) 超管登录 → 平台运维 → 用户管理 → 关闭「允许自助注册」
+#    此时写入 platform_setting，后续重启不会回退
 ```
+
+> 如果环境里已有 `admin` 账号，Flyway `V18__super_admin.sql` 会在迁移时自动把它升级为超管。
+> 注册开关的日常启停**不需要**改 `.env`，也不需要重启服务。
 
 ### 4.5 完整的 `.env` 示例
 
@@ -243,10 +263,26 @@ docker compose -f docker-compose.prod.yml up -d --force-recreate server
 PLATFORM_WEB_HOST_PORT=80
 
 # === 后端：注册与 AI ===
+# 仅作为「数据库无记录时」的默认值；日常启停请在超管界面操作
 PLATFORM_REGISTRATION_ENABLED=false
 PLATFORM_DEEPSEEK_API_KEY=sk-xxxxxxxxxxxxxxxxxxxx
 PLATFORM_DEEPSEEK_BASE_URL=https://api.deepseek.com
 PLATFORM_DEEPSEEK_MODEL=deepseek-chat
+
+# === 模型评测 / 在线监控：Langfuse 自托管 ===
+LANGFUSE_HOST=http://langfuse-web:3000
+LANGFUSE_HOST_PORT=3000
+LANGFUSE_NEXTAUTH_URL=http://localhost:3000
+LANGFUSE_NEXTAUTH_SECRET=<strong-random-string>
+LANGFUSE_SALT=<random-string>
+LANGFUSE_ENCRYPTION_KEY=<32-byte-hex>
+LANGFUSE_POSTGRES_PASSWORD=<strong-random-password>
+LANGFUSE_CLICKHOUSE_PASSWORD=<strong-random-password>
+LANGFUSE_REDIS_PASSWORD=<strong-random-password>
+LANGFUSE_PUBLIC_KEY=pk-<random>
+LANGFUSE_SECRET_KEY=sk-<random>
+LANGFUSE_INIT_USER_EMAIL=admin@example.com
+LANGFUSE_INIT_USER_PASSWORD=<strong-random-password>
 
 # === 后端：MySQL ===
 PLATFORM_DB_NAME=playwright_platform
@@ -635,7 +671,8 @@ PLATFORM_RUNNER_DOCKER_HOST=tcp://runner-dind:2375
 | 数据类型 | 增长速率 | 保留策略 | 存储建议 |
 |----------|----------|----------|----------|
 | MySQL | 低（元数据）| 90 天 | SSD，≥ 100GB |
-| Redis Trace | 中 | 90 天 TTL | SSD，≥ 50GB |
+| Langfuse 数据（Trace / 评分） | 高 | 按 Langfuse 项目保留策略 | ClickHouse + Postgres 数据盘，≥ 100GB 起步 |
+| Redis 缓存 / 会话 | 低 | 详情缓存 TTL 抖动，会话 30 分钟 | SSD，≥ 20GB |
 | MinIO 产物（截图/视频/Trace）| **高**（每任务 ~50~200MB）| 按策略清理 | 对象存储，≥ 500GB 起步 |
 | Runner Workspace | 高（临时）| 任务完成后清理 | 本地 SSD，≥ 100GB |
 
@@ -654,10 +691,11 @@ PLATFORM_RUNNER_DOCKER_HOST=tcp://runner-dind:2375
 
 ### 9.1 Prometheus + Grafana（推荐）
 
-#### 暴露的 Spring Boot Actuator 端点
+#### 接入 Spring Boot Actuator（当前版本未内置）
+
+当前 `pom.xml` 未引入 `spring-boot-starter-actuator` 与 `micrometer-registry-prometheus`，`/actuator/*` 端点默认不可用。启用监控前需先补依赖，并在 `application.yml` 增加：
 
 ```yaml
-# application.yml（已内置）
 management:
   endpoints:
     web:
@@ -668,6 +706,8 @@ management:
       prometheus:
         enabled: true
 ```
+
+> 未接入 Actuator 时，请用 `GET /api/auth/public-key` 做存活检查（返回 200 即服务可用）。
 
 #### 核心监控指标
 
@@ -751,10 +791,12 @@ groups:
 
 | 端点 | 说明 | 用途 |
 |------|------|------|
-| `GET /actuator/health` | 整体健康 | Docker healthcheck / K8s livenessProbe |
-| `GET /actuator/health/db` | MySQL 连接 | DB 专项检查 |
-| `GET /actuator/health/redis` | Redis 连接 | Redis 专项检查 |
-| `GET /actuator/health/ping` | 最小存活检查 | K8s readinessProbe（轻量快速） |
+| `GET /actuator/health` | 整体健康（需先接入 Actuator） | Docker healthcheck / K8s livenessProbe |
+| `GET /actuator/health/db` | MySQL 连接（需先接入 Actuator） | DB 专项检查 |
+| `GET /actuator/health/redis` | Redis 连接（需先接入 Actuator） | Redis 专项检查 |
+| `GET /actuator/health/ping` | 最小存活检查（需先接入 Actuator） | K8s readinessProbe |
+| `GET /api/auth/public-key` | 后端接口可达 + RSA 公钥 | 未接入 Actuator 时的存活检查 |
+| `nc -z <host> 8080` | TCP 端口探活 | 容器 / 负载均衡健康检查 |
 
 ---
 
@@ -932,7 +974,7 @@ kubectl rollout status deployment/playwright-server
 
 | 检查项 | 命令 |
 |--------|------|
-| 后端健康 | `curl -s /actuator/health | jq .status` |
+| 后端健康 | `curl -s http://127.0.0.1/api/auth/public-key`（接入 Actuator 后可用 `/actuator/health`） |
 | Flyway 迁移 | 日志里没有 Flyway ERROR |
 | Docker Runner | `docker compose exec server docker version` 或 K8s 里 `exec server docker version` |
 | 旧任务恢复 | 没有 RUNNING 状态卡住的任务 |
@@ -950,7 +992,7 @@ kubectl rollout status deployment/playwright-server
 | 定时调度 | 单实例 Cron 扫描到期场景 | 多实例同时扫描 → 重复触发（当前靠 `schedule_event` 唯一约束 + 租约机制已解决 ✅） |
 | Docker Runner | Server 直连本地 Docker socket | 多实例各自挂 socket → 任务可能跑在错误的 Runner 节点（需要统一 Runner 池 + 远程调度）|
 | Agent 会话 | Caffeine 本地缓存 | 多实例下会话不共享（用户可能被负载均衡到不同 server，会话丢失）|
-| Agent Trace | Redis List | Redis 本身是共享的，**没问题** ✅ |
+| Agent Trace | Langfuse（外部服务） | 天然共享，**没问题** ✅ |
 
 ### 13.2 改造清单
 
@@ -1090,7 +1132,7 @@ docker run --rm -v ~/.mc:/root/.mc -v $(pwd)/backup:/backup minio/mc \
 
 | 加固 | 做法 |
 |------|------|
-| 自助注册 | 生产设为 `false` |
+| 自助注册 | 由超管在「用户管理」关闭；开关落库，避免重启后回退 |
 | 密码 | BCrypt 加盐（cost ≥ 10）|
 | Cookie | HttpOnly + Secure + SameSite=Lax |
 | 凭据加密 | AES-256-GCM，密钥 32-byte base64 |
@@ -1135,6 +1177,8 @@ docker run --rm -v ~/.mc:/root/.mc -v $(pwd)/backup:/backup minio/mc \
 |------|------|
 | MySQL 连接失败（Compse 模式）| `.env` 密码改了但 volume 里还是旧密码 → 临时改回旧密码，或 `docker compose down -v` 重建 |
 | MySQL 连接失败（分机模式）| 防火墙、bind-address、用户名权限 |
+| 登录页仍显示注册入口 | 超管「用户管理」确认开关为关闭；直接查 `platform_setting.registration_enabled` |
+| 超管登录后看不到「用户管理」 | `platform_user.is_super_admin` 是否为 1 |
 | Flyway 迁移失败 | 看 server 日志；可能是版本冲突（表已存在但 Flyway 没记录）|
 | Redis NOAUTH | `.env` 密码错；Redis volume 还是旧密码 |
 
@@ -1146,6 +1190,8 @@ docker run --rm -v ~/.mc:/root/.mc -v $(pwd)/backup:/backup minio/mc \
 | Runner 镜像拉不下来 | 服务器不能访问 Docker Hub → 配镜像加速或本地 build 后 `docker save` |
 | npm ci 卡死 | Runner 容器内网络访问问题；测试仓库依赖问题；Runner 资源不够（默认 2GB）|
 | Playwright 执行浏览器缺失 | `PLATFORM_RUNNER_DOCKER_IMAGE` 必须是带浏览器的镜像（如 `mcr.microsoft.com/playwright`）|
+| 在线监控提示 Langfuse 不可用 | 检查 `langfuse-web` 容器状态与 `LANGFUSE_*` 变量是否齐全 |
+| 在线监控无 Trace | Agent 未接入 Trace、密钥错误或 `LANGFUSE_HOST` 配错 |
 | Docker socket 权限 | `DOCKER_GID` 必须等于 `stat -c '%g' /var/run/docker.sock` |
 
 ### 17.4 K8s 特定
@@ -1175,7 +1221,8 @@ kubectl exec -it <pod-name> -n <ns> -- bash
 kubectl top nodes / kubectl top pods
 
 # 通用
-curl -s http://localhost:8080/actuator/health
+curl -s http://localhost:8080/api/auth/public-key          # 未接入 Actuator 时的存活检查
+curl -s http://localhost:8080/actuator/health            # 仅在接入 Actuator 后可用
 curl -s http://localhost/api/auth/public-key
 nc -zv <host> <port>                                          # 端口连通性
 ss -lntp | grep -E ':(8080|3306|6379|9000)'                   # 监听端口
@@ -1192,3 +1239,4 @@ top / htop                                                      # CPU
 |------|------|------|
 | v1.0 | 2026-10-15 | 初始版本：单机 Docker Compose 部署（原 deployment.md）|
 | **v2.0** | **2026-10-28** | **大幅升级：新增模式选择、分机部署、Kubernetes、云托管、容量规划、监控日志、CI/CD、镜像仓库、滚动更新、多实例注意事项、DinD Runner 适配、安全加固** |
+| **v2.1** | **2026-11-01** | **同步平台现状：补充 Langfuse 自托管变量、超管初始化与注册开关落库说明；标注 Actuator 需自行接入；文档链接改指向 `docs/README.md` 与模块 playbook** |

@@ -168,7 +168,7 @@ public class ContextCompressionService {
         String conversationText = renderConversationForLLM(messages);
 
         String systemPrompt = """
-                你是测试平台 AI 助手的对话压缩器。请把以下多轮历史对话压缩为结构化摘要，要求：
+                你是易测平台智能助手「知知」的对话压缩器。请把以下多轮历史对话压缩为结构化摘要，要求：
                 1. 用中文输出，不超过 600 字
                 2. 按轮次列出关键信息：用户问题、调用的工具名与关键参数、助手结论
                 3. 保留所有 taskId / sceneId / spaceId / 错误类型等关键标识符

@@ -1,61 +1,115 @@
-# 数据库与缓存异常排查 SOP
+# 数据库、缓存与对象存储异常排查 SOP
 
-## 适用场景
-Redis 连接失败/缓存不一致、Flyway 迁移失败、MySQL 连接池耗尽、MinIO 对象存储异常等。
+## 1. 适用场景
 
-## 排查步骤（按优先级）
+- MySQL 连接失败、连接池耗尽、锁等待、唯一键冲突
+- Redis 连接失败、超时、缓存不一致、缓存穿透
+- Flyway 迁移失败、校验和不一致
+- MinIO 对象存储不可用、Bucket 不存在、下载 403/过期
+- 页面数据不刷新、保存后读不到、状态与数据库不一致
 
-### 第1步：确认服务状态
-检查后端服务健康检查接口是否可达。
+## 2. 排查步骤
+
+### 第 1 步：确认影响范围
+
+- 是单个空间/单个任务异常，还是全平台异常？
+- 是读路径异常（列表/详情打不开），还是写路径异常（保存/创建失败）？
+- 是否伴随其他模块同时不可用（如登录、任务、评测都异常）？
+
+### 第 2 步：结合任务排查
+
 ```
-GET /actuator/health
-```
-关注组件状态：db / redis / diskSpace
-
-### 第2步：分析任务相关日志
-```
-调用：TaskTool.getTask(taskId, spaceId)
-关注：resultMessage 中的数据库/缓存错误信息
-调用：LogPreprocessingTool.analyzeLogs(taskId, spaceId)
-关注：stage 日志中的 SQL 异常、Redis 连接异常
+调用：getTask(taskId)
+调用：analyzeLogs(taskId)
 ```
 
-### 第3步：常见故障模式
-#### Redis 相关
-- `RedisConnectionFailureException` → Redis 服务不可达，检查 `platform.redis.host/port`
-- `RedisTimeoutException` → Redis 响应超时，可能网络阻塞或 Redis 慢查询
-- `Lock acquisition failed` → 分布式锁竞争激烈，增大 `mutex-ttl` 或减少并发
-- `Cache null result` → 缓存穿透，检查 `null-ttl` 配置
+关注 `resultMessage` 与阶段日志中的数据库、缓存、存储错误。注意：`PREPARE_FAILED` 也可能由数据库异常导致，不要只看 Git。
 
-#### MySQL 相关
-- `Communications link failure` → MySQL 连接中断，检查 `platform.db.url/host/username/password`
-- `Too many connections` → 连接池耗尽，增大连接池大小
-- `Lock wait timeout exceeded` → 行锁竞争，优化 SQL 或缩短事务
-- `Duplicate entry for key` → 唯一键冲突，检查数据一致性
+### 第 3 步：检查健康状态与启动日志
 
-#### Flyway 相关
-- `Migration checksum mismatch` → 迁移脚本被修改，校验失败
-- `Migration failed` → 迁移 SQL 执行失败，查看具体 SQL 错误
-- `Schema history table update failed` → `flyway_schema_history` 表损坏
+- 如部署暴露健康检查，查看数据库、Redis、磁盘空间状态。
+- 查看服务启动日志中 Flyway、DataSource、Redis 的初始化结果。
 
-#### MinIO 相关
-- `MinioException: Access Denied` → 凭据错误，检查 `platform.minio.access-key/secret-key`
-- `Bucket not found` → Bucket `qa-report` 不存在，需创建
-- `Connection refused` → MinIO 服务不可达，检查 `platform.minio.endpoint`
+## 3. 常见错误模式
 
-## 关键配置项
-| 配置项 | 默认值 | 说明 |
-|--------|--------|------|
-| `platform.redis.host` | redis | Redis 主机 |
-| `platform.redis.port` | 6379 | Redis 端口 |
-| `platform.redis.timeout` | 2s | Redis 超时 |
-| `platform.cache.mutex-ttl` | 5s | 分布式锁 TTL |
-| `platform.cache.lock-retry-times` | 3 | 锁重试次数 |
-| `platform.minio.endpoint` | - | MinIO 服务地址 |
-| `platform.storage.bucket` | qa-report | 存储桶名称 |
+### 3.1 MySQL
 
-## 快速恢复方案
-1. Redis 异常：重启 Redis 服务；等待连接自动恢复
-2. MySQL 异常：检查连接池配置；Kill 慢查询
-3. Flyway 异常：修复迁移脚本后重新启动（禁止手动修改已执行的迁移）
-4. MinIO 异常：检查网络连通性；确认 Bucket 存在
+| 错误 | 可能根因 | 处理 |
+|------|----------|------|
+| `Communications link failure` | MySQL 不可达、网络中断、连接被重置 | 检查数据库地址、端口、网络与数据库进程 |
+| `Too many connections` | 连接池或数据库连接上限耗尽 | 检查连接池配置与慢查询，必要时扩容 |
+| `Lock wait timeout exceeded` | 行锁竞争、长事务 | 定位长事务与热点更新 |
+| `Duplicate entry for key` | 唯一键冲突（重名、重复申请、重复版本） | 按业务规则处理，不要盲目重试 |
+| `Data too long for column` | 字段长度超限 | 校验输入长度或字段定义 |
+| `Unknown column` / `Table doesn't exist` | Schema 未迁移或版本不一致 | 检查 Flyway 迁移是否完成 |
+
+### 3.2 Redis
+
+| 错误 | 可能根因 | 处理 |
+|------|----------|------|
+| `RedisConnectionFailureException` | Redis 不可达、密码错误、端口错误 | 检查地址、端口、密码与网络 |
+| `RedisTimeoutException` | Redis 慢查询或网络阻塞 | 检查 Redis 负载与网络 |
+| 缓存与数据库不一致 | 写后未失效、并发更新、TTL 过长 | 评估缓存失效策略与 TTL |
+| 缓存穿透 | 大量查询不存在的数据 | 确认空值缓存是否生效（默认 1 分钟） |
+| 额度/并发计数异常 | 计数键残留或跨实例不一致 | 核对额度与并发配置，清理异常键需运维确认 |
+
+### 3.3 Flyway
+
+| 错误 | 可能根因 | 处理 |
+|------|----------|------|
+| `Migration checksum mismatch` | 已执行过的迁移脚本被修改 | 恢复原脚本或新增迁移，不要改历史脚本 |
+| `Migration failed` | 迁移 SQL 执行失败 | 查看具体 SQL 错误与数据库权限 |
+| `Schema history table ... failed` | 迁移历史表损坏或并发迁移 | 由运维按备份恢复流程处理 |
+| 启动时卡在迁移 | 大表迁移耗时或锁表 | 评估迁移窗口与锁影响 |
+
+### 3.4 MinIO / 对象存储
+
+| 错误 | 可能根因 | 处理 |
+|------|----------|------|
+| `Access Denied` | Access Key / Secret Key 错误或无权限 | 检查对象存储凭据与 Bucket 策略 |
+| `Bucket not found` | Bucket `qa-report` 不存在 | 创建 Bucket 或修正配置 |
+| `Connection refused` | MinIO 不可达、端口错误 | 检查 endpoint 与网络 |
+| 产物下载 403 / 过期 | 预签名 URL 有效期约 1 小时 | 重新打开任务详情获取新链接 |
+| 上传失败但任务成功 | 归档阶段降级或产物过大 | 查看 ARCHIVING 日志与产物大小限制 |
+
+## 4. 缓存策略与限制
+
+| 项 | 默认值 |
+|----|--------|
+| 详情缓存 TTL | 5 分钟 |
+| 缓存抖动 | ±60 秒 |
+| 空值缓存 TTL | 1 分钟（防穿透） |
+| 互斥锁 TTL | 5 秒 |
+| 互斥锁重试 | 3 次，间隔 50ms |
+| 任务保留 | 默认不清理；生产建议 90 天 |
+| 产物单文件 | 100MB |
+| 产物总量 | 1GB |
+
+> 调度租约基于数据库乐观锁（2 分钟），不是 Redis 锁；排查重复调度时不要只看 Redis。
+
+## 5. 故障现象 → 根因映射
+
+| 现象 | 可能根因 | 验证 |
+|------|----------|------|
+| 列表/详情间歇性 500 | 数据库连接抖动或 Redis 超时 | 看服务日志异常类型与时间点 |
+| 保存成功但列表看不到 | 缓存未失效或读到了旧缓存 | 等待 TTL、对比数据库 |
+| 页面数据不变 | 详情缓存 5 分钟 + 抖动 | 确认是否刚更新 |
+| 任务状态与页面不一致 | 缓存、并发更新或前端未刷新 | 重新查询任务详情 |
+| 产物打不开 | MinIO 不可达或预签名过期 | 重新生成链接、检查存储服务 |
+| 启动即失败 | Flyway 迁移失败或数据库不可达 | 看启动日志中的迁移结果 |
+| 评测重复提交被拒 | 幂等键命中（Redis） | 等待原运行结束，避免重复提交 |
+
+## 6. 快速恢复
+
+1. MySQL 异常：确认数据库进程与网络；检查慢查询与长事务；必要时重启连接池。
+2. Redis 异常：确认服务与凭据；等待连接恢复；评估清理异常缓存键（需运维确认）。
+3. Flyway 异常：不要修改已执行脚本；新增修复迁移或按备份恢复。
+4. MinIO 异常：确认服务、Bucket 与凭据；产物链接过期则重新获取。
+5. 缓存不一致：等待 TTL 自然过期，或由运维评估主动失效。
+
+## 7. 不要做的事
+
+- 不要直接改数据库修复业务状态；先定位根因。
+- 不要修改已执行过的 Flyway 脚本。
+- 不要在生产环境随意清空 Redis 或删除 Bucket。
+- 不要把「缓存旧数据」误判为「数据丢失」。

@@ -60,7 +60,7 @@ public class ReactAgentConfig {
 
         return ReactAgent.builder()
                 .name("intelligent-assistant")
-                .description("智能测试平台助手，可以回答项目相关业务问题，也可以根据任务ID排查错误根因")
+                .description("易测平台智能助手「知知」，可以回答平台业务问题，也可以根据任务ID排查错误根因")
                 .model(model)
                 .methodTools(repositoryTool, sceneTool, taskTool, logPreprocessingTool,
                         loadSkillContentTool, loadSkillDocumentTool)

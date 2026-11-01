@@ -1,62 +1,158 @@
-# UI自动化异常排查 SOP
+# UI 自动化异常排查 SOP
 
-## 适用场景
-Playwright 测试执行失败，包括：浏览器启动失败、页面加载超时、选择器找不到元素、断言失败、网络请求拦截异常等。
+## 1. 适用场景
 
-## 排查步骤（按优先级）
+Playwright 任务失败或用例失败，包括：浏览器启动失败、页面/步骤超时、选择器找不到元素、断言失败、网络请求异常、产物缺失、用例偶发失败。
 
-### 第1步：获取任务执行详情
-```
-调用：TaskTool.getTask(taskId, spaceId)
-关注：status / currentStage / resultMessage / passedCount / failedCount
-```
-- status=COMPLETED + failedCount>0：用例级失败，需看具体错误
-- status=FAILED：任务整体失败，看 resultMessage 定因
-- currentStage 停在某阶段：定位卡住的阶段
+## 2. 第一步：先判定故障层级
 
-### 第2步：分析错误日志
-```
-调用：LogPreprocessingTool.analyzeLogs(taskId, spaceId)
-关注：Errors found / FAILED 用例列表 / stage stream 预览
-```
-常见错误模式：
-- `Browser launch failed` → 内存不足，转【容器资源异常】
-- `Timeout 30000ms exceeded` → 页面加载超时，检查网络/选择器
-- `page.waitForSelector` 失败 → 选择器与实际页面不匹配
-- `net::ERR_` 系列 → 网络/DNS 问题
-- `Error: expect(received).toBe(expected)` → 断言失败，比对实际与期望
+| 现象 | 层级 | 先看什么 |
+|------|------|----------|
+| 任务 `FAILED` / `TIMEOUT`，`failedCount=0` | 任务级 | 阶段与结果码，通常是环境/安装/归档问题 |
+| 任务 `SUCCESS` 但有用例 `FAILED` | 用例级 | 用例错误摘要、Trace、截图 |
+| 任务 `SUCCESS` 但 `failedCount>0` | 用例级（命令未失败） | 说明 reporter 记录了失败但命令退出码为 0，先确认退出码与 reporter 配置 |
+| 任务 `CANCELED` | 操作级 | 是否用户取消或恢复逻辑取消 |
+| 用例时好时坏 | 稳定性问题 | 重试结果、并发、数据隔离、等待策略 |
 
-### 第3步：检查场景配置
-```
-调用：SceneTool.getSceneDetail(sceneId, spaceId)
-关注：branch / testSelectorType / testSelectorValue / browser / envJson
-```
-- 分支是否正确？是否已合入最新代码？
-- 选择器类型（CSS/XPath/text/regex）和值是否合理？
-- 浏览器版本是否匹配测试要求？
-- 环境变量是否正确配置（API 地址、Token 等）？
+## 3. 第二步：获取任务事实
 
-### 第4步：检查仓库配置
 ```
-调用：RepositoryTool.getRepository(repoId, spaceId)
-关注：gitUrl / defaultBranch / testRoot / runCommand
+调用：getTask(taskId)
 ```
-- Git URL 是否可访问？凭据是否过期？
-- 测试目录路径是否正确？
-- 运行命令模板是否包含必要参数？
 
-## 常见故障 → 根因映射表
-| 错误关键字 | 可能根因 | 排查动作 |
-|-----------|---------|---------|
-| `insufficient memory` | 容器内存不足 | 增大 Docker memory 限制 |
-| `Timeout exceeded` | 页面加载超时/网络慢 | 增加超时配置；检查目标站点可达性 |
-| `Navigation timeout` | 路由跳转超时 | 检查前端路由守卫；检查 API 响应时间 |
-| `selector not found` | DOM 结构变化/选择器过时 | 更新 Playwright 选择器；检查页面是否异步渲染 |
-| `net::ERR_CONNECTION` | 目标服务不可达 | 检查环境配置；确认测试环境服务正常 |
-| `401/403 Forbidden` | 鉴权 Token 过期 | 更新 envJson 中的鉴权凭据 |
+| 字段 | 判读 |
+|------|------|
+| `status` | `QUEUED` / `RUNNING` / `SUCCESS` / `FAILED` / `TIMEOUT` / `CANCELED` |
+| `currentStage` | `PREPARING` / `INSTALLING` / `TESTING` / `ARCHIVING` / `FINISHED` |
+| `resultCode` | `PREPARE_FAILED` / `INSTALL_FAILED` / `TEST_FAILED` / `TIMEOUT` / `CANCELED` |
+| `resultMessage` | 平台给出的直接原因，优先引用 |
+| `passedCount` / `failedCount` / `skippedCount` | 判断是否进入用例阶段 |
+| `branch` / `resolvedBrowser` | 确认分支与浏览器快照 |
+| `durationMs` | 是否接近超时阈值 |
 
-## 快速恢复方案
-1. 重新触发任务：可能是临时网络抖动
-2. 切换分支：使用稳定分支而非特性分支
-3. 调整选择器：改用更稳定的 data-testid 选择器
-4. 增加超时：在 envJson 中增大 timeout 配置
+判读规则：
+
+- `PREPARE_FAILED` → 看仓库地址、分支、凭据、workspace 权限与 git clone 超时（默认 120 秒）。
+- `INSTALL_FAILED` → 看依赖源、安装命令、Node 版本、锁文件、网络。
+- `TEST_FAILED` → 进入用例级排查。
+- `TIMEOUT` → 区分 INSTALLING 超时（600 秒）与 TESTING 超时（1800 秒）。
+- `failedCount=0` 且 `TEST_FAILED` → 可能根本没跑起来（命令错误、无匹配用例、配置错误）。
+
+## 4. 第三步：分析日志
+
+```
+调用：analyzeLogs(taskId)
+```
+
+重点关注：
+
+- 各阶段日志中 `error` / `failed` / `exception` / `assert` / `timeout` 行。
+- 失败用例摘要（最多 5 条）：用例全名 + 错误消息。
+- `TESTING` 阶段是否出现 `No tests found`、退出码、reporter 输出路径。
+
+> 同一错误可能在多个阶段重复出现；以**最早出现**的阶段为准，后续多为连带错误。
+
+## 5. 第四步：检查配置
+
+```
+调用：getSceneDetail(sceneId)
+调用：getRepository(repoId)
+```
+
+| 配置 | 要核对什么 |
+|------|------------|
+| 分支 | 是否包含目标修复；是否特性分支 |
+| 测试选择器类型 / 匹配值 | 是否与仓库内文件、标题、标签一致 |
+| 浏览器 | `chromium` / `firefox` / `webkit` 是否与用例要求一致 |
+| 环境变量 JSON | 是否合法、键名是否与测试代码读取一致、是否泄露/过期 Token |
+| 执行命令 | 是否覆盖了仓库模板、是否缺少 reporter 参数 |
+| 结果索引路径 | 是否与 reporter 输出一致（默认 `test-results/.playwright-results.json`） |
+| 产物目录 | 是否与 Playwright 配置一致（默认 `.playwright-artifacts`） |
+| 仓库启用状态 | 停用仓库不应被新场景引用 |
+| 测试根目录 / 工作目录 | 是否在仓库根目录内、路径是否存在 |
+
+## 6. 错误关键字 → 根因映射
+
+| 错误关键字 | 可能根因 | 下一步验证 |
+|------------|----------|------------|
+| `Timeout of NNNms exceeded` | 步骤超时：元素未出现、接口慢、页面卡顿、等待策略不足 | 看具体等待的 locator/URL；检查页面是否真的加载 |
+| `waiting for locator(...)` | 选择器找不到或不可见 | 对比 DOM 变化；改用 `data-testid` 等稳定选择器 |
+| `strict mode violation ... resolved to N elements` | 选择器命中多个元素 | 收紧选择器或 `.first()`/`:nth()` |
+| `Element is not visible` / `not attached to the DOM` | 异步渲染、动画、被遮挡、已卸载 | 增加等待可见/稳定；检查弹窗层级 |
+| `Navigation timeout` | 路由跳转或接口阻塞 | 检查前端路由守卫、后端响应时间、网络 |
+| `net::ERR_CONNECTION_REFUSED` | 目标服务未启动或地址错误 | 确认测试环境、端口、容器网络 |
+| `ERR_NAME_NOT_RESOLVED` | DNS 解析失败 | 检查容器 DNS 与域名 |
+| `ERR_CERT_*` | 证书不受信任 | 检查环境证书或测试配置 |
+| `401` / `403` | 鉴权失败、Token 过期、角色不足 | 更新环境变量中的凭据或测试账号权限 |
+| `429` | 触发限流 | 降低并发或调整等待/重试 |
+| `expect(received).toBe(expected)` | 断言不匹配：功能回归或期望值过期 | 对比实际值与业务预期，确认是代码问题还是用例问题 |
+| `beforeEach` / `afterEach` hook failed | 前置/清理逻辑失败，用例未真正执行 | 看 hook 内部报错，常见为登录、数据准备、清理失败 |
+| `worker process exited unexpectedly` | 浏览器/进程崩溃，内存或驱动问题 | 转 `docker-error.md`，检查内存与浏览器镜像 |
+| `Target page, context or browser has been closed` | 页面被提前关闭、并发共享状态、超时后清理 | 检查 fixture 生命周期与并发隔离 |
+| `No tests found` | 选择器/匹配值不匹配，或工作目录错误 | 核对选择器类型、匹配值、测试根目录 |
+| `Screenshot comparison failed` | 视觉快照基线过期或渲染环境差异 | 更新基线或固定浏览器/字体/分辨率 |
+
+## 7. 用例级根因推断框架
+
+当确认是 `TESTING` 阶段的用例失败时，按六个维度逐一排除。**每推断一条，都要给出对应证据或标注「推测」。**
+
+### 7.1 环境维度
+
+- 信号：容器启动失败、浏览器缺失、依赖版本不一致、环境变量缺失。
+- 验证：`resolvedBrowser`、安装日志、环境变量键数量与键名。
+- 常见结论：镜像版本不匹配、Node/浏览器版本差异、环境变量未注入。
+
+### 7.2 数据维度
+
+- 信号：同一用例单独跑通过、批量跑失败；登录失败；列表为空；唯一键冲突。
+- 验证：是否依赖固定测试数据、是否有用例间共享数据、是否缺少清理。
+- 常见结论：测试数据被其他用例污染、数据未初始化、执行顺序依赖。
+
+### 7.3 交互维度
+
+- 信号：选择器超时、strict mode、元素不可见、点击无效。
+- 验证：页面 DOM 是否改版、是否异步渲染、是否有弹窗遮挡、是否改用了新组件库。
+- 常见结论：选择器过时、等待策略不足、交互路径变更。
+
+### 7.4 断言维度
+
+- 信号：期望值与实际值不一致、文案变化、数值格式变化。
+- 验证：对比业务需求与实际返回；确认是功能回归还是断言过期。
+- 常见结论：需求变更未同步用例、断言过严（时间/排序/随机值）。
+
+### 7.5 网络与接口维度
+
+- 信号：`ERR_*`、401/403/429、接口超时、跨域。
+- 验证：目标环境可达性、鉴权 Token 有效期、接口响应时间、限流策略。
+- 常见结论：环境不可达、Token 过期、后端限流、依赖服务未就绪。
+
+### 7.6 时间与并发维度
+
+- 信号：偶发失败、重试后通过、并发下必现、夜间任务失败。
+- 验证：是否设置重试、是否共享浏览器上下文、是否并发写同一数据。
+- 常见结论：用例不稳定（flaky）、并发资源竞争、超时阈值过紧、定时任务与数据准备冲突。
+
+## 8. 置信度判定
+
+| 置信度 | 条件 |
+|--------|------|
+| `HIGH` | 日志明确给出错误类型与位置，且配置核对一致 |
+| `MEDIUM` | 有多个现象交叉支持某一根因，但缺少直接堆栈或复现 |
+| `LOW` | 只有任务状态或用户描述，日志缺失或日志被截断 |
+
+## 9. 快速恢复建议
+
+1. 临时网络抖动：重新执行任务，观察是否复现。
+2. 分支问题：切换到稳定分支或确认修复已合入。
+3. 选择器问题：改用 `data-testid`、角色定位等稳定选择器，增加显式等待。
+4. 超时问题：确认是页面慢还是等待策略不足，优先优化等待，不盲目放大超时。
+5. 数据问题：为用例准备独立数据并在结束后清理，避免执行顺序依赖。
+6. 并发问题：降低并发或隔离浏览器上下文/账号。
+7. 环境问题：确认目标环境、依赖服务、Token 有效期。
+
+## 10. 不要做的事
+
+- 不要把「用例失败」直接等同于「产品缺陷」，先排除环境、数据、用例本身。
+- 不要在没有日志证据时断言是代码 bug。
+- 不要建议直接修改数据库或跳过失败用例来「修复」。
+- 不要用放大超时掩盖等待策略缺失。
