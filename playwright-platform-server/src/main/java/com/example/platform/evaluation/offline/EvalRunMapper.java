@@ -9,15 +9,15 @@ import java.util.Optional;
 public interface EvalRunMapper {
 
     @Insert("""
-            insert into eval_run (space_id, target_id, prompt_version_id, dataset_id, status, total_samples, evaluator_configs, max_concurrency, trigger_user)
-            values (#{spaceId}, #{targetId}, #{promptVersionId}, #{datasetId}, #{status}, #{totalSamples}, #{evaluatorConfigs}, #{maxConcurrency}, #{triggerUser})
+            insert into eval_run (space_id, target_id, prompt_version_id, dataset_id, status, total_samples, evaluator_configs, sample_ids, max_concurrency, trigger_user)
+            values (#{spaceId}, #{targetId}, #{promptVersionId}, #{datasetId}, #{status}, #{totalSamples}, #{evaluatorConfigs}, #{sampleIds}, #{maxConcurrency}, #{triggerUser})
             """)
     @Options(useGeneratedKeys = true, keyProperty = "id")
     int insert(EvalRunEntity entity);
 
     @Select("""
             select id, space_id, target_id, prompt_version_id, dataset_id, status, total_samples, completed_samples, failed_samples,
-                   overall_score, evaluator_configs, max_concurrency, started_at, finished_at, trigger_user,
+                   overall_score, evaluator_configs, sample_ids, max_concurrency, started_at, finished_at, trigger_user,
                    version, created_at, updated_at
             from eval_run where id = #{id}
             """)
@@ -33,6 +33,7 @@ public interface EvalRunMapper {
         @Result(property = "failedSamples", column = "failed_samples"),
         @Result(property = "overallScore", column = "overall_score"),
         @Result(property = "evaluatorConfigs", column = "evaluator_configs"),
+        @Result(property = "sampleIds", column = "sample_ids"),
         @Result(property = "maxConcurrency", column = "max_concurrency"),
         @Result(property = "startedAt", column = "started_at"),
         @Result(property = "finishedAt", column = "finished_at"),
@@ -45,7 +46,7 @@ public interface EvalRunMapper {
 
     @Select("""
             select id, space_id, target_id, prompt_version_id, dataset_id, status, total_samples, completed_samples, failed_samples,
-                   overall_score, evaluator_configs, max_concurrency, started_at, finished_at, trigger_user,
+                   overall_score, evaluator_configs, sample_ids, max_concurrency, started_at, finished_at, trigger_user,
                    version, created_at, updated_at
             from eval_run where space_id = #{spaceId} order by id desc
             """)
@@ -94,6 +95,23 @@ public interface EvalRunMapper {
             where id = #{id}
             """)
     int updateProgress(Long id, int completed, int failed);
+
+    /**
+     * 重跑覆盖：清空原任务的进度与总分并重新排队，原 Agent / 评测集 / 用例范围 / 评估器配置保持不变。
+     * 执行中的任务不能被覆盖，需先终止。
+     */
+    @Update("""
+            update eval_run
+            set status = 'PENDING', total_samples = #{totalSamples}, sample_ids = #{sampleIds},
+                completed_samples = 0, failed_samples = 0, overall_score = null,
+                started_at = null, finished_at = null, trigger_user = #{triggerUser},
+                version = version + 1, updated_at = current_timestamp
+            where id = #{id} and status not in ('PENDING', 'RUNNING')
+            """)
+    int resetForRerun(@Param("id") Long id,
+                      @Param("totalSamples") int totalSamples,
+                      @Param("sampleIds") String sampleIds,
+                      @Param("triggerUser") String triggerUser);
 
     @Delete("delete from eval_run where id = #{id} and space_id = #{spaceId}")
     int deleteByIdAndSpace(@Param("id") Long id, @Param("spaceId") Long spaceId);

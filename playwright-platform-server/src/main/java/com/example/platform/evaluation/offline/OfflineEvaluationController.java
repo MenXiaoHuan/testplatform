@@ -30,6 +30,15 @@ public class OfflineEvaluationController {
         return ApiResponse.ok(orchestrator.startRun(req));
     }
 
+    /** 重跑：覆盖原任务记录，沿用原 Agent / 评测集 / 用例范围 / 评估器配置，不新建任务。 */
+    @PostMapping("/{id}/rerun")
+    public ApiResponse<EvalRunEntity> rerun(@PathVariable Long id,
+                                             @RequestParam Long spaceId,
+                                             @RequestBody(required = false) RerunRequest req) {
+        String triggerUser = req != null && req.triggerUser() != null ? req.triggerUser() : "web-ui";
+        return ApiResponse.ok(orchestrator.rerun(id, spaceId, triggerUser));
+    }
+
     @GetMapping("/{id}")
     public ApiResponse<EvalRunEntity> get(@PathVariable Long id) {
         return runMapper.findById(id)
@@ -57,9 +66,10 @@ public class OfflineEvaluationController {
         return ApiResponse.ok(caseResultMapper.listByRun(id));
     }
 
+    /** 终止执行中的任务：停止后续样本调用并将状态置为 CANCELLED。 */
     @PostMapping("/{id}/cancel")
-    public ApiResponse<Void> cancel(@PathVariable Long id) {
-        runMapper.forceStatusUpdate(id, "CANCELLED", 0, 0, null);
+    public ApiResponse<Void> cancel(@PathVariable Long id, @RequestParam Long spaceId) {
+        orchestrator.cancel(id, spaceId);
         return ApiResponse.ok(null);
     }
 
@@ -95,4 +105,7 @@ public class OfflineEvaluationController {
                 run.getCompletedSamples(), run.getFailedSamples(), run.getTotalSamples());
         return ResponseEntity.ok().body(event);
     }
+
+    /** 重跑请求体：仅允许指定触发人，其余配置全部沿用原任务。 */
+    public record RerunRequest(String triggerUser) {}
 }

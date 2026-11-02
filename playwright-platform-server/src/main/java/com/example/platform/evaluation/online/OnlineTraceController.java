@@ -46,7 +46,8 @@ public class OnlineTraceController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size,
-            @RequestParam(required = false) String status) {
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String category) {
         int safePage = Math.max(page, 1);
         int safeSize = Math.min(Math.max(size, 1), 100);
 
@@ -64,6 +65,22 @@ public class OnlineTraceController {
 
         String normalizedTargetId = resolveTraceTargetId(blankToNull(targetId));
         String normalizedStatus = status == null ? "" : status.trim().toLowerCase();
+        String normalizedCategory = category == null ? "" : category.trim().toLowerCase();
+
+        // 类别筛选：在线 / 离线对应 Langfuse source 标签；全部时沿用默认可见性策略
+        String sourceTag = null;
+        if ("online".equals(normalizedCategory)) {
+            sourceTag = "source=online";
+        } else if ("offline".equals(normalizedCategory)) {
+            sourceTag = "source=offline";
+        } else if ("builtin".equals(normalizedCategory) || "builtin_agent".equals(normalizedCategory)) {
+            // 内部 Agent 数据仅超管可见
+            requireSuperAdmin();
+            sourceTag = "source=builtin_agent";
+        } else if (normalizedTargetId == null && !isSuperAdmin()) {
+            // 未指定 Agent 时默认展示全部 Trace；非超管仅看外部 Agent 线上 Trace，避免内置 Agent 数据泄露
+            sourceTag = "source=online";
+        }
 
         LangfuseTraceFilter filter = LangfuseTraceFilter.builder()
                 .targetId(normalizedTargetId)
@@ -71,8 +88,7 @@ public class OnlineTraceController {
                 .startTimeTo(to)
                 .onlyFailed("failed".equals(normalizedStatus))
                 .onlySuccess("success".equals(normalizedStatus))
-                // 未指定 Agent 时默认展示全部 Trace；非超管仅看外部 Agent 线上 Trace，避免内置 Agent 数据泄露
-                .tags(normalizedTargetId == null && !isSuperAdmin() ? List.of("source=online") : null)
+                .tags(sourceTag == null ? null : List.of(sourceTag))
                 .build();
 
         Page<LangfuseTrace> result = langfuse.queryTraces(filter, PageRequest.of(safePage - 1, safeSize));

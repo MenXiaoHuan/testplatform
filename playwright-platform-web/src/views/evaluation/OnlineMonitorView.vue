@@ -6,12 +6,16 @@ import { get, post, del } from '../../api/http'
 import { toErrorMessage } from '../../utils/error'
 import { showAppToast } from '../../utils/ui-feedback'
 import ListPageShell from '../../components/list/ListPageShell.vue'
+import CellTooltip from '../../components/list/CellTooltip.vue'
 import EvaluatorConfigEditor from '../../components/evaluation/EvaluatorConfigEditor.vue'
 import TraceDetailDrawer from '../../components/evaluation/TraceDetailDrawer.vue'
 import { formatBeijingDateTime as fmtTime, toBeijingDayStart, toBeijingDayEnd } from '../../utils/datetime'
+import { useAuthStore } from '../../stores/auth'
 
 const route = useRoute()
 const router = useRouter()
+const authStore = useAuthStore()
+const isSuperAdmin = computed(() => authStore.isSuperAdmin)
 const spaceId = computed(() => Number(route.params.spaceId))
 
 interface AgentSummary {
@@ -69,6 +73,7 @@ const from = ref(daysAgoDate(6))
 const to = ref(new Date())
 const traceIdQuery = ref('')
 const statusFilter = ref<'all' | 'success' | 'failed'>('all')
+const categoryFilter = ref<'all' | 'online' | 'offline' | 'builtin'>('all')
 const page = ref(1)
 const size = ref(20)
 const traces = ref<TraceRow[]>([])
@@ -161,6 +166,10 @@ async function loadTraces() {
         page: page.value,
         size: size.value,
         status: statusFilter.value === 'all' ? undefined : statusFilter.value,
+        category:
+          categoryFilter.value === 'all' || (categoryFilter.value === 'builtin' && !isSuperAdmin.value)
+            ? undefined
+            : categoryFilter.value,
       },
     })
     traces.value = result?.items ?? []
@@ -477,12 +486,21 @@ onUnmounted(() => {
               <label class="filter-label">Trace ID</label>
               <el-input v-model="traceIdQuery" placeholder="traceId" clearable @keyup.enter="query" />
             </div>
-            <div class="filter-field span-4">
+            <div class="filter-field span-2">
               <label class="filter-label">状态</label>
               <el-select v-model="statusFilter" @change="query">
                 <el-option label="全部" value="all" />
                 <el-option label="成功" value="success" />
                 <el-option label="失败" value="failed" />
+              </el-select>
+            </div>
+            <div class="filter-field span-2">
+              <label class="filter-label">类别</label>
+              <el-select v-model="categoryFilter" @change="query">
+                <el-option label="全部" value="all" />
+                <el-option label="在线" value="online" />
+                <el-option label="离线" value="offline" />
+                <el-option v-if="isSuperAdmin" label="内部 Agent" value="builtin" />
               </el-select>
             </div>
             <div class="filter-field filter-actions span-4">
@@ -523,29 +541,35 @@ onUnmounted(() => {
             empty-text="当前筛选条件下没有 Trace"
             @row-click="openTrace"
           >
-            <el-table-column label="时间" width="170">
+            <el-table-column label="时间" width="190">
               <template #default="{ row }">{{ fmtTime(row.startTime) }}</template>
             </el-table-column>
-            <el-table-column label="名称" min-width="160" show-overflow-tooltip>
+            <el-table-column label="名称" min-width="160">
               <template #default="{ row }">
                 <div class="trace-name">
-                  <span class="trace-name__text">{{ row.name || '(未命名)' }}</span>
+                  <CellTooltip :content="row.name || '(未命名)'" />
                   <el-tag v-if="row.success === false" type="danger" size="small" effect="plain">失败</el-tag>
                 </div>
               </template>
             </el-table-column>
             <el-table-column label="Trace ID" width="220">
               <template #default="{ row }">
-                <span class="mono trace-id" @click.stop="copyTraceId(row.traceId)">{{ row.traceId }}</span>
+                <span class="trace-id" @click.stop="copyTraceId(row.traceId)">
+                  <CellTooltip :content="row.traceId" mono />
+                </span>
               </template>
             </el-table-column>
-            <el-table-column label="输入" min-width="180" show-overflow-tooltip>
-              <template #default="{ row }"><span class="preview">{{ preview(row.input) }}</span></template>
+            <el-table-column label="输入" min-width="180">
+              <template #default="{ row }">
+                <CellTooltip :content="row.input" :display="preview(row.input)" />
+              </template>
             </el-table-column>
-            <el-table-column label="输出" min-width="180" show-overflow-tooltip>
-              <template #default="{ row }"><span class="preview">{{ preview(row.output) }}</span></template>
+            <el-table-column label="输出" min-width="180">
+              <template #default="{ row }">
+                <CellTooltip :content="row.output" :display="preview(row.output)" />
+              </template>
             </el-table-column>
-            <el-table-column label="延迟（s）" width="104">
+            <el-table-column label="延迟（s）" width="128" align="center">
               <template #default="{ row }">{{ fmtDelay(row.durationMs) }}</template>
             </el-table-column>
             <el-table-column label="操作" width="100" fixed="right">
@@ -578,11 +602,15 @@ onUnmounted(() => {
           </div>
 
           <el-table v-loading="policiesLoading" :data="policies" size="small" empty-text="暂无在线策略">
-            <el-table-column label="名称" min-width="180" show-overflow-tooltip>
-              <template #default="{ row }">{{ row.name }}</template>
+            <el-table-column label="名称" min-width="180">
+              <template #default="{ row }">
+                <CellTooltip :content="row.name" />
+              </template>
             </el-table-column>
             <el-table-column label="目标 Agent" min-width="150">
-              <template #default="{ row }">{{ policyTargetName(row) }}</template>
+              <template #default="{ row }">
+                <CellTooltip :content="policyTargetName(row)" />
+              </template>
             </el-table-column>
             <el-table-column label="状态" width="100">
               <template #default="{ row }">
@@ -594,7 +622,7 @@ onUnmounted(() => {
             <el-table-column label="间隔" width="90">
               <template #default="{ row }">{{ row.scanIntervalMinutes ?? 5 }} 分钟</template>
             </el-table-column>
-            <el-table-column label="下次扫描" width="170">
+            <el-table-column label="下次扫描" width="190">
               <template #default="{ row }">{{ fmtTime(row.nextScanAt) }}</template>
             </el-table-column>
             <el-table-column label="操作" width="230" fixed="right">
@@ -711,8 +739,8 @@ onUnmounted(() => {
 
 .trace-table :deep(.el-table__row) { cursor: pointer; }
 .trace-table :deep(.el-table__cell .cell) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.trace-name { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
-.trace-name__text { font-weight: 600; color: #0f172a; }
+.trace-name { display: flex; align-items: center; gap: 6px; min-width: 0; white-space: nowrap; }
+.trace-name :deep(.cell-tooltip) { flex: 1; min-width: 0; font-weight: 600; color: #0f172a; }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
 .trace-id {
   display: block; color: #475569; cursor: copy;
@@ -741,7 +769,9 @@ onUnmounted(() => {
 
 @media (max-width: 1100px) {
   .filter-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
-  .span-4 { grid-column: span 3; }
+  /* 窄屏下日期筛选独占整行，状态 + 类别各半行，合计仍等于单个日期筛选宽度 */
+  .span-4 { grid-column: span 6; }
+  .span-2 { grid-column: span 3; }
   .metric-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 </style>

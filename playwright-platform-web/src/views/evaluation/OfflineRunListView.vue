@@ -6,6 +6,7 @@ import { del, get, post } from '../../api/http'
 import { toErrorMessage } from '../../utils/error'
 import { showAppToast } from '../../utils/ui-feedback'
 import ListPageShell from '../../components/list/ListPageShell.vue'
+import CellTooltip from '../../components/list/CellTooltip.vue'
 import EvaluatorConfigEditor from '../../components/evaluation/EvaluatorConfigEditor.vue'
 import TraceDetailDrawer from '../../components/evaluation/TraceDetailDrawer.vue'
 import { formatBeijingDateTime as formatDateTime } from '../../utils/datetime'
@@ -166,22 +167,45 @@ function runStatusLabel(status?: string) {
   return RUN_STATUS_LABELS[status] ?? status
 }
 
-/** 用原任务的目标、评测集与评估器配置重新发起一次离线评测。 */
+/** 重跑：覆盖原任务记录，沿用原任务固定的用例范围与评估器配置，不会新建任务、也不会重跑评测集全集。 */
 async function rerun(row: any) {
   try {
-    await post('/evaluation/runs', {
-      spaceId: spaceId.value,
-      targetId: row.targetId,
-      datasetId: row.datasetId,
-      evaluatorConfigs: row.evaluatorConfigs,
-      maxConcurrency: row.maxConcurrency ?? 2,
-      triggerUser: 'web-ui',
-    })
-    showAppToast('已重新提交评测', 'success')
-    page.value = 1
+    await ElMessageBox.confirm(
+      `将用原配置（${row.totalSamples ?? 0} 条用例）覆盖本次任务并重新执行，上一次的样本结果会被清除。是否继续？`,
+      '确认重跑',
+      { type: 'warning', confirmButtonText: '重跑', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+  try {
+    await post(`/evaluation/runs/${row.id}/rerun`, { triggerUser: 'web-ui' }, { params: { spaceId: spaceId.value } })
+    showAppToast('已重跑，正在覆盖原任务结果', 'success')
+    if (resultsVisible.value && currentRun.value?.id === row.id) await loadResults(currentRun.value, true)
     await load()
   } catch (e: any) {
     showAppToast(`重跑失败: ${toErrorMessage(e, '操作失败，请稍后重试')}`, 'error')
+  }
+}
+
+/** 终止执行中的任务：停止后续用例并把状态置为已取消，已产生的部分结果保留。 */
+async function terminateRun(row: any) {
+  try {
+    await ElMessageBox.confirm(
+      '确定终止本次任务？已执行完成的用例结果会保留，未执行的用例不再执行。',
+      '确认终止',
+      { type: 'warning', confirmButtonText: '终止', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+  try {
+    await post(`/evaluation/runs/${row.id}/cancel`, undefined, { params: { spaceId: spaceId.value } })
+    showAppToast('已终止任务', 'success')
+    if (resultsVisible.value && currentRun.value?.id === row.id) await loadResults(currentRun.value, true)
+    await load()
+  } catch (e: any) {
+    showAppToast(`终止失败: ${toErrorMessage(e, '操作失败，请稍后重试')}`, 'error')
   }
 }
 
@@ -410,7 +434,7 @@ function openTrace(row: any) {
 
 async function removeRun(row: any) {
   try {
-    await ElMessageBox.confirm(`确定删除任务「#${row.id}」及其全部样本结果？`, '确认删除', {
+    await ElMessageBox.confirm('确定删除本次任务及其全部样本结果？', '确认删除', {
       type: 'warning',
       confirmButtonText: '删除',
       cancelButtonText: '取消',
@@ -467,11 +491,15 @@ onBeforeUnmount(stopAutoRefresh)
             <span class="nowrap">{{ (page - 1) * size + $index + 1 }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="Agent" min-width="140" show-overflow-tooltip>
-          <template #default="{ row }">{{ nameOf(targets, row.targetId) }}</template>
+        <el-table-column label="Agent" min-width="140">
+          <template #default="{ row }">
+            <CellTooltip :content="nameOf(targets, row.targetId)" />
+          </template>
         </el-table-column>
-        <el-table-column label="评测集" min-width="190" show-overflow-tooltip>
-          <template #default="{ row }">{{ nameOf(datasets, row.datasetId) }}</template>
+        <el-table-column label="评测集" min-width="190">
+          <template #default="{ row }">
+            <CellTooltip :content="nameOf(datasets, row.datasetId)" />
+          </template>
         </el-table-column>
         <el-table-column label="状态" width="120">
           <template #default="{ row }">
@@ -485,13 +513,29 @@ onBeforeUnmount(stopAutoRefresh)
             <strong class="score">{{ row.overallScore != null ? row.overallScore : '—' }}</strong>
           </template>
         </el-table-column>
-        <el-table-column label="创建时间" width="170" show-overflow-tooltip>
-          <template #default="{ row }"><span class="nowrap">{{ formatDateTime(row.createdAt) }}</span></template>
+        <el-table-column label="创建时间" width="170">
+          <template #default="{ row }">
+            <CellTooltip :content="formatDateTime(row.createdAt)" />
+          </template>
         </el-table-column>
-        <el-table-column label="操作" width="180" fixed="right">
+        <el-table-column label="操作" width="200" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="openResults(row)">结果</el-button>
-            <el-button link type="primary" size="small" @click="rerun(row)">重跑</el-button>
+            <!-- 执行中只提供「终止」，结束后回到「重跑」，两个操作均需二次确认 -->
+            <el-button
+              v-if="ACTIVE_STATUSES.has(row.status)"
+              link
+              type="warning"
+              size="small"
+              @click="terminateRun(row)"
+            >终止</el-button>
+            <el-button
+              v-else
+              link
+              type="primary"
+              size="small"
+              @click="rerun(row)"
+            >重跑</el-button>
             <el-button
               link
               type="danger"
@@ -508,23 +552,28 @@ onBeforeUnmount(stopAutoRefresh)
       v-model="startDialogVisible"
       title="启动离线评测"
       width="900px"
+      top="4vh"
+      class="app-form-dialog"
       :close-on-click-modal="false"
       destroy-on-close
     >
-      <el-form :model="form" label-position="top">
-        <section class="form-section">
-          <div class="section-head">
-            <span class="section-title">基础配置</span>
-            <span class="section-note">同一个 Agent 的离线结果会关联到在线 Trace 的 target_id</span>
+      <el-form :model="form" label-position="top" class="app-form">
+        <section class="app-form-section">
+          <div class="app-section-head">
+            <span class="app-section-dot" />
+            <div>
+              <h4>基础配置</h4>
+              <p>同一个 Agent 的离线结果会关联到在线 Trace 的 target_id</p>
+            </div>
           </div>
-          <div class="form-grid">
-            <el-form-item label="Agent" required class="span-6">
+          <div class="app-form-grid">
+            <el-form-item label="Agent" required class="app-span-6">
               <el-select v-model="form.targetId" filterable placeholder="选择具备离线调用能力的 Agent" style="width: 100%">
                 <el-option v-for="t in targets" :key="t.id" :label="t.name" :value="t.id" />
               </el-select>
               <div v-if="targets.length === 0" class="field-hint">还没有可离线调用的 Agent，请先到「Agent 管理」创建。</div>
             </el-form-item>
-            <el-form-item label="评测集" required class="span-6">
+            <el-form-item label="评测集" required class="app-span-6">
               <el-select v-model="form.datasetId" filterable placeholder="选择评测集" style="width: 100%" @change="handleDatasetChange">
                 <el-option
                   v-for="d in datasets"
@@ -535,7 +584,7 @@ onBeforeUnmount(stopAutoRefresh)
               </el-select>
               <div v-if="datasets.length === 0" class="field-hint">还没有评测集，请先到「评测集管理」创建或导入样本。</div>
             </el-form-item>
-            <el-form-item label="用例范围" class="span-6">
+            <el-form-item label="用例范围" class="app-span-6">
               <div class="sample-mode">
                 <el-radio-group v-model="sampleMode" @change="handleSampleModeChange">
                   <el-radio-button value="ALL">全部用例</el-radio-button>
@@ -546,19 +595,24 @@ onBeforeUnmount(stopAutoRefresh)
                 </el-button>
               </div>
             </el-form-item>
-            <el-form-item label="并发数" class="span-6">
+            <el-form-item label="并发数" class="app-span-6">
               <el-input-number v-model="form.maxConcurrency" :min="1" :max="16" controls-position="right" />
             </el-form-item>
           </div>
         </section>
 
-        <section class="form-section evaluator-section">
+        <section class="app-form-section app-form-section--last evaluator-section">
           <EvaluatorConfigEditor v-model="form.evaluatorConfigs" />
         </section>
       </el-form>
       <template #footer>
-        <el-button @click="startDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="starting" @click="startRun">启动评测</el-button>
+        <div class="app-form-footer">
+          <span class="app-form-hint">启动后可在列表中查看进度与样本明细</span>
+          <div>
+            <el-button @click="startDialogVisible = false">取消</el-button>
+            <el-button type="primary" :loading="starting" @click="startRun">启动评测</el-button>
+          </div>
+        </div>
       </template>
     </el-dialog>
 
@@ -580,11 +634,15 @@ onBeforeUnmount(stopAutoRefresh)
         <el-table-column label="序号" width="90">
           <template #default="{ row }"><span class="nowrap">{{ (row.sampleIndex ?? 0) + 1 }}</span></template>
         </el-table-column>
-        <el-table-column label="输入" min-width="300" show-overflow-tooltip>
-          <template #default="{ row }">{{ row.inputText || '—' }}</template>
+        <el-table-column label="输入" min-width="300">
+          <template #default="{ row }">
+            <CellTooltip :content="row.inputText" />
+          </template>
         </el-table-column>
-        <el-table-column label="参考答案" min-width="200" show-overflow-tooltip>
-          <template #default="{ row }">{{ row.goldenAnswer || '—' }}</template>
+        <el-table-column label="参考答案" min-width="200">
+          <template #default="{ row }">
+            <CellTooltip :content="row.goldenAnswer" />
+          </template>
         </el-table-column>
         <el-table-column label="操作" width="90" fixed="right">
           <template #default="{ row }">
@@ -710,11 +768,15 @@ onBeforeUnmount(stopAutoRefresh)
               <span class="nowrap">{{ $index + 1 }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="输入" min-width="180" show-overflow-tooltip>
-            <template #default="{ row }">{{ previewText(row.sampleInputText) }}</template>
+          <el-table-column label="输入" min-width="180">
+            <template #default="{ row }">
+              <CellTooltip :content="row.sampleInputText" :display="previewText(row.sampleInputText)" />
+            </template>
           </el-table-column>
-          <el-table-column label="Agent 输出" min-width="220" show-overflow-tooltip>
-            <template #default="{ row }">{{ previewText(row.agentOutput) }}</template>
+          <el-table-column label="Agent 输出" min-width="220">
+            <template #default="{ row }">
+              <CellTooltip :content="row.agentOutput" :display="previewText(row.agentOutput)" />
+            </template>
           </el-table-column>
           <el-table-column label="得分" width="90">
             <template #default="{ row }">
@@ -774,18 +836,7 @@ onBeforeUnmount(stopAutoRefresh)
 .muted { color: #94a3b8; margin-left: 4px; }
 .score { color: #0f766e; }
 
-.form-section { padding: 16px 18px; border: 1px solid #e2e8f0; border-radius: 10px; background: #f8fafc; }
-.form-section + .form-section { margin-top: 14px; }
 .evaluator-section { background: #fff; }
-.section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
-.section-title { position: relative; padding-left: 10px; font-size: 14px; font-weight: 600; color: #0f172a; }
-.section-title::before {
-  content: ""; position: absolute; left: 0; top: 3px; bottom: 3px;
-  width: 3px; border-radius: 2px; background: #0f766e;
-}
-.section-note { font-size: 12px; color: #94a3b8; }
-.form-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 0 16px; }
-.span-6 { grid-column: span 6; }
 .field-hint { margin-top: 2px; font-size: 12px; color: #94a3b8; line-height: 1.6; }
 .sample-mode { display: flex; align-items: center; gap: 12px; }
 .picker-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 13px; color: #64748b; }

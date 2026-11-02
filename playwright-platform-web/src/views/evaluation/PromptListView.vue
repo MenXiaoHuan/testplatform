@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import { get, post, put, del } from '../../api/http'
+import CellTooltip from '../../components/list/CellTooltip.vue'
 import { toErrorMessage } from '../../utils/error'
 import { showAppToast } from '../../utils/ui-feedback'
 import { formatBeijingDateTime } from '../../utils/datetime'
@@ -484,15 +485,7 @@ onMounted(loadKeys)
           <el-table v-else :data="versions" stripe class="version-table">
             <el-table-column label="版本" width="100">
               <template #default="{ row }">
-                <el-tooltip
-                  :content="row.versionLabel"
-                  placement="top"
-                  :show-after="300"
-                  effect="dark"
-                  :popper-options="{ strategy: 'fixed' }"
-                >
-                  <span class="cell-tooltip">{{ row.versionLabel }}</span>
-                </el-tooltip>
+                <CellTooltip :content="row.versionLabel" />
               </template>
             </el-table-column>
             <el-table-column label="状态" width="100">
@@ -504,42 +497,17 @@ onMounted(loadKeys)
             </el-table-column>
             <el-table-column label="类型" width="110">
               <template #default="{ row }">
-                <el-tooltip
-                  :content="typeLabel(row.promptType)"
-                  placement="top"
-                  :show-after="300"
-                  effect="dark"
-                  :popper-options="{ strategy: 'fixed' }"
-                >
-                  <span class="cell-tooltip">{{ typeLabel(row.promptType) }}</span>
-                </el-tooltip>
+                <CellTooltip :content="typeLabel(row.promptType)" />
               </template>
             </el-table-column>
             <el-table-column label="变更说明" min-width="130">
               <template #default="{ row }">
-                <el-tooltip
-                  :content="row.changeLog || '-'"
-                  placement="top"
-                  :show-after="300"
-                  effect="dark"
-                  :popper-options="{ strategy: 'fixed' }"
-                  :disabled="!row.changeLog"
-                >
-                  <span class="cell-tooltip">{{ row.changeLog || '-' }}</span>
-                </el-tooltip>
+                <CellTooltip :content="row.changeLog || '-'" />
               </template>
             </el-table-column>
             <el-table-column label="创建时间" width="170">
               <template #default="{ row }">
-                <el-tooltip
-                  :content="formatDateTime(row.createdAt)"
-                  placement="top"
-                  :show-after="300"
-                  effect="dark"
-                  :popper-options="{ strategy: 'fixed' }"
-                >
-                  <span class="cell-tooltip">{{ formatDateTime(row.createdAt) }}</span>
-                </el-tooltip>
+                <CellTooltip :content="formatDateTime(row.createdAt)" />
               </template>
             </el-table-column>
             <el-table-column label="操作" width="260" fixed="right">
@@ -579,18 +547,30 @@ onMounted(loadKeys)
     </div>
 
     <!-- ============ 编辑器 ============ -->
-    <el-dialog v-model="editorVisible" :title="editorTitle" width="800px" :close-on-click-modal="false" destroy-on-close>
-      <el-form :model="form" label-position="top" class="prompt-form">
-        <section class="form-section">
-          <div class="section-head">
-            <span class="section-title">基本信息</span>
+    <el-dialog
+      v-model="editorVisible"
+      :title="editorTitle"
+      width="900px"
+      top="4vh"
+      class="app-form-dialog"
+      :close-on-click-modal="false"
+      destroy-on-close
+    >
+      <el-form :model="form" label-position="top" class="app-form">
+        <section class="app-form-section">
+          <div class="app-section-head">
+            <span class="app-section-dot" />
+            <div>
+              <h4>基本信息</h4>
+              <p>名称、类型与版本信息</p>
+            </div>
             <code v-if="editorMode !== 'create'" class="prompt-key">{{ form.promptKey }}</code>
           </div>
-          <div class="form-grid">
-            <el-form-item label="名称" required class="span-12">
+          <div class="app-form-grid">
+            <el-form-item label="名称" required class="app-span-12">
               <el-input v-model="form.name" placeholder="例如：客服系统提示词" maxlength="256" />
             </el-form-item>
-            <el-form-item label="描述" class="span-12">
+            <el-form-item label="描述" class="app-span-12">
               <el-input
                 v-model="form.description"
                 type="textarea"
@@ -599,17 +579,17 @@ onMounted(loadKeys)
                 placeholder="这个提示词用于什么场景"
               />
             </el-form-item>
-            <el-form-item label="类型" class="span-6">
+            <el-form-item label="类型" class="app-span-6">
               <el-select v-if="editorMode !== 'edit'" v-model="form.promptType" style="width: 100%">
                 <el-option v-for="item in TYPE_OPTIONS" :key="item.value" :label="item.label" :value="item.value" />
               </el-select>
               <el-tag v-else type="info" size="small" effect="plain">{{ typeLabel(form.promptType) }}</el-tag>
             </el-form-item>
-            <el-form-item v-if="editorMode !== 'edit'" label="版本号" required class="span-6">
+            <el-form-item v-if="editorMode !== 'edit'" label="版本号" required class="app-span-6">
               <el-input v-model="form.versionLabel" placeholder="v1" />
               <div class="field-hint">同一提示词下版本号唯一。</div>
             </el-form-item>
-            <el-form-item v-if="editorMode !== 'create'" label="变更说明" class="span-12">
+            <el-form-item v-if="editorMode !== 'create'" label="变更说明" class="app-span-12">
               <el-input v-model="form.changeLog" placeholder="本次改了什么" maxlength="1024" />
             </el-form-item>
           </div>
@@ -618,10 +598,13 @@ onMounted(loadKeys)
           </div>
         </section>
 
-        <section class="form-section">
-          <div class="section-head">
-            <span class="section-title">提示词内容</span>
-            <span class="section-note">按消息顺序组装</span>
+        <section class="app-form-section">
+          <div class="app-section-head">
+            <span class="app-section-dot app-section-dot--blue" />
+            <div>
+              <h4>提示词内容</h4>
+              <p>按消息顺序组装，可使用变量占位符</p>
+            </div>
           </div>
           <div class="message-editor">
             <div v-for="(message, index) in form.messages" :key="index" class="message-card">
@@ -648,29 +631,42 @@ onMounted(loadKeys)
           </div>
         </section>
 
-        <section class="form-section">
-          <div class="section-head">
-            <span class="section-title">变量</span>
-            <el-button link type="primary" @click="autoExtractVariables">从内容自动提取</el-button>
+        <section class="app-form-section app-form-section--last">
+          <div class="app-section-head">
+            <span class="app-section-dot app-section-dot--amber" />
+            <div>
+              <h4>变量</h4>
+              <p>外部调用时需要填入的变量</p>
+            </div>
+            <el-button class="app-section-action" link type="primary" @click="autoExtractVariables">从内容自动提取</el-button>
           </div>
-          <el-select
-            v-model="form.variables"
-            multiple
-            filterable
-            allow-create
-            default-first-option
-            style="width: 100%"
-            placeholder="外部调用时填入的变量，如 context / user_input"
-          />
-          <div class="field-hint">
-            在消息内容里写 <code v-pre>{{context}}</code> 这样的占位符，外部服务组装时替换。
+          <div class="app-form-grid">
+            <div class="app-span-12">
+              <el-select
+                v-model="form.variables"
+                multiple
+                filterable
+                allow-create
+                default-first-option
+                style="width: 100%"
+                placeholder="外部调用时填入的变量，如 context / user_input"
+              />
+              <div class="field-hint">
+                在消息内容里写 <code v-pre>{{context}}</code> 这样的占位符，外部服务组装时替换。
+              </div>
+            </div>
           </div>
         </section>
       </el-form>
 
       <template #footer>
-        <el-button @click="editorVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="submit">保存草稿</el-button>
+        <div class="app-form-footer">
+          <span class="app-form-hint">保存后为草稿状态，发布后才可通过 Pull API 获取</span>
+          <div>
+            <el-button @click="editorVisible = false">取消</el-button>
+            <el-button type="primary" :loading="saving" @click="submit">保存草稿</el-button>
+          </div>
+        </div>
       </template>
     </el-dialog>
 
@@ -749,10 +745,6 @@ onMounted(loadKeys)
   text-overflow: ellipsis;
 }
 
-.cell-tooltip {
-  display: inline-block; max-width: 100%; vertical-align: middle;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
 .table-actions { display: inline-flex; align-items: center; gap: 12px; white-space: nowrap; }
 .table-actions :deep(.el-button + .el-button) { margin-left: 0; }
 
@@ -774,20 +766,8 @@ onMounted(loadKeys)
 .mini-empty { padding: 30px 12px; text-align: center; color: #94a3b8; font-size: 13px; line-height: 1.8; }
 .muted { color: #94a3b8; font-size: 12px; }
 
-.prompt-form { display: flex; flex-direction: column; gap: 16px; }
-.form-section { padding: 16px 18px; border: 1px solid #e2e8f0; border-radius: 10px; background: #f8fafc; }
-.section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
-.section-title { position: relative; padding-left: 10px; font-size: 14px; font-weight: 600; color: #0f172a; }
-.section-title::before {
-  content: ""; position: absolute; left: 0; top: 3px; bottom: 3px;
-  width: 3px; border-radius: 2px; background: #0f766e;
-}
-.section-note { font-size: 12px; color: #94a3b8; }
-.form-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 0 16px; }
-.form-grid :deep(.el-form-item) { margin-bottom: 14px; }
-.span-12 { grid-column: span 12; }
-.span-6 { grid-column: span 6; }
 .prompt-key {
+  margin-left: auto;
   padding: 2px 10px; border: 1px solid #99f6e4; border-radius: 999px;
   background: #ecfdf5; color: #0f766e; font-family: ui-monospace, Menlo, monospace;
   font-size: 12px; font-weight: 500;

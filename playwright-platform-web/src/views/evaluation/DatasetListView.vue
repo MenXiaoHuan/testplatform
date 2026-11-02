@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import { get, post, put, del } from '../../api/http'
+import CellTooltip from '../../components/list/CellTooltip.vue'
 import { toErrorMessage } from '../../utils/error'
 import { showAppToast } from '../../utils/ui-feedback'
 import { formatBeijingDateTime } from '../../utils/datetime'
@@ -430,12 +431,6 @@ function handleSampleSize(value: number) {
   loadSamples()
 }
 
-function preview(value?: string | null, limit = 80) {
-  if (!value) return '—'
-  const text = String(value).replace(/\s+/g, ' ').trim()
-  return text.length > limit ? `${text.slice(0, limit)}…` : text
-}
-
 onMounted(loadList)
 </script>
 
@@ -542,30 +537,22 @@ onMounted(loadList)
             </el-table-column>
             <el-table-column label="输入" min-width="180">
               <template #default="{ row }">
-                <el-tooltip :content="row.inputText || '—'" placement="top" effect="dark" :show-after="300">
-                  <span class="cell-tooltip">{{ preview(row.inputText, 100) }}</span>
-                </el-tooltip>
+                <CellTooltip :content="row.inputText || '—'" />
               </template>
             </el-table-column>
             <el-table-column label="参考答案" min-width="120">
               <template #default="{ row }">
-                <el-tooltip :content="row.goldenAnswer || '—'" placement="top" effect="dark" :show-after="300">
-                  <span class="cell-tooltip">{{ preview(row.goldenAnswer, 60) }}</span>
-                </el-tooltip>
+                <CellTooltip :content="row.goldenAnswer || '—'" />
               </template>
             </el-table-column>
             <el-table-column label="关键词" min-width="150">
               <template #default="{ row }">
-                <el-tooltip :content="keywordsOf(row.keywords).join('、') || '—'" placement="top" effect="dark" :show-after="300">
-                  <span class="cell-tooltip">{{ preview(keywordsOf(row.keywords).join('、'), 24) }}</span>
-                </el-tooltip>
+                <CellTooltip :content="keywordsOf(row.keywords).join('、') || '—'" />
               </template>
             </el-table-column>
             <el-table-column label="参考上下文" min-width="130">
               <template #default="{ row }">
-                <el-tooltip :content="row.referenceContext || '—'" placement="top" effect="dark" :show-after="300">
-                  <span class="cell-tooltip">{{ preview(row.referenceContext, 50) }}</span>
-                </el-tooltip>
+                <CellTooltip :content="row.referenceContext || '—'" />
               </template>
             </el-table-column>
             <el-table-column label="操作" width="150" fixed="right">
@@ -605,39 +592,74 @@ onMounted(loadList)
       </section>
     </div>
 
-    <el-dialog v-model="dialogVisible" title="新建评测集" width="560px" destroy-on-close>
-      <el-form :model="form" label-position="top">
-        <el-form-item label="名称" required>
-          <el-input v-model="form.name" placeholder="例如：金融风控-反欺诈" maxlength="256" show-word-limit />
-        </el-form-item>
-        <el-form-item label="版本">
-          <el-input v-model="form.version" placeholder="v1" />
-        </el-form-item>
-        <el-form-item label="描述">
-          <el-input v-model="form.description" type="textarea" :rows="3" placeholder="说明这个评测集测什么、适用场景" />
-        </el-form-item>
-        <el-form-item label="场景标签">
-          <el-select
-            v-model="form.scenarioTags"
-            multiple
-            filterable
-            allow-create
-            default-first-option
-            style="width: 100%"
-            placeholder="输入后回车添加，如 数学 / 代码 / 中文"
-          />
-        </el-form-item>
-        <el-form-item label="推荐目标类型">
-          <el-select v-model="form.recommendedTargetTypes" multiple style="width: 100%">
-            <el-option label="LLM 接口" value="LLM_API" />
-            <el-option label="外部 Agent" value="HTTP_AGENT" />
-            <el-option label="内置 Agent" value="BUILTIN_AGENT" />
-          </el-select>
-        </el-form-item>
+    <el-dialog
+      v-model="dialogVisible"
+      title="新建评测集"
+      width="900px"
+      top="4vh"
+      class="app-form-dialog"
+      destroy-on-close
+    >
+      <el-form :model="form" label-position="top" class="app-form">
+        <section class="app-form-section">
+          <div class="app-section-head">
+            <span class="app-section-dot" />
+            <div>
+              <h4>基础信息</h4>
+              <p>评测集名称、版本与用途说明</p>
+            </div>
+          </div>
+          <div class="app-form-grid">
+            <el-form-item label="名称" required class="app-span-6">
+              <el-input v-model="form.name" placeholder="例如：金融风控-反欺诈" maxlength="256" show-word-limit />
+            </el-form-item>
+            <el-form-item label="版本" class="app-span-6">
+              <el-input v-model="form.version" placeholder="v1" />
+            </el-form-item>
+            <el-form-item label="描述" class="app-span-12">
+              <el-input v-model="form.description" type="textarea" :rows="3" placeholder="说明这个评测集测什么、适用场景" />
+            </el-form-item>
+          </div>
+        </section>
+
+        <section class="app-form-section app-form-section--last">
+          <div class="app-section-head">
+            <span class="app-section-dot app-section-dot--blue" />
+            <div>
+              <h4>分类与目标</h4>
+              <p>便于筛选评测集，并推荐适配的 Agent 类型</p>
+            </div>
+          </div>
+          <div class="app-form-grid">
+            <el-form-item label="场景标签" class="app-span-12">
+              <el-select
+                v-model="form.scenarioTags"
+                multiple
+                filterable
+                allow-create
+                default-first-option
+                style="width: 100%"
+                placeholder="输入后回车添加，如 数学 / 代码 / 中文"
+              />
+            </el-form-item>
+            <el-form-item label="推荐目标类型" class="app-span-12">
+              <el-select v-model="form.recommendedTargetTypes" multiple style="width: 100%">
+                <el-option label="LLM 接口" value="LLM_API" />
+                <el-option label="外部 Agent" value="HTTP_AGENT" />
+                <el-option label="内置 Agent" value="BUILTIN_AGENT" />
+              </el-select>
+            </el-form-item>
+          </div>
+        </section>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="submitCreate">创建</el-button>
+        <div class="app-form-footer">
+          <span class="app-form-hint">创建后可继续添加样本或导入 JSONL</span>
+          <div>
+            <el-button @click="dialogVisible = false">取消</el-button>
+            <el-button type="primary" :loading="saving" @click="submitCreate">创建</el-button>
+          </div>
+        </div>
       </template>
     </el-dialog>
 
@@ -813,7 +835,6 @@ onMounted(loadList)
 
 .sample-table { margin-top: 14px; }
 .sample-table :deep(.cell) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.cell-tooltip { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
 .sample-actions { display: inline-flex; align-items: center; gap: 10px; white-space: nowrap; }
 .sample-actions :deep(.el-button + .el-button) { margin-left: 0; }
 .pager { display: flex; justify-content: flex-end; padding-top: 16px; }

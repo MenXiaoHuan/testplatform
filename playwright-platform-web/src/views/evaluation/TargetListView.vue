@@ -6,6 +6,7 @@ import { get, post, put, del } from '../../api/http'
 import { toErrorMessage } from '../../utils/error'
 import { showAppToast } from '../../utils/ui-feedback'
 import ListPageShell from '../../components/list/ListPageShell.vue'
+import CellTooltip from '../../components/list/CellTooltip.vue'
 import { useAuthStore } from '../../stores/auth'
 import { formatBeijingDateTime } from '../../utils/datetime'
 
@@ -841,7 +842,7 @@ onMounted(load)
     <el-table class="list-table" :data="pagedItems" :loading="loading" empty-text="暂无 Agent">
       <el-table-column label="名称" min-width="180">
         <template #default="{ row }">
-          <span class="name-cell__text">{{ row.name }}</span>
+          <CellTooltip :content="row.name" />
         </template>
       </el-table-column>
       <el-table-column label="类型" width="150">
@@ -871,9 +872,9 @@ onMounted(load)
           </div>
         </template>
       </el-table-column>
-      <el-table-column label="连接配置" min-width="220" show-overflow-tooltip>
+      <el-table-column label="连接配置" min-width="220">
         <template #default="{ row }">
-          <span class="mono">{{ summarize(row) }}</span>
+          <CellTooltip :content="summarize(row)" mono />
           <div v-if="tagList(row).length" class="tags-line">
             <el-tag v-for="tag in tagList(row)" :key="tag" size="small" effect="plain">{{ tag }}</el-tag>
           </div>
@@ -916,18 +917,30 @@ onMounted(load)
     </el-table>
 
     <!-- ============ 创建 / 编辑 ============ -->
-    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="800px" :close-on-click-modal="false" destroy-on-close>
-      <el-form :model="form" label-position="top" class="agent-form" autocomplete="off">
-        <section class="form-section">
-          <div class="section-head">
-            <span class="section-title">基础信息</span>
-            <el-button link type="primary" @click="applyTemplate(form.targetType)">一键填入示例配置</el-button>
+    <el-dialog
+      v-model="dialogVisible"
+      :title="dialogTitle"
+      width="900px"
+      top="4vh"
+      class="app-form-dialog"
+      :close-on-click-modal="false"
+      destroy-on-close
+    >
+      <el-form :model="form" label-position="top" class="app-form" autocomplete="off">
+        <section class="app-form-section">
+          <div class="app-section-head">
+            <span class="app-section-dot" />
+            <div>
+              <h4>基础信息</h4>
+              <p>Agent 名称、类型与启用状态</p>
+            </div>
+            <el-button class="app-section-action" link type="primary" @click="applyTemplate(form.targetType)">一键填入示例配置</el-button>
           </div>
-          <div class="form-grid">
-            <el-form-item label="Agent 名称" required class="span-8">
+          <div class="app-form-grid">
+            <el-form-item label="Agent 名称" required class="app-span-8">
               <el-input v-model="form.name" placeholder="例如：DeepSeek 客服模型 v3" maxlength="256" show-word-limit />
             </el-form-item>
-            <el-form-item label="启用状态" class="span-4">
+            <el-form-item label="启用状态" class="app-span-4">
               <el-switch
                 v-model="form.status"
                 active-value="ACTIVE"
@@ -936,7 +949,7 @@ onMounted(load)
                 inactive-text="停用"
               />
             </el-form-item>
-            <el-form-item label="Agent 类型" required class="span-12">
+            <el-form-item label="Agent 类型" required class="app-span-12">
               <div class="type-picker">
                 <div
                   v-for="type in editableTypes"
@@ -950,7 +963,7 @@ onMounted(load)
                 </div>
               </div>
             </el-form-item>
-            <el-form-item v-if="form.targetType === 'HTTP_AGENT'" label="在线 Trace" class="span-12">
+            <el-form-item v-if="form.targetType === 'HTTP_AGENT'" label="在线 Trace" class="app-span-12">
               <div class="switch-line">
                 <el-switch
                   v-model="form.tracingEnabled"
@@ -967,29 +980,45 @@ onMounted(load)
         </section>
 
         <!-- ---------- LLM_API ---------- -->
-        <section v-if="form.targetType === 'LLM_API'" class="form-section">
-          <div class="section-head">
-            <span class="section-title">LLM 连接配置</span>
+        <section v-if="form.targetType === 'LLM_API'" class="app-form-section">
+          <div class="app-section-head">
+            <span class="app-section-dot app-section-dot--blue" />
+            <div>
+              <h4>LLM 连接配置</h4>
+              <p>OpenAI 兼容接口的地址、模型与密钥</p>
+            </div>
           </div>
-          <div class="form-grid">
-            <el-form-item label="Base URL" required class="span-8">
+          <div class="app-form-grid">
+            <el-form-item label="Base URL" required class="app-span-8">
               <el-input v-model="form.baseUrl" placeholder="https://api.deepseek.com" />
               <div class="field-hint">只填域名或前缀，不要带接口路径。</div>
             </el-form-item>
-            <el-form-item label="模型名" required class="span-4">
+            <el-form-item label="模型名" required class="app-span-4">
               <el-input v-model="form.model" placeholder="deepseek-chat" autocomplete="off" />
             </el-form-item>
-            <el-form-item label="API Key" required class="span-6">
+            <el-form-item label="API Key" required class="app-span-6">
               <el-input v-model="form.apiKey" type="password" show-password placeholder="sk-... 或 REF:MY_API_KEY" autocomplete="new-password" />
               <div class="field-hint">推荐使用 <code>REF:环境变量名</code>，避免明文入库。</div>
             </el-form-item>
-            <el-form-item label="请求路径" class="span-6">
+            <el-form-item label="请求路径" class="app-span-6">
               <el-input v-model="form.apiPath" placeholder="/v1/chat/completions" />
             </el-form-item>
-            <el-form-item label="Temperature" class="span-6">
-              <el-slider v-model="form.temperature" :min="0" :max="1" :step="0.05" show-input style="width: 100%" />
+            <el-form-item label="Temperature" class="app-span-6">
+              <div class="range-line">
+                <el-slider v-model="form.temperature" :min="0" :max="1" :step="0.05" />
+                <el-input-number
+                  v-model="form.temperature"
+                  :min="0"
+                  :max="1"
+                  :step="0.05"
+                  :precision="2"
+                  controls-position="right"
+                  class="range-line__input"
+                />
+              </div>
+              <div class="field-hint">数值越高越发散，回归测试建议 0.1 ~ 0.3。</div>
             </el-form-item>
-            <el-form-item label="Max Tokens" class="span-6">
+            <el-form-item label="Max Tokens" class="app-span-6">
               <el-input-number
                 v-model="form.maxTokens"
                 :min="1"
@@ -1004,29 +1033,33 @@ onMounted(load)
         </section>
 
         <!-- ---------- HTTP_AGENT ---------- -->
-        <section v-else-if="form.targetType === 'HTTP_AGENT'" class="form-section">
-          <div class="section-head">
-            <span class="section-title">外部 Agent 配置</span>
+        <section v-else-if="form.targetType === 'HTTP_AGENT'" class="app-form-section">
+          <div class="app-section-head">
+            <span class="app-section-dot app-section-dot--amber" />
+            <div>
+              <h4>外部 Agent 配置</h4>
+              <p>Endpoint、鉴权头与请求体模板</p>
+            </div>
           </div>
-          <div class="form-grid">
-            <el-form-item label="离线评测 Endpoint" class="span-12">
+          <div class="app-form-grid">
+            <el-form-item label="离线评测 Endpoint" class="app-span-12">
               <el-input v-model="form.endpoint" placeholder="https://your-agent.example.com/chat（留空则仅在线 Trace）" />
               <div class="field-hint">
                 填写后可离线评测；留空仅接收在线 Trace。保存时会做 SSRF 校验。
               </div>
             </el-form-item>
-            <el-form-item label="请求方法" class="span-4">
+            <el-form-item label="请求方法" class="app-span-4">
               <el-radio-group v-model="form.method">
                 <el-radio-button value="POST">POST</el-radio-button>
                 <el-radio-button value="PUT">PUT</el-radio-button>
                 <el-radio-button value="GET">GET</el-radio-button>
               </el-radio-group>
             </el-form-item>
-            <el-form-item label="答案 JSONPath" class="span-8">
+            <el-form-item label="答案 JSONPath" class="app-span-8">
               <el-input v-model="form.outputPath" placeholder="$.data.answer" />
               <div class="field-hint">留空则把完整响应作为答案。</div>
             </el-form-item>
-            <el-form-item label="请求头" class="span-12">
+            <el-form-item label="请求头" class="app-span-12">
               <div class="header-editor">
                 <div v-for="(h, i) in form.headers" :key="i" class="header-row">
                   <el-input v-model="h.key" placeholder="Header 名，如 X-Auth" />
@@ -1036,7 +1069,7 @@ onMounted(load)
                 <el-button link type="primary" @click="form.headers.push({ key: '', value: '' })">+ 添加 Header</el-button>
               </div>
             </el-form-item>
-            <el-form-item label="请求体模板" class="span-12">
+            <el-form-item label="请求体模板" class="app-span-12">
               <el-input v-model="form.bodyTemplate" type="textarea" :rows="5" />
               <div class="field-hint">
                 支持 <code v-pre>{{input}}</code> 和 <code v-pre>{{system_prompt}}</code>，JSON 内容会自动转义。
@@ -1046,12 +1079,16 @@ onMounted(load)
         </section>
 
         <!-- ---------- BUILTIN_AGENT ---------- -->
-        <section v-else-if="form.targetType === 'BUILTIN_AGENT'" class="form-section">
-          <div class="section-head">
-            <span class="section-title">内置 Agent</span>
+        <section v-else-if="form.targetType === 'BUILTIN_AGENT'" class="app-form-section">
+          <div class="app-section-head">
+            <span class="app-section-dot app-section-dot--green" />
+            <div>
+              <h4>内置 Agent</h4>
+              <p>直接调用平台内置智能体参与评测</p>
+            </div>
           </div>
-          <div class="form-grid">
-            <el-form-item label="Agent 选择" required class="span-12">
+          <div class="app-form-grid">
+            <el-form-item label="Agent 选择" required class="app-span-12">
               <el-select v-model="form.agentKey" placeholder="请选择内置 Agent" style="width: 100%">
                 <el-option
                   v-for="agent in builtinAgents"
@@ -1076,12 +1113,16 @@ onMounted(load)
           />
         </section>
 
-        <section class="form-section">
-          <div class="section-head">
-            <span class="section-title">高级选项</span>
+        <section class="app-form-section app-form-section--last">
+          <div class="app-section-head">
+            <span class="app-section-dot" />
+            <div>
+              <h4>高级选项</h4>
+              <p>超时与失败重试策略</p>
+            </div>
           </div>
-          <div class="form-grid">
-            <el-form-item label="单样本超时（ms）" class="span-6">
+          <div class="app-form-grid">
+            <el-form-item label="单样本超时（ms）" class="app-span-6">
               <el-input-number
                 v-model="form.timeoutMs"
                 :min="1000"
@@ -1091,7 +1132,7 @@ onMounted(load)
                 style="width: 100%"
               />
             </el-form-item>
-            <el-form-item label="失败重试次数" class="span-6">
+            <el-form-item label="失败重试次数" class="app-span-6">
               <el-input-number v-model="form.maxRetries" :min="0" :max="10" controls-position="right" style="width: 100%" />
             </el-form-item>
           </div>
@@ -1099,8 +1140,13 @@ onMounted(load)
       </el-form>
 
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="submit">保存</el-button>
+        <div class="app-form-footer">
+          <span class="app-form-hint">保存后可直接用于离线评测与在线 Trace 观测</span>
+          <div>
+            <el-button @click="dialogVisible = false">取消</el-button>
+            <el-button type="primary" :loading="saving" @click="submit">保存</el-button>
+          </div>
+        </div>
       </template>
     </el-dialog>
 
@@ -1249,24 +1295,8 @@ onMounted(load)
 .list-table :deep(.action-cell .el-button) { margin-left: 0; padding: 0; }
 .list-table :deep(.action-cell .el-dropdown) { margin-left: 0; }
 .list-table :deep(.el-table__header .cell) { white-space: nowrap; }
-.name-cell__text { font-weight: 600; color: #0f172a; }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; color: #475569; }
 .tags-line { display: flex; gap: 4px; margin-top: 4px; flex-wrap: wrap; }
-
-.agent-form { display: flex; flex-direction: column; gap: 16px; }
-.form-section { padding: 16px 18px; border: 1px solid #e2e8f0; border-radius: 10px; background: #f8fafc; }
-.section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
-.section-title { position: relative; padding-left: 10px; font-size: 14px; font-weight: 600; color: #0f172a; }
-.section-title::before {
-  content: ""; position: absolute; left: 0; top: 3px; bottom: 3px;
-  width: 3px; border-radius: 2px; background: #0f766e;
-}
-.form-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 0 16px; }
-.form-grid :deep(.el-form-item) { margin-bottom: 14px; }
-.span-12 { grid-column: span 12; }
-.span-8 { grid-column: span 8; }
-.span-6 { grid-column: span 6; }
-.span-4 { grid-column: span 4; }
 
 .type-picker { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; width: 100%; }
 .type-option {
@@ -1280,6 +1310,9 @@ onMounted(load)
 
 .switch-line { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .switch-desc { font-size: 12px; color: #64748b; line-height: 1.6; }
+.range-line { display: flex; align-items: center; gap: 12px; width: 100%; }
+.range-line :deep(.el-slider) { flex: 1; min-width: 0; }
+.range-line__input { flex: 0 0 110px; width: 110px; }
 
 .field-hint { font-size: 12px; color: #94a3b8; line-height: 1.6; margin-top: 2px; }
 .field-hint code { background: #f1f5f9; color: #0f766e; padding: 0 4px; border-radius: 4px; }

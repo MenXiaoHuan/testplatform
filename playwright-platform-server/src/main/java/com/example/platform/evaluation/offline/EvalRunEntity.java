@@ -16,6 +16,8 @@ public class EvalRunEntity {
     private Integer failedSamples;
     private Double overallScore;
     private String evaluatorConfigs;
+    /** 本次任务指定的用例 ID（JSON 数组）；null 表示评测集全部用例。 */
+    private String sampleIds;
     private Integer maxConcurrency;
     private LocalDateTime startedAt;
     private LocalDateTime finishedAt;
@@ -47,6 +49,8 @@ public class EvalRunEntity {
     public void setOverallScore(Double v) { this.overallScore = v; }
     public String getEvaluatorConfigs() { return evaluatorConfigs; }
     public void setEvaluatorConfigs(String v) { this.evaluatorConfigs = v; }
+    public String getSampleIds() { return sampleIds; }
+    public void setSampleIds(String v) { this.sampleIds = v; }
     public Integer getMaxConcurrency() { return maxConcurrency; }
     public void setMaxConcurrency(Integer v) { this.maxConcurrency = v; }
     public LocalDateTime getStartedAt() { return startedAt; }

@@ -22,7 +22,9 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * 离线评测主入口 —— 创建 Run → 调度执行 → 聚合报告。
@@ -32,6 +34,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class OfflineEvaluationOrchestrator {
 
     private static final Logger log = LoggerFactory.getLogger(OfflineEvaluationOrchestrator.class);
+    private static final Pattern ID_PATTERN = Pattern.compile("\\d+");
 
     private final EvalRunMapper runMapper;
     private final EvalDatasetSampleMapper sampleMapper;
@@ -43,6 +46,8 @@ public class OfflineEvaluationOrchestrator {
     private final LangfuseClient langfuse;
     private final OfflineEvaluatorService evaluatorService;
     private final ExecutorService globalExecutor;
+    /** 每条执行中的 Run 一个取消令牌，用户「终止」时置位并停止后续样本。 */
+    private final Map<Long, AtomicBoolean> cancellationTokens = new ConcurrentHashMap<>();
 
     public OfflineEvaluationOrchestrator(EvalRunMapper runMapper,
                                          EvalDatasetSampleMapper sampleMapper,
@@ -112,6 +117,8 @@ public class OfflineEvaluationOrchestrator {
                 throw new BusinessException(EvaluationErrorCode.BAD_REQUEST, "所选样本不存在或不属于该评测集");
             }
             total = selectedSamples.size();
+            // 固定本次任务的用例范围，重跑时据此覆盖执行，而不是重跑评测集全集
+            run.setSampleIds(selectedIds.toString());
         }
         run.setTotalSamples(total);
         run.setCompletedSamples(0);
@@ -121,12 +128,123 @@ public class OfflineEvaluationOrchestrator {
 
         // 异步执行（选中的样本直接透传，避免异步线程重复查询）
         List<EvalDatasetSampleEntity> preloaded = selectedSamples;
-        globalExecutor.submit(() -> execute(run.getId(), preloaded));
+        AtomicBoolean token = registerCancellationToken(run.getId());
+        globalExecutor.submit(() -> execute(run.getId(), preloaded, token));
         return run;
     }
 
-    /** 执行循环 —— PENDING→RUNNING→COMPLETED/FAILED，乐观锁保证状态机正确。 */
-    private void execute(Long runId, List<EvalDatasetSampleEntity> preloadedSamples) {
+    /**
+     * 重跑：直接覆盖原任务记录（不新建 Run），沿用原 Agent、评测集、用例范围与评估器配置。
+     * 仅清空上一次的进度/总分/样本结果后重新排队执行。
+     */
+    public EvalRunEntity rerun(Long runId, Long spaceId, String triggerUser) {
+        EvalRunEntity run = runMapper.findById(runId)
+                .orElseThrow(() -> new BusinessException(
+                        EvaluationErrorCode.BAD_REQUEST, "Run id=" + runId + " 不存在"));
+        if (!run.getSpaceId().equals(spaceId)) {
+            throw new BusinessException(EvaluationErrorCode.BAD_REQUEST, "跨 Space 访问被拒绝");
+        }
+        if (isActive(run.getStatus())) {
+            throw new BusinessException(EvaluationErrorCode.BAD_REQUEST, "任务执行中，请先终止后再重跑");
+        }
+        TargetResolver.ResolvedTarget resolved = targetResolver.resolve(run.getTargetId());
+        String endpoint = resolved.config().getString("endpoint");
+        if (resolved.config().targetType() == TargetType.HTTP_AGENT
+                && (endpoint == null || endpoint.isBlank())) {
+            throw new BusinessException(
+                    EvaluationErrorCode.BAD_REQUEST,
+                    "该外部 Agent 未配置离线评测 Endpoint，仅支持在线 Trace");
+        }
+        concurrencyGuard.checkAndAcquire(run.getSpaceId(), run.getTargetId());
+
+        // 按原任务记录的用例范围重跑；老数据没有 sample_ids 时用已落库的样本结果还原
+        List<Long> sampleIds = resolveSampleScope(run);
+        List<EvalDatasetSampleEntity> selectedSamples = null;
+        int total;
+        if (sampleIds.isEmpty()) {
+            total = sampleMapper.countByDataset(run.getDatasetId());
+        } else {
+            selectedSamples = sampleMapper.listByDatasetAndIds(run.getDatasetId(), sampleIds);
+            if (selectedSamples.isEmpty()) {
+                throw new BusinessException(EvaluationErrorCode.BAD_REQUEST,
+                        "原任务指定的用例已被删除，请重新启动评测");
+            }
+            total = selectedSamples.size();
+        }
+
+        caseResultMapper.deleteByRunId(runId);
+        if (runMapper.resetForRerun(runId, total,
+                sampleIds.isEmpty() ? null : sampleIds.toString(), triggerUser) == 0) {
+            throw new BusinessException(EvaluationErrorCode.BAD_REQUEST, "任务状态已变化，请刷新后重试");
+        }
+
+        List<EvalDatasetSampleEntity> preloaded = selectedSamples;
+        AtomicBoolean token = registerCancellationToken(runId);
+        globalExecutor.submit(() -> execute(runId, preloaded, token));
+        return runMapper.findById(runId).orElse(run);
+    }
+
+    /** 终止执行中的任务：置位取消令牌，停止后续样本并将状态置为 CANCELLED。 */
+    public void cancel(Long runId, Long spaceId) {
+        EvalRunEntity run = runMapper.findById(runId)
+                .orElseThrow(() -> new BusinessException(
+                        EvaluationErrorCode.BAD_REQUEST, "Run id=" + runId + " 不存在"));
+        if (!run.getSpaceId().equals(spaceId)) {
+            throw new BusinessException(EvaluationErrorCode.BAD_REQUEST, "跨 Space 访问被拒绝");
+        }
+        if (!isActive(run.getStatus())) {
+            throw new BusinessException(EvaluationErrorCode.BAD_REQUEST, "任务已结束，无需终止");
+        }
+        cancelToken(runId);
+        runMapper.forceStatusUpdate(runId, EvalRunStatus.CANCELLED.name(),
+                run.getCompletedSamples() == null ? 0 : run.getCompletedSamples(),
+                run.getFailedSamples() == null ? 0 : run.getFailedSamples(),
+                run.getOverallScore());
+        log.info("runId={} cancelled by user", runId);
+    }
+
+    private static boolean isActive(String status) {
+        return EvalRunStatus.PENDING.name().equals(status) || EvalRunStatus.RUNNING.name().equals(status);
+    }
+
+    private AtomicBoolean registerCancellationToken(Long runId) {
+        AtomicBoolean token = new AtomicBoolean(false);
+        cancellationTokens.put(runId, token);
+        return token;
+    }
+
+    /** 取消令牌可能还没注册（PENDING 尚未进入执行），此时直接标记，执行线程启动后立即退出。 */
+    private void cancelToken(Long runId) {
+        cancellationTokens.computeIfAbsent(runId, id -> new AtomicBoolean(true))
+                .set(true);
+    }
+
+    /** 原任务固定的用例范围；返回空列表表示评测集全部用例。 */
+    private List<Long> resolveSampleScope(EvalRunEntity run) {
+        List<Long> persisted = parseSampleIds(run.getSampleIds());
+        if (!persisted.isEmpty()) return persisted;
+        // 兼容未保存 sample_ids 的历史任务：样本结果只覆盖部分用例时，按这些用例还原范围
+        int datasetTotal = sampleMapper.countByDataset(run.getDatasetId());
+        if (run.getTotalSamples() != null && datasetTotal > 0 && run.getTotalSamples() < datasetTotal) {
+            return caseResultMapper.listByRun(run.getId()).stream()
+                    .map(EvalRunCaseResultEntity::getSampleId)
+                    .filter(Objects::nonNull)
+                    .distinct()
+                    .toList();
+        }
+        return List.of();
+    }
+
+    private static List<Long> parseSampleIds(String json) {
+        if (json == null || json.isBlank()) return List.of();
+        List<Long> ids = new ArrayList<>();
+        Matcher matcher = ID_PATTERN.matcher(json);
+        while (matcher.find()) ids.add(Long.parseLong(matcher.group()));
+        return ids;
+    }
+
+    /** 执行循环 —— PENDING→RUNNING→COMPLETED/FAILED，乐观锁保证状态机正确；取消令牌置位则直接 CANCELLED。 */
+    private void execute(Long runId, List<EvalDatasetSampleEntity> preloadedSamples, AtomicBoolean cancelled) {
         try {
             // 1. PENDING → RUNNING（乐观锁）
             if (!statusMutator.transition(runId, EvalRunStatus.PENDING.name(), EvalRunStatus.RUNNING.name())) {
@@ -164,19 +282,26 @@ public class OfflineEvaluationOrchestrator {
             List<CompletableFuture<Void>> futures = new ArrayList<>();
 
             for (int i = 0; i < samples.size(); i++) {
+                if (cancelled.get()) break;
                 EvalDatasetSampleEntity sample = samples.get(i);
                 int sampleIndex = sample.getSampleIndex() != null ? sample.getSampleIndex() : (i + 1);
                 sem.acquire();
                 CompletableFuture<Void> f = CompletableFuture.runAsync(() -> {
                     boolean success = false;
+                    boolean executed = false;
                     try {
+                        // 终止后不再发起新的样本调用
+                        if (cancelled.get()) return;
+                        executed = true;
                         success = executeSample(run, sample, sampleIndex, adapter, config, evaluatorSpecs);
                     } catch (Exception e) {
                         log.warn("runId={} sampleIndex={} failed: {}", runId, sampleIndex, e.getMessage());
                     } finally {
-                        if (success) completed.incrementAndGet();
-                        else failed.incrementAndGet();
-                        runMapper.updateProgress(runId, completed.get(), failed.get());
+                        if (executed) {
+                            if (success) completed.incrementAndGet();
+                            else failed.incrementAndGet();
+                            runMapper.updateProgress(runId, completed.get(), failed.get());
+                        }
                         sem.release();
                     }
                 }, globalExecutor);
@@ -184,7 +309,13 @@ public class OfflineEvaluationOrchestrator {
             }
             CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
 
-            // 4. RUNNING → COMPLETED / FAILED
+            // 4. 用户终止 → CANCELLED；否则 RUNNING → COMPLETED / FAILED
+            if (cancelled.get()) {
+                runMapper.forceStatusUpdate(runId, EvalRunStatus.CANCELLED.name(),
+                        completed.get(), failed.get(), null);
+                log.info("runId={} stopped by cancel token", runId);
+                return;
+            }
             EvalRunEntity finalRun = runMapper.findById(runId).get();
             String finalStatus = failed.get() == finalRun.getTotalSamples()
                     ? EvalRunStatus.FAILED.name() : EvalRunStatus.COMPLETED.name();
@@ -192,7 +323,12 @@ public class OfflineEvaluationOrchestrator {
                     averageWeightedScore(runId, completed.get(), finalRun.getTotalSamples()));
         } catch (Exception e) {
             log.error("runId={} execution error", runId, e);
-            runMapper.forceStatusUpdate(runId, EvalRunStatus.FAILED.name(), 0, 0, null);
+            if (!cancelled.get()) {
+                runMapper.forceStatusUpdate(runId, EvalRunStatus.FAILED.name(), 0, 0, null);
+            }
+        } finally {
+            // 只移除本次执行注册的令牌，避免误删紧随其后的重跑任务令牌
+            cancellationTokens.remove(runId, cancelled);
         }
     }
 
@@ -250,6 +386,22 @@ public class OfflineEvaluationOrchestrator {
                 ? resp.durationMs() : Duration.between(start, end).toMillis();
 
         String model = config.targetType() == TargetType.LLM_API ? config.getString("model") : null;
+        // 失败补写 error=true 标签（供「状态 = 失败」筛选命中），并把输入/输出写回 Trace 头
+        List<String> finalTags = new ArrayList<>(tags);
+        if (!success && !finalTags.contains("error=true")) {
+            finalTags.add("error=true");
+        }
+        langfuse.writeTrace(TraceWriteRequest.builder()
+                .traceId(traceId)
+                .name("offline-" + config.targetName())
+                .sessionId(sessionId)
+                .tags(finalTags)
+                .metadata(traceMetadata)
+                .timestamp(start)
+                .input(sample.getInputText())
+                .output(resp != null ? resp.output() : errorMessage)
+                .build());
+
         String observationId = UUID.randomUUID().toString();
         langfuse.writeObservation(ObservationWriteRequest.builder()
                 .traceId(traceId)
@@ -276,7 +428,7 @@ public class OfflineEvaluationOrchestrator {
 
         LangfuseTraceDetail localDetail = buildLocalTraceDetail(
                 traceId, sessionId, run, config, sample, agentOutput, resp,
-                success, durationMs, start, end, tags, traceMetadata, observationId, model);
+                success, durationMs, start, end, finalTags, traceMetadata, observationId, model);
 
         OfflineEvaluatorService.EvaluationOutcome evaluation;
         try {

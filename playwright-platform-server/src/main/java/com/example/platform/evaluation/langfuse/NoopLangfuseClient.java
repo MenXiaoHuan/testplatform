@@ -35,4 +35,6 @@ public class NoopLangfuseClient implements LangfuseClient {
                 List.of());
     }
     @Override public boolean isAvailable() { return false; }
+    @Override public List<LangfuseTrace> listTracesBefore(java.time.Instant cutoff, int limit) { return List.of(); }
+    @Override public boolean deleteTrace(String langfuseTraceId) { return false; }
 }

@@ -18,6 +18,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * LangfuseClient 的 REST API 实现。
@@ -209,6 +210,52 @@ public class LangfuseClientImpl implements LangfuseClient {
         }
     }
 
+    @Override
+    public List<LangfuseTrace> listTracesBefore(Instant cutoff, int limit) {
+        if (!props.isEnabled() || cutoff == null) return List.of();
+        return gatekeeper.acquire(() -> doListTracesBefore(cutoff, limit));
+    }
+
+    private List<LangfuseTrace> doListTracesBefore(Instant cutoff, int limit) {
+        try {
+            Map<String, Object> params = new HashMap<>();
+            params.put("toTimestamp", cutoff.toString());
+            params.put("page", 1);
+            params.put("limit", Math.min(Math.max(limit, 1), 100));
+            String response = queryWebClient.get()
+                    .uri(uriBuilder -> {
+                        uriBuilder.path("/api/public/traces");
+                        params.forEach(uriBuilder::queryParam);
+                        return uriBuilder.build();
+                    })
+                    .header("Authorization", basicAuth(props.queryPublicKey(), props.querySecretKey()))
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block(Duration.ofSeconds(10));
+            return parseTraces(response);
+        } catch (Exception e) {
+            log.warn("Langfuse expired trace list failed: {}", e.getMessage());
+            return List.of();
+        }
+    }
+
+    @Override
+    public boolean deleteTrace(String langfuseTraceId) {
+        if (!props.isEnabled() || langfuseTraceId == null) return false;
+        try {
+            queryWebClient.delete()
+                    .uri("/api/public/traces/{id}", langfuseTraceId)
+                    .header("Authorization", basicAuth(props.queryPublicKey(), props.querySecretKey()))
+                    .retrieve()
+                    .toBodilessEntity()
+                    .block(Duration.ofSeconds(10));
+            return true;
+        } catch (Exception e) {
+            log.warn("Langfuse trace delete failed: traceId={}, err={}", langfuseTraceId, e.getMessage());
+            return false;
+        }
+    }
+
     private long parseTotal(String response, long fallback) {
         if (response == null) return fallback;
         try {
@@ -271,6 +318,52 @@ public class LangfuseClientImpl implements LangfuseClient {
         return all.size() > maxTotal ? all.subList(0, maxTotal) : all;
     }
 
+    /**
+     * Trace 列表接口不返回 usage，Token 用量需从 /api/public/observations 聚合；
+     * 仅统计 traceIds 命中的 GENERATION 观测，保证与 Trace 列表口径一致。
+     */
+    private long[] sumGenerationTokens(Instant from, Instant to, Set<String> traceIds) {
+        long input = 0L;
+        long output = 0L;
+        if (traceIds == null || traceIds.isEmpty()) {
+            return new long[]{input, output};
+        }
+        for (int page = 1; page <= 50; page++) {
+            final int currentPage = page;
+            try {
+                String response = queryWebClient.get()
+                        .uri(uriBuilder -> {
+                            uriBuilder.path("/api/public/observations")
+                                    .queryParam("type", "GENERATION")
+                                    .queryParam("limit", 100)
+                                    .queryParam("page", currentPage);
+                            if (from != null) uriBuilder.queryParam("fromStartTime", from.toString());
+                            if (to != null) uriBuilder.queryParam("toStartTime", to.toString());
+                            return uriBuilder.build();
+                        })
+                        .header("Authorization", basicAuth(props.queryPublicKey(), props.querySecretKey()))
+                        .retrieve()
+                        .bodyToMono(String.class)
+                        .block(Duration.ofSeconds(10));
+                if (response == null) break;
+                JsonNode data = objectMapper.readTree(response).get("data");
+                if (data == null || !data.isArray() || data.isEmpty()) break;
+                for (JsonNode node : data) {
+                    String traceId = text(node, "traceId");
+                    if (traceId == null || !traceIds.contains(traceId)) continue;
+                    LangfuseObservation observation = parseObservationNode(node);
+                    if (observation.inputTokens() != null) input += observation.inputTokens();
+                    if (observation.outputTokens() != null) output += observation.outputTokens();
+                }
+                if (data.size() < 100) break;
+            } catch (Exception e) {
+                log.warn("Langfuse observations aggregate failed (page={}): {}", page, e.getMessage());
+                break;
+            }
+        }
+        return new long[]{input, output};
+    }
+
     private LangfuseMetricsResult computeMetrics(MetricsQuery query) {
         List<LangfuseTrace> list = queryAllTraces(
                 new LangfuseTraceFilter(query.targetId(), query.from(), query.to(),
@@ -291,8 +384,11 @@ public class LangfuseClientImpl implements LangfuseClient {
                 ? Arrays.stream(latencies).average().orElse(0) : 0;
         double stdDev = computeStdDev(latencies, avg);
 
-        long inputTokens = list.stream().mapToLong(t -> t.inputTokens() != null ? t.inputTokens() : 0L).sum();
-        long outputTokens = list.stream().mapToLong(t -> t.outputTokens() != null ? t.outputTokens() : 0L).sum();
+        Set<String> traceIds = list.stream()
+                .map(LangfuseTrace::traceId).filter(Objects::nonNull).collect(Collectors.toSet());
+        long[] tokens = sumGenerationTokens(query.from(), query.to(), traceIds);
+        long inputTokens = tokens[0];
+        long outputTokens = tokens[1];
 
         // time series（按 HOUR 分桶）
         Map<Long, long[]> buckets = new TreeMap<>();
@@ -423,10 +519,27 @@ public class LangfuseClientImpl implements LangfuseClient {
                 if (observation.outputTokens() != null) outputSum += observation.outputTokens();
                 if ("ERROR".equalsIgnoreCase(observation.level())) hasError = true;
             }
+            // Trace 头部未写入 input/output 时，用 Observation 回退推导（首个输入 / 最后一个输出）
+            String derivedInput = trace.input();
+            String derivedOutput = trace.output();
+            if (derivedInput == null || derivedInput.isBlank()) {
+                derivedInput = observations.stream()
+                        .map(LangfuseObservation::input)
+                        .filter(value -> value != null && !value.isBlank())
+                        .findFirst().orElse(null);
+            }
+            if (derivedOutput == null || derivedOutput.isBlank()) {
+                for (LangfuseObservation observation : observations) {
+                    if (observation.output() != null && !observation.output().isBlank()) {
+                        derivedOutput = observation.output();
+                    }
+                }
+            }
+
             // 列表接口不返回 usage，详情里用 Observation 汇总补齐 Token；任一 Observation ERROR 视为失败
             LangfuseTrace enriched = new LangfuseTrace(
                     trace.traceId(), trace.name(), trace.targetId(), trace.sessionId(), trace.userId(),
-                    trace.input(), trace.output(),
+                    derivedInput, derivedOutput,
                     trace.inputTokens() != null ? trace.inputTokens() : inputSum,
                     trace.outputTokens() != null ? trace.outputTokens() : outputSum,
                     trace.durationMs(), trace.startTime(), trace.endTime(),

@@ -3,6 +3,8 @@ package com.example.platform.evaluation.langfuse;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
+import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -39,4 +41,10 @@ public interface LangfuseClient {
 
     /** 健康检查（用于策略引擎检测 Langfuse 不可用 → 自动暂停）。 */
     boolean isAvailable();
+
+    /** 查询早于 cutoff 创建的 Trace（按时间升序，供过期清理使用）。 */
+    List<LangfuseTrace> listTracesBefore(Instant cutoff, int limit);
+
+    /** 删除单条 Trace（含其 observations），供过期清理使用；成功返回 true。 */
+    boolean deleteTrace(String langfuseTraceId);
 }
