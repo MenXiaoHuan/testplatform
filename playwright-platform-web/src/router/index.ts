@@ -53,6 +53,11 @@ const router = createRouter({
       meta: { title: 'E2E场景管理', requiresAuth: true },
     },
     {
+      path: '/spaces/:spaceId/patrol',
+      component: () => import('../views/patrol/PatrolSceneListView.vue'),
+      meta: { title: '巡页', requiresAuth: true },
+    },
+    {
       path: '/spaces/:spaceId/evaluation',
       redirect: (to) => `/spaces/${to.params.spaceId}/evaluation/targets`,
     },

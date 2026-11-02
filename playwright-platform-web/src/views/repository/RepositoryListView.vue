@@ -2,6 +2,7 @@
 import { type FormInstance, type FormRules } from 'element-plus'
 import { computed, onMounted, reactive, ref } from 'vue'
 import ListPageShell from '../../components/list/ListPageShell.vue'
+import CellTooltip from '../../components/list/CellTooltip.vue'
 import { useRepositoryStore } from '../../stores/repository'
 import type { RepositoryForm, RepositoryRecord } from '../../types/repository'
 import { toErrorMessage } from '../../utils/error'
@@ -276,16 +277,12 @@ async function handleSizeChange(size: number) {
       </el-table-column>
       <el-table-column label="仓库名称" min-width="200">
         <template #default="{ row }">
-          <el-tooltip :content="row.name" placement="top" :show-after="300" effect="dark">
-            <span class="cell-tooltip">{{ row.name }}</span>
-          </el-tooltip>
+          <CellTooltip :content="row.name" />
         </template>
       </el-table-column>
       <el-table-column label="Git 地址" min-width="280">
         <template #default="{ row }">
-          <el-tooltip :content="row.gitUrl" placement="top" :show-after="300" effect="dark">
-            <span class="cell-tooltip cell-tooltip--mono">{{ row.gitUrl }}</span>
-          </el-tooltip>
+          <CellTooltip :content="row.gitUrl" mono />
         </template>
       </el-table-column>
       <el-table-column label="访问方式" width="150">
@@ -297,9 +294,7 @@ async function handleSizeChange(size: number) {
       </el-table-column>
       <el-table-column label="默认分支" width="140">
         <template #default="{ row }">
-          <el-tooltip :content="row.defaultBranch" placement="top" :show-after="300" effect="dark">
-            <span class="cell-tooltip cell-tooltip--mono">{{ row.defaultBranch }}</span>
-          </el-tooltip>
+          <CellTooltip :content="row.defaultBranch" mono />
         </template>
       </el-table-column>
       <el-table-column label="操作" width="220" fixed="right">
@@ -314,145 +309,201 @@ async function handleSizeChange(size: number) {
     </el-table>
   </ListPageShell>
 
-    <el-dialog v-model="dialogVisible" :title="editingId === null ? '新增仓库' : '编辑仓库'" width="720px">
-      <el-form ref="formRef" :model="form" :rules="formRules" label-position="top" class="form-grid">
-        <el-form-item label="仓库名称" prop="name" required><el-input v-model="form.name" /></el-form-item>
-        <el-form-item label="Git 地址" prop="gitUrl" required><el-input v-model="form.gitUrl" /></el-form-item>
-        <el-form-item label="默认分支" prop="defaultBranch" required><el-input v-model="form.defaultBranch" /></el-form-item>
-        <el-form-item class="form-grid-full">
-          <template #label>
-            <span class="form-label-with-help">
-              <span>仓库类型</span>
-              <el-tooltip :content="repositoryFieldHelp.authType" placement="top">
-                <span class="field-help-icon">?</span>
-              </el-tooltip>
-            </span>
-          </template>
-          <el-radio-group v-model="repositoryVisibility">
-            <el-radio-button value="PUBLIC">公有仓库</el-radio-button>
-            <el-radio-button value="PRIVATE">私有仓库</el-radio-button>
-          </el-radio-group>
-        </el-form-item>
-        <template v-if="isPrivateRepository">
-          <el-form-item class="form-grid-full" label="认证方式">
-            <el-radio-group v-model="form.authType">
-              <el-radio-button value="HTTPS_TOKEN">HTTPS Token</el-radio-button>
-              <el-radio-button value="SSH_KEY">SSH Deploy Key</el-radio-button>
-            </el-radio-group>
-          </el-form-item>
-          <el-form-item v-if="form.authType === 'HTTPS_TOKEN'" class="form-grid-full">
-            <template #label>
-              <span class="form-label-with-help">
-                <span>用户名（可选）</span>
-                <el-tooltip :content="repositoryFieldHelp.credentialUsername" placement="top">
-                  <span class="field-help-icon">?</span>
-                </el-tooltip>
-              </span>
-            </template>
-            <el-input v-model="form.credentialUsername" placeholder="x-access-token；GitLab 可用 oauth2" />
-          </el-form-item>
-          <el-form-item class="form-grid-full">
-            <template #label>
-              <span class="form-label-with-help">
-                <span>{{ form.authType === 'HTTPS_TOKEN' ? 'Token / Password' : 'SSH 私钥' }}</span>
-                <el-tooltip :content="repositoryFieldHelp.credentialSecret" placement="top">
-                  <span class="field-help-icon">?</span>
-                </el-tooltip>
-              </span>
-            </template>
-            <el-input
-              v-if="form.authType === 'HTTPS_TOKEN'"
-              v-model="form.credentialSecret"
-              type="password"
-              show-password
-              autocomplete="new-password"
-              :placeholder="editingCredentialConfigured ? '留空表示保持原凭据' : '只读 Token，不会回显'"
-            />
-            <el-input
-              v-else
-              v-model="form.credentialSecret"
-              type="textarea"
-              :rows="5"
-              :placeholder="editingCredentialConfigured ? '留空表示保持原凭据' : '-----BEGIN OPENSSH PRIVATE KEY-----'"
-            />
-            <div v-if="editingCredentialConfigured" class="form-hint">
-              已配置凭据；留空保存不会覆盖。
+    <el-dialog
+      v-model="dialogVisible"
+      :title="editingId === null ? '新增仓库' : '编辑仓库'"
+      width="900px"
+      top="4vh"
+      class="app-form-dialog"
+    >
+      <el-form
+        ref="formRef"
+        :model="form"
+        :rules="formRules"
+        label-position="top"
+        class="app-form"
+      >
+        <section class="app-form-section">
+          <div class="app-section-head">
+            <span class="app-section-dot" />
+            <div>
+              <h4>基础信息</h4>
+              <p>仓库地址、默认分支与访问权限</p>
             </div>
-            <div v-if="form.authType === 'SSH_KEY'" class="form-hint form-hint--warning">
-              SSH 模式请使用无口令的只读 Deploy Key；私钥只在服务端临时解密使用。
+          </div>
+          <div class="app-form-grid">
+            <el-form-item label="仓库名称" prop="name" required class="app-span-6">
+              <el-input v-model="form.name" />
+            </el-form-item>
+            <el-form-item label="Git 地址" prop="gitUrl" required class="app-span-6">
+              <el-input v-model="form.gitUrl" />
+            </el-form-item>
+            <el-form-item label="默认分支" prop="defaultBranch" required class="app-span-4">
+              <el-input v-model="form.defaultBranch" />
+            </el-form-item>
+            <el-form-item class="app-span-8">
+              <template #label>
+                <span class="form-label-with-help">
+                  <span>仓库类型</span>
+                  <el-tooltip :content="repositoryFieldHelp.authType" placement="top">
+                    <span class="field-help-icon">?</span>
+                  </el-tooltip>
+                </span>
+              </template>
+              <el-radio-group v-model="repositoryVisibility">
+                <el-radio-button value="PUBLIC">公有仓库</el-radio-button>
+                <el-radio-button value="PRIVATE">私有仓库</el-radio-button>
+              </el-radio-group>
+            </el-form-item>
+          </div>
+        </section>
+
+        <section v-if="isPrivateRepository" class="app-form-section">
+          <div class="app-section-head">
+            <span class="app-section-dot app-section-dot--amber" />
+            <div>
+              <h4>私有仓库认证</h4>
+              <p>凭据加密保存，仅拉取代码时在服务端临时使用</p>
             </div>
-          </el-form-item>
-        </template>
-        <el-form-item>
-          <template #label>
-            <span class="form-label-with-help">
-              <span>工作目录</span>
-              <el-tooltip :content="repositoryFieldHelp.workingDirectory" placement="top">
-                <span class="field-help-icon">?</span>
-              </el-tooltip>
-            </span>
-          </template>
-          <el-input v-model="form.workingDirectory" placeholder="" />
-        </el-form-item>
-        <el-form-item prop="installCommand" required>
-          <template #label>
-            <span class="form-label-with-help">
-              <span>安装命令</span>
-              <el-tooltip :content="repositoryFieldHelp.installCommand" placement="top">
-                <span class="field-help-icon">?</span>
-              </el-tooltip>
-            </span>
-          </template>
-          <el-input v-model="form.installCommand" placeholder="npm install" />
-        </el-form-item>
-        <el-form-item prop="runCommandTemplate" required>
-          <template #label>
-            <span class="form-label-with-help">
-              <span>测试执行命令</span>
-              <el-tooltip :content="repositoryFieldHelp.runCommandTemplate" placement="top">
-                <span class="field-help-icon">?</span>
-              </el-tooltip>
-            </span>
-          </template>
-          <el-input v-model="form.runCommandTemplate" placeholder="npx playwright test" />
-        </el-form-item>
-        <el-form-item prop="testRoot" required>
-          <template #label>
-            <span class="form-label-with-help">
-              <span>测试目录</span>
-              <el-tooltip :content="repositoryFieldHelp.testRoot" placement="top">
-                <span class="field-help-icon">?</span>
-              </el-tooltip>
-            </span>
-          </template>
-          <el-input v-model="form.testRoot" placeholder="tests" />
-        </el-form-item>
-        <el-form-item prop="resultsIndexRelativePath" required>
-          <template #label>
-            <span class="form-label-with-help">
-              <span>结果索引文件</span>
-              <el-tooltip :content="repositoryFieldHelp.resultsIndexRelativePath" placement="top">
-                <span class="field-help-icon">?</span>
-              </el-tooltip>
-            </span>
-          </template>
-          <el-input v-model="form.resultsIndexRelativePath" placeholder="test-results/.playwright-results.json" />
-        </el-form-item>
-        <el-form-item prop="artifactRootRelativePath" required>
-          <template #label>
-            <span class="form-label-with-help">
-              <span>运行产物目录</span>
-              <el-tooltip :content="repositoryFieldHelp.artifactRootRelativePath" placement="top">
-                <span class="field-help-icon">?</span>
-              </el-tooltip>
-            </span>
-          </template>
-          <el-input v-model="form.artifactRootRelativePath" placeholder=".playwright-artifacts" />
-        </el-form-item>
+          </div>
+          <div class="app-form-grid">
+            <el-form-item label="认证方式" class="app-span-12">
+              <el-radio-group v-model="form.authType">
+                <el-radio-button value="HTTPS_TOKEN">HTTPS Token</el-radio-button>
+                <el-radio-button value="SSH_KEY">SSH Deploy Key</el-radio-button>
+              </el-radio-group>
+            </el-form-item>
+            <el-form-item v-if="form.authType === 'HTTPS_TOKEN'" class="app-span-6">
+              <template #label>
+                <span class="form-label-with-help">
+                  <span>用户名（可选）</span>
+                  <el-tooltip :content="repositoryFieldHelp.credentialUsername" placement="top">
+                    <span class="field-help-icon">?</span>
+                  </el-tooltip>
+                </span>
+              </template>
+              <el-input v-model="form.credentialUsername" placeholder="x-access-token；GitLab 可用 oauth2" />
+            </el-form-item>
+            <el-form-item class="app-span-6">
+              <template #label>
+                <span class="form-label-with-help">
+                  <span>{{ form.authType === 'HTTPS_TOKEN' ? 'Token / Password' : 'SSH 私钥' }}</span>
+                  <el-tooltip :content="repositoryFieldHelp.credentialSecret" placement="top">
+                    <span class="field-help-icon">?</span>
+                  </el-tooltip>
+                </span>
+              </template>
+              <el-input
+                v-if="form.authType === 'HTTPS_TOKEN'"
+                v-model="form.credentialSecret"
+                type="password"
+                show-password
+                autocomplete="new-password"
+                :placeholder="editingCredentialConfigured ? '留空表示保持原凭据' : '只读 Token，不会回显'"
+              />
+              <el-input
+                v-else
+                v-model="form.credentialSecret"
+                type="textarea"
+                :rows="4"
+                :placeholder="editingCredentialConfigured ? '留空表示保持原凭据' : '-----BEGIN OPENSSH PRIVATE KEY-----'"
+              />
+              <div v-if="editingCredentialConfigured" class="form-hint">
+                已配置凭据；留空保存不会覆盖。
+              </div>
+              <div v-if="form.authType === 'SSH_KEY'" class="form-hint form-hint--warning">
+                SSH 模式请使用无口令的只读 Deploy Key；私钥只在服务端临时解密使用。
+              </div>
+            </el-form-item>
+          </div>
+        </section>
+
+        <section class="app-form-section app-form-section--last">
+          <div class="app-section-head">
+            <span class="app-section-dot app-section-dot--blue" />
+            <div>
+              <h4>运行配置</h4>
+              <p>安装、执行命令与测试产物路径</p>
+            </div>
+          </div>
+          <div class="app-form-grid">
+            <el-form-item class="app-span-6">
+              <template #label>
+                <span class="form-label-with-help">
+                  <span>工作目录</span>
+                  <el-tooltip :content="repositoryFieldHelp.workingDirectory" placement="top">
+                    <span class="field-help-icon">?</span>
+                  </el-tooltip>
+                </span>
+              </template>
+              <el-input v-model="form.workingDirectory" placeholder="" />
+            </el-form-item>
+            <el-form-item prop="installCommand" required class="app-span-6">
+              <template #label>
+                <span class="form-label-with-help">
+                  <span>安装命令</span>
+                  <el-tooltip :content="repositoryFieldHelp.installCommand" placement="top">
+                    <span class="field-help-icon">?</span>
+                  </el-tooltip>
+                </span>
+              </template>
+              <el-input v-model="form.installCommand" placeholder="npm install" />
+            </el-form-item>
+            <el-form-item prop="runCommandTemplate" required class="app-span-6">
+              <template #label>
+                <span class="form-label-with-help">
+                  <span>测试执行命令</span>
+                  <el-tooltip :content="repositoryFieldHelp.runCommandTemplate" placement="top">
+                    <span class="field-help-icon">?</span>
+                  </el-tooltip>
+                </span>
+              </template>
+              <el-input v-model="form.runCommandTemplate" placeholder="npx playwright test" />
+            </el-form-item>
+            <el-form-item prop="testRoot" required class="app-span-6">
+              <template #label>
+                <span class="form-label-with-help">
+                  <span>测试目录</span>
+                  <el-tooltip :content="repositoryFieldHelp.testRoot" placement="top">
+                    <span class="field-help-icon">?</span>
+                  </el-tooltip>
+                </span>
+              </template>
+              <el-input v-model="form.testRoot" placeholder="tests" />
+            </el-form-item>
+            <el-form-item prop="resultsIndexRelativePath" required class="app-span-6">
+              <template #label>
+                <span class="form-label-with-help">
+                  <span>结果索引文件</span>
+                  <el-tooltip :content="repositoryFieldHelp.resultsIndexRelativePath" placement="top">
+                    <span class="field-help-icon">?</span>
+                  </el-tooltip>
+                </span>
+              </template>
+              <el-input v-model="form.resultsIndexRelativePath" placeholder="test-results/.playwright-results.json" />
+            </el-form-item>
+            <el-form-item prop="artifactRootRelativePath" required class="app-span-6">
+              <template #label>
+                <span class="form-label-with-help">
+                  <span>运行产物目录</span>
+                  <el-tooltip :content="repositoryFieldHelp.artifactRootRelativePath" placement="top">
+                    <span class="field-help-icon">?</span>
+                  </el-tooltip>
+                </span>
+              </template>
+              <el-input v-model="form.artifactRootRelativePath" placeholder=".playwright-artifacts" />
+            </el-form-item>
+          </div>
+        </section>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="submit">保存</el-button>
+        <div class="app-form-footer">
+          <span class="app-form-hint">保存后可立即在场景中使用该仓库</span>
+          <div>
+            <el-button @click="dialogVisible = false">取消</el-button>
+            <el-button type="primary" :loading="saving" @click="submit">保存</el-button>
+          </div>
+        </div>
       </template>
     </el-dialog>
 </template>
@@ -497,20 +548,6 @@ async function handleSizeChange(size: number) {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.cell-tooltip {
-  display: inline-block;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  vertical-align: middle;
-}
-
-.cell-tooltip--mono {
-  font-family: 'JetBrains Mono', Consolas, monospace;
-  font-size: 12px;
 }
 
 .table-actions {

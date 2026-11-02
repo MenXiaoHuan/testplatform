@@ -152,6 +152,19 @@ src/
 - 行内操作：主要操作（查看/编辑）用 `el-button link`；超过 3 个操作时，其余收进 `el-dropdown`（与 Prompt 管理一致）。
 - 操作列容器使用 `.table-actions`（`inline-flex` + `nowrap`），避免换行。
 - 单元格内容单行省略由全局 `.list-table td .cell` 统一处理，页面不重复写 `ellipsis`。
+- **文本列溢出统一使用 `CellTooltip` 组件**（`src/components/list/CellTooltip.vue`）：单行省略 + hover 300ms 展示完整内容（dark 气泡、`strategy: fixed` 防止在抽屉/弹窗中被裁剪）。所有模块（仓库、场景、巡页、模型评测等）的文本列都遵循该交互，禁止在页面里重复实现 `el-tooltip + .cell-tooltip`，也禁止混用 `show-overflow-tooltip`：
+
+  ```html
+  <!-- 普通文本 -->
+  <CellTooltip :content="row.name" />
+  <!-- 等宽展示（Git 地址、分支、URL、Trace ID 等） -->
+  <CellTooltip :content="row.gitUrl" mono />
+  <!-- 单元格用截断预览、hover 看全文（长文本场景） -->
+  <CellTooltip :content="row.inputText" :display="previewText(row.inputText)" />
+  ```
+
+  - `.cell-tooltip` / `.cell-tooltip--mono` 样式已收敛到 `src/style.css`，页面不再各自定义。
+  - `content` 为空时组件自动展示 `—` 且禁用气泡；多行单元格（名称 + 描述、模型多行）用块级容器分行，不要把多个 `CellTooltip` 直接并排放在同一个 flex 行里。
 
 ### 3.8 类型检查与测试
 

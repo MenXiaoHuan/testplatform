@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>嵌入表单 · 缺陷演示站点</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main style="padding:16px;">
+    <h2>嵌入表单</h2>
+    <p class="hint">同源 iframe 内表单与自绘弹层，用于验证 frame 链路采集与跨 frame 交互。</p>
+
+    <form data-validate-form data-embed-form>
+      <div class="two-col">
+        <div class="field">
+          <label for="embed-name">联系人（必填）</label>
+          <input id="embed-name" type="text" placeholder="请输入联系人" data-required />
+          <div class="field-error"></div>
+        </div>
+        <div class="field">
+          <label for="embed-email">邮箱（必填）</label>
+          <input id="embed-email" type="email" placeholder="name@example.com" data-required data-email />
+          <div class="field-error"></div>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="embed-channel">来源渠道</label>
+        <select id="embed-channel" aria-label="来源渠道">
+          <option value="web">官网</option>
+          <option value="app">App</option>
+          <option value="offline">线下门店</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <span class="field-label">跟进优先级（自绘弹层）</span>
+        <div class="layer-host">
+          <button type="button" class="select-trigger" data-popup="embed-priority-panel"
+                  aria-haspopup="listbox" aria-expanded="false">
+            <span data-select-label>请选择优先级</span>
+          </button>
+          <div id="embed-priority-panel" class="popup-layer select-popup" role="listbox" aria-label="优先级" hidden>
+            <ul class="option-list">
+              <li role="option" data-value="high" data-label="高">高</li>
+              <li role="option" data-value="medium" data-label="中">中</li>
+              <li role="option" data-value="low" data-label="低">低</li>
+            </ul>
+            <input type="hidden" data-select-value />
+          </div>
+        </div>
+      </div>
+
+      <div class="btn-row">
+        <button type="button" class="btn" data-submit>提交嵌入表单</button>
+        <button type="reset" class="btn-secondary">重置</button>
+      </div>
+      <p class="mt-12 small muted" data-embed-result>尚未提交</p>
+    </form>
+
+    <div data-nested-slot class="mt-12"></div>
+    <p class="small muted mt-12" data-frame-level>当前为第一层 iframe，可继续嵌套第二层。</p>
+  </main>
+
+  <script src="/site.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      var level = new URLSearchParams(window.location.search).get('level') || '1';
+      var slot = document.querySelector('[data-nested-slot]');
+      var levelHint = document.querySelector('[data-frame-level]');
+      if (level === '1' && slot) {
+        var frame = document.createElement('iframe');
+        frame.src = '/embed-form.html?level=2';
+        frame.title = '二级嵌入框架';
+        frame.style.height = '220px';
+        slot.appendChild(frame);
+      } else if (levelHint) {
+        levelHint.textContent = '当前为第二层 iframe，不再继续嵌套。';
+        var innerForm = document.querySelector('[data-embed-form]');
+        if (innerForm) {
+          var note = document.createElement('p');
+          note.className = 'small muted mt-12';
+          note.textContent = '第二层 iframe：可以在此继续填写并提交。';
+          innerForm.appendChild(note);
+        }
+      }
+
+      var form = document.querySelector('[data-embed-form]');
+      var result = document.querySelector('[data-embed-result]');
+      var submit = document.querySelector('[data-submit]');
+      if (form && submit) {
+        submit.addEventListener('click', function () {
+          var name = document.querySelector('#embed-name');
+          var email = document.querySelector('#embed-email');
+          var valid = name.value.trim() && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.value);
+          result.textContent = valid
+            ? '嵌入表单已提交：' + name.value.trim() + ' / ' + email.value.trim()
+            : '嵌入表单校验失败，请检查必填项';
+          toast(valid ? '嵌入表单已提交' : '嵌入表单校验失败', valid ? 'success' : 'error');
+        });
+      }
+    });
+  </script>
+</body>
+</html>

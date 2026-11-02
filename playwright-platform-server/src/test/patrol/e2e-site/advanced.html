@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>复杂交互 · 缺陷演示站点</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <nav>
+      <a href="/">首页</a>
+      <a href="/forms.html">表单</a>
+      <a href="/overlays.html">弹层</a>
+      <a href="/data.html">数据展示</a>
+      <a href="/advanced.html">复杂交互</a>
+      <a href="/states.html">异步状态</a>
+      <a href="/about.html">关于我们</a>
+      <a href="/orders.html">订单列表</a>
+    </nav>
+  </header>
+
+  <main>
+    <h1>复杂交互</h1>
+    <p class="hint">覆盖拖拽排序、跨列表拖拽、可调节分栏、无限滚动、拖放上传、键盘快捷键、复制、同源嵌套 iframe、两层开放 Shadow DOM 与富文本编辑。</p>
+
+    <section>
+      <h2>拖拽排序与跨列表拖拽</h2>
+      <div class="two-col">
+        <div>
+          <div class="field-label">待办列表（可拖动排序）</div>
+          <ul class="drag-list" id="drag-source" data-drag-list aria-label="待办列表">
+            <li data-item-id="1">需求评审</li>
+            <li data-item-id="2">接口联调</li>
+            <li data-item-id="3">用例编写</li>
+            <li data-item-id="4">回归测试</li>
+          </ul>
+        </div>
+        <div>
+          <div class="field-label">已完成列表（可拖回）</div>
+          <ul class="drag-list" id="drag-target" data-drag-list aria-label="已完成列表">
+            <li data-item-id="5">环境准备</li>
+            <li data-item-id="6">数据初始化</li>
+          </ul>
+        </div>
+      </div>
+      <p class="small muted mt-12">支持列表内拖动排序，也支持两个列表之间相互拖拽。</p>
+    </section>
+
+    <section>
+      <h2>可调节分栏</h2>
+      <div class="split" data-split>
+        <div class="split-pane" data-split-pane style="flex:0 0 240px;width:240px;">
+          <b>左侧导航</b>
+          <p class="small muted">拖动中间竖条可调节宽度。</p>
+          <ul class="timeline mt-12">
+            <li>概览</li>
+            <li>订单</li>
+            <li>报表</li>
+          </ul>
+        </div>
+        <div class="split-handle" role="separator" aria-orientation="vertical" aria-label="调节分栏宽度"></div>
+        <div class="split-pane" style="flex:1;">
+          <b>右侧内容</b>
+          <p class="small muted">分栏宽度变化会写入内联样式，可被静态采集识别。</p>
+          <div class="empty-state mt-12">右侧内容区域</div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>无限滚动</h2>
+      <div class="scroll-box" id="infinite-box" data-scroll-box aria-label="滚动列表">
+        <div class="scroll-item">滚动列表第 1 条记录</div>
+        <div class="scroll-item">滚动列表第 2 条记录</div>
+        <div class="scroll-item">滚动列表第 3 条记录</div>
+        <div class="scroll-item">滚动列表第 4 条记录</div>
+        <div class="scroll-item">滚动列表第 5 条记录</div>
+        <div class="scroll-item">滚动列表第 6 条记录</div>
+        <div class="scroll-item">滚动列表第 7 条记录</div>
+        <div class="scroll-item">滚动列表第 8 条记录</div>
+        <div class="scroll-item">滚动列表第 9 条记录</div>
+        <div class="scroll-item">滚动列表第 10 条记录</div>
+        <div class="scroll-item">滚动列表第 11 条记录</div>
+        <div class="scroll-item">滚动列表第 12 条记录</div>
+        <div class="scroll-item">滚动列表第 13 条记录</div>
+        <div class="scroll-item">滚动列表第 14 条记录</div>
+        <div class="scroll-item">滚动列表第 15 条记录</div>
+        <div class="scroll-item">滚动列表第 16 条记录</div>
+        <div class="scroll-item">滚动列表第 17 条记录</div>
+        <div class="scroll-item">滚动列表第 18 条记录</div>
+        <div class="scroll-item">滚动列表第 19 条记录</div>
+        <div class="scroll-item">滚动列表第 20 条记录</div>
+        <div class="scroll-loading">继续滚动加载更多</div>
+      </div>
+    </section>
+
+    <section>
+      <h2>键盘快捷键与复制</h2>
+      <ul class="shortcut-list" id="shortcut-list" aria-label="快捷键列表">
+        <li tabindex="0" data-shortcut="rename">F2 重命名当前项</li>
+        <li tabindex="0" data-shortcut="delete">Delete 删除当前项</li>
+        <li tabindex="0" data-shortcut="save">Ctrl+S 保存草稿</li>
+        <li tabindex="0" data-shortcut="help">F1 查看帮助</li>
+      </ul>
+      <p class="small muted mt-12" data-shortcut-result>使用 ↑ ↓ 在列表项之间移动焦点，再按对应快捷键。</p>
+      <div class="btn-row mt-12">
+        <button type="button" class="btn-secondary" data-copy="npm run patrol:explore">复制探索命令</button>
+        <button type="button" class="btn-secondary" data-copy="http://host.docker.internal:8899/advanced.html">复制当前地址</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>拖放上传</h2>
+      <div class="dropzone" id="dropzone" data-dropzone tabindex="0" role="button" aria-label="拖放上传区域">
+        <p>把文件拖到这里，或点击选择文件</p>
+        <input type="file" id="dropzone-file" data-dropzone-input aria-label="上传文件" multiple />
+        <p class="small muted" data-dropzone-result>尚未选择文件</p>
+      </div>
+    </section>
+
+    <section>
+      <h2>同源嵌套 iframe</h2>
+      <iframe src="/embed-form.html?level=1" title="嵌入表单框架" style="height:560px;"></iframe>
+      <p class="small muted mt-12">外层 iframe 内还会再嵌套一层同源 iframe，用于验证 frame 链路采集。</p>
+    </section>
+
+    <section>
+      <h2>开放 Shadow DOM（两层）</h2>
+      <patrol-shadow-card class="shadow-host" id="shadow-card"></patrol-shadow-card>
+      <p class="small muted mt-12">第一层 Shadow Root 内包含输入框、下拉框、复选框与按钮，并再嵌套一个 Shadow Root 组件。</p>
+    </section>
+
+    <section>
+      <h2>富文本编辑</h2>
+      <div class="form-input" contenteditable="true" role="textbox" aria-multiline="true"
+           aria-label="富文本编辑器" id="rich-editor" style="min-height:120px;">
+        可以直接编辑这段富文本内容，用于验证 contenteditable 的输入与读取。
+      </div>
+      <div class="btn-row mt-12">
+        <button type="button" class="btn-secondary" id="rich-clear">清空富文本</button>
+        <button type="button" class="btn-secondary" id="rich-read">读取富文本</button>
+      </div>
+    </section>
+  </main>
+
+  <script src="/site.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      var result = document.querySelector('[data-shortcut-result]');
+      var items = Array.prototype.slice.call(document.querySelectorAll('#shortcut-list [data-shortcut]'));
+
+      function focusItem(index) {
+        var next = (index + items.length) % items.length;
+        items[next].focus();
+      }
+
+      items.forEach(function (item, index) {
+        item.addEventListener('keydown', function (event) {
+          if (event.key === 'ArrowDown') { event.preventDefault(); focusItem(index + 1); }
+          if (event.key === 'ArrowUp') { event.preventDefault(); focusItem(index - 1); }
+          if (event.key === 'F2') { event.preventDefault(); result.textContent = '已进入重命名：' + item.textContent; toast('重命名模式', 'info'); }
+          if (event.key === 'Delete') { event.preventDefault(); result.textContent = '已删除：' + item.textContent; toast('已删除条目', 'warning'); }
+          if (event.key === 'Enter') { event.preventDefault(); result.textContent = '已执行：' + item.textContent; toast('已执行快捷操作', 'success'); }
+        });
+      });
+
+      document.addEventListener('keydown', function (event) {
+        if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+          event.preventDefault();
+          result.textContent = '草稿已保存（Ctrl+S）';
+          toast('草稿已保存', 'success');
+        }
+        if (event.key === 'F1') {
+          event.preventDefault();
+          result.textContent = '帮助面板已打开（F1）';
+          toast('帮助面板', 'info');
+        }
+      });
+
+      var dropzone = document.querySelector('[data-dropzone]');
+      var fileInput = document.querySelector('[data-dropzone-input]');
+      var dropResult = document.querySelector('[data-dropzone-result]');
+      if (dropzone && fileInput) {
+        var showFiles = function (files) {
+          if (!files || files.length === 0) {
+            dropResult.textContent = '尚未选择文件';
+            return;
+          }
+          var names = Array.prototype.map.call(files, function (file) { return file.name; });
+          dropResult.textContent = '已选择 ' + files.length + ' 个文件：' + names.join('、');
+          toast('文件已加入上传队列', 'success');
+        };
+        dropzone.addEventListener('click', function (event) {
+          if (event.target !== fileInput) fileInput.click();
+        });
+        dropzone.addEventListener('keydown', function (event) {
+          if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); fileInput.click(); }
+        });
+        dropzone.addEventListener('dragover', function (event) {
+          event.preventDefault();
+          dropzone.classList.add('is-over');
+        });
+        dropzone.addEventListener('dragleave', function () {
+          dropzone.classList.remove('is-over');
+        });
+        dropzone.addEventListener('drop', function (event) {
+          event.preventDefault();
+          dropzone.classList.remove('is-over');
+          showFiles(event.dataTransfer.files);
+        });
+        fileInput.addEventListener('change', function () { showFiles(fileInput.files); });
+      }
+
+      var clearButton = document.querySelector('#rich-clear');
+      var readButton = document.querySelector('#rich-read');
+      var editor = document.querySelector('#rich-editor');
+      if (clearButton && editor) {
+        clearButton.addEventListener('click', function () {
+          editor.textContent = '';
+          toast('富文本已清空', 'warning');
+        });
+      }
+      if (readButton && editor) {
+        readButton.addEventListener('click', function () {
+          toast('富文本内容长度：' + editor.textContent.trim().length, 'info');
+        });
+      }
+    });
+
+    // 两层开放 Shadow DOM 组件
+    class PatrolShadowInner extends HTMLElement {
+      constructor() {
+        super();
+        var root = this.attachShadow({ mode: 'open' });
+        root.innerHTML = [
+          '<style>',
+          '.inner{padding:10px;border:1px dashed #94a3b8;border-radius:8px;margin-top:10px;display:flex;flex-direction:column;gap:8px;font-family:inherit;}',
+          'span{font-size:12px;color:#475569;}',
+          'button{padding:6px 12px;border:1px solid #2563eb;border-radius:6px;background:#2563eb;color:#fff;cursor:pointer;}',
+          'input{padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;}',
+          '</style>',
+          '<div class="inner">',
+          '  <span>第二层 Shadow 组件</span>',
+          '  <input id="inner-input" type="text" placeholder="内层输入" aria-label="内层输入" />',
+          '  <button type="button" id="inner-button">内层按钮</button>',
+          '</div>',
+        ].join('');
+        root.getElementById('inner-button').addEventListener('click', function () {
+          toast('Shadow 内层按钮被点击', 'success');
+        });
+      }
+    }
+
+    class PatrolShadowCard extends HTMLElement {
+      constructor() {
+        super();
+        var root = this.attachShadow({ mode: 'open' });
+        root.innerHTML = [
+          '<style>',
+          '.card{display:flex;flex-direction:column;gap:10px;font-family:inherit;color:#1f2937;}',
+          'h3{margin:0;font-size:16px;}',
+          'label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:#334155;}',
+          'input[type="text"],select{padding:8px 10px;border:1px solid #cbd5e1;border-radius:6px;font:inherit;}',
+          '.row{display:flex;align-items:center;gap:6px;font-size:13px;}',
+          'button{padding:8px 14px;border:1px solid #2563eb;border-radius:6px;background:#2563eb;color:#fff;cursor:pointer;font:inherit;}',
+          'p{margin:0;font-size:12px;color:#475569;}',
+          '</style>',
+          '<div class="card">',
+          '  <h3>Shadow DOM 表单</h3>',
+          '  <label>姓名<input id="shadow-name" type="text" placeholder="Shadow 姓名" aria-label="Shadow 姓名" /></label>',
+          '  <label>客户类型<select id="shadow-type" aria-label="Shadow 客户类型"><option>个人客户</option><option>企业客户</option></select></label>',
+          '  <div class="row"><input id="shadow-agree" type="checkbox" /><label for="shadow-agree">同意服务条款</label></div>',
+          '  <button type="button" id="shadow-submit">提交 Shadow 表单</button>',
+          '  <patrol-shadow-inner></patrol-shadow-inner>',
+          '  <p id="shadow-result">尚未提交</p>',
+          '</div>',
+        ].join('');
+        var submit = root.getElementById('shadow-submit');
+        submit.addEventListener('click', function () {
+          var name = root.getElementById('shadow-name').value.trim();
+          var type = root.getElementById('shadow-type').value;
+          var agree = root.getElementById('shadow-agree').checked;
+          root.getElementById('shadow-result').textContent = agree
+            ? '已提交：' + (name || '未填写姓名') + ' / ' + type
+            : '请先勾选同意服务条款';
+          toast(agree ? 'Shadow 表单已提交' : 'Shadow 表单校验失败', agree ? 'success' : 'error');
+        });
+      }
+    }
+
+    customElements.define('patrol-shadow-inner', PatrolShadowInner);
+    customElements.define('patrol-shadow-card', PatrolShadowCard);
+  </script>
+</body>
+</html>

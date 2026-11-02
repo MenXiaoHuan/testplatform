@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>弹层场景 · 缺陷演示站点</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <nav>
+      <a href="/">首页</a>
+      <a href="/forms.html">表单</a>
+      <a href="/overlays.html">弹层</a>
+      <a href="/data.html">数据展示</a>
+      <a href="/advanced.html">复杂交互</a>
+      <a href="/states.html">异步状态</a>
+      <a href="/about.html">关于我们</a>
+      <a href="/orders.html">订单列表</a>
+    </nav>
+  </header>
+
+  <main>
+    <h1>弹层场景</h1>
+    <p class="hint">覆盖单层弹窗、静态三层弹窗、动态创建弹窗、抽屉、子菜单、右键菜单、Tooltip、Popover、确认框、Toast、图片预览与命令面板。</p>
+
+    <section>
+      <h2>弹窗</h2>
+      <div class="btn-row">
+        <button type="button" class="btn" data-modal="modal-basic">打开基础弹窗</button>
+        <button type="button" class="btn" data-modal="modal-level1">打开静态三层弹窗</button>
+        <button type="button" class="btn" data-dynamic-modal="1">打开动态多层弹窗</button>
+        <button type="button" class="btn-danger" data-modal="confirm-delete">删除确认</button>
+      </div>
+      <p class="small muted mt-12">静态三层弹窗的每一层都已在 DOM 中预渲染（hidden）；动态弹窗只在点击后创建。</p>
+    </section>
+
+    <section>
+      <h2>抽屉</h2>
+      <div class="btn-row">
+        <button type="button" class="btn" data-drawer="drawer-basic">打开右侧抽屉</button>
+        <button type="button" class="btn-secondary" data-drawer="drawer-nested">抽屉内打开多层弹窗</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>菜单与信息浮层</h2>
+      <div class="btn-row">
+        <div class="layer-host">
+          <button type="button" class="select-trigger" data-popup="menu-panel" aria-haspopup="menu" aria-expanded="false">
+            更多操作
+          </button>
+          <div id="menu-panel" class="popup-layer menu" role="menu" hidden>
+            <div class="menu-item" role="menuitem">查看详情</div>
+            <div class="menu-item has-submenu" role="menuitem" data-popup="submenu-panel" aria-haspopup="menu" aria-expanded="false">
+              分享到… <span class="arrow">›</span>
+            </div>
+            <div id="submenu-panel" class="popup-layer menu submenu" role="menu" hidden>
+              <div class="menu-item" role="menuitem">复制链接</div>
+              <div class="menu-item" role="menuitem">生成二维码</div>
+              <div class="menu-item" role="menuitem">发送邮件</div>
+            </div>
+            <div class="menu-item" role="menuitem">归档</div>
+          </div>
+        </div>
+
+        <span class="tooltip-host">
+          <button type="button" class="btn-secondary" data-tooltip-trigger aria-describedby="tip-1">悬停查看提示</button>
+          <span id="tip-1" class="tooltip" role="tooltip" hidden>这是一个悬停提示，支持键盘聚焦触发。</span>
+        </span>
+
+        <div class="layer-host">
+          <button type="button" class="btn-secondary" data-popup="popover-panel" aria-haspopup="dialog" aria-expanded="false">
+            打开 Popover
+          </button>
+          <div id="popover-panel" class="popup-layer" role="dialog" aria-label="Popover" hidden style="width:260px;">
+            <div class="popup-head">筛选条件</div>
+            <div class="field mt-12">
+              <label for="popover-keyword">关键字</label>
+              <input id="popover-keyword" type="text" placeholder="输入关键字" />
+            </div>
+            <div class="btn-row">
+              <button type="button" class="btn" data-popup-close>应用</button>
+              <button type="button" class="btn-secondary" data-popup-close>取消</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="context-area mt-12" data-context-area>
+        在此区域点击鼠标右键，打开自定义右键菜单
+      </div>
+    </section>
+
+    <section>
+      <h2>反馈与遮罩</h2>
+      <div class="btn-row">
+        <button type="button" class="btn" data-toast="success">成功 Toast</button>
+        <button type="button" class="btn-danger" data-toast="error">错误 Toast</button>
+        <button type="button" class="btn-secondary" data-toast="warning">警告 Toast</button>
+        <button type="button" class="btn-secondary" data-loading>显示 Loading 遮罩</button>
+        <button type="button" class="btn-secondary" data-lightbox-src="/preview.svg">预览图片</button>
+        <button type="button" class="btn-secondary" data-command-open>打开命令面板（Ctrl+K）</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>Popconfirm 与行内确认</h2>
+      <div class="layer-host">
+        <button type="button" class="btn-secondary" data-popup="popconfirm-panel"
+                aria-haspopup="alertdialog" aria-expanded="false">删除这一行？</button>
+        <div id="popconfirm-panel" class="popup-layer" role="alertdialog" aria-label="确认删除" hidden style="width:240px;">
+          <p class="small">删除后不可恢复，确定继续吗？</p>
+          <div class="btn-row">
+            <button type="button" class="btn-danger" data-popconfirm-yes>确定删除</button>
+            <button type="button" class="btn-secondary" data-popconfirm-no>取消</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- 基础弹窗 -->
+  <div id="modal-basic" class="modal-mask" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-basic-title">
+      <div class="modal-head">
+        <h3 id="modal-basic-title">基础弹窗</h3>
+        <button type="button" class="modal-close" data-modal-close aria-label="关闭">×</button>
+      </div>
+      <div class="modal-body">
+        <p>这是一个标准的单层弹窗，包含输入框与确认按钮。</p>
+        <div class="field">
+          <label for="basic-note">备注</label>
+          <input id="basic-note" type="text" placeholder="输入备注" />
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="btn-secondary" data-modal-close>取消</button>
+        <button type="button" class="btn" data-modal-close>确定</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 静态三层弹窗 -->
+  <div id="modal-level1" class="modal-mask" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-label="第一层弹窗">
+      <div class="modal-head">
+        <h3>第一层弹窗</h3>
+        <button type="button" class="modal-close" data-modal-close aria-label="关闭">×</button>
+      </div>
+      <div class="modal-body">
+        <p>这一层预渲染在 DOM 中，点击下方按钮进入第二层。</p>
+        <button type="button" class="btn" data-modal="modal-level2">打开第二层</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-level2" class="modal-mask" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-label="第二层弹窗">
+      <div class="modal-head">
+        <h3>第二层弹窗</h3>
+        <button type="button" class="modal-close" data-modal-close aria-label="关闭">×</button>
+      </div>
+      <div class="modal-body">
+        <p>第二层弹窗叠加在第一层之上。</p>
+        <div class="field">
+          <label for="level2-input">第二层输入</label>
+          <input id="level2-input" type="text" placeholder="第二层内容" />
+        </div>
+        <button type="button" class="btn" data-modal="modal-level3">打开第三层</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-level3" class="modal-mask" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-label="第三层弹窗">
+      <div class="modal-head">
+        <h3>第三层弹窗</h3>
+        <button type="button" class="modal-close" data-modal-close aria-label="关闭">×</button>
+      </div>
+      <div class="modal-body">
+        <p>第三层弹窗，用于验证多层弹层识别与逐层回滚。</p>
+        <div class="check-row">
+          <label><input type="checkbox" checked /> 记住本次选择</label>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="btn" data-modal-close>完成</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 删除确认 -->
+  <div id="confirm-delete" class="modal-mask" hidden>
+    <div class="modal" role="alertdialog" aria-modal="true" aria-label="删除确认" style="width:440px;">
+      <div class="modal-head">
+        <h3>删除确认</h3>
+        <button type="button" class="modal-close" data-modal-close aria-label="关闭">×</button>
+      </div>
+      <div class="modal-body">
+        <p>确定要删除这条记录吗？该操作不可恢复。</p>
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="btn-secondary" data-modal-close>取消</button>
+        <button type="button" class="btn-danger" data-confirm-delete>确认删除</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 抽屉 -->
+  <div id="drawer-basic" class="drawer-mask" hidden>
+    <aside class="drawer" role="dialog" aria-modal="true" aria-label="右侧抽屉">
+      <div class="drawer-head">
+        <h3>编辑收货信息</h3>
+        <button type="button" class="modal-close" data-drawer-close aria-label="关闭">×</button>
+      </div>
+      <div class="drawer-body">
+        <div class="field">
+          <label for="drawer-name">收货人</label>
+          <input id="drawer-name" type="text" placeholder="请输入收货人" />
+        </div>
+        <div class="field">
+          <label for="drawer-address">详细地址</label>
+          <textarea id="drawer-address" placeholder="请输入详细地址"></textarea>
+        </div>
+      </div>
+      <div class="drawer-foot">
+        <div class="btn-row">
+          <button type="button" class="btn-secondary" data-drawer-close>取消</button>
+          <button type="button" class="btn" data-drawer-close>保存</button>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <div id="drawer-nested" class="drawer-mask" hidden>
+    <aside class="drawer" role="dialog" aria-modal="true" aria-label="抽屉内弹窗">
+      <div class="drawer-head">
+        <h3>订单设置</h3>
+        <button type="button" class="modal-close" data-drawer-close aria-label="关闭">×</button>
+      </div>
+      <div class="drawer-body">
+        <p>抽屉本身是一层，下面按钮会在抽屉之上再打开两层弹窗。</p>
+        <button type="button" class="btn" data-modal="drawer-level1">打开抽屉内第一层</button>
+      </div>
+    </aside>
+  </div>
+
+  <div id="drawer-level1" class="modal-mask above-drawer" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-label="抽屉内第一层">
+      <div class="modal-head">
+        <h3>抽屉内第一层</h3>
+        <button type="button" class="modal-close" data-modal-close aria-label="关闭">×</button>
+      </div>
+      <div class="modal-body">
+        <button type="button" class="btn" data-modal="drawer-level2">打开抽屉内第二层</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="drawer-level2" class="modal-mask above-drawer" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-label="抽屉内第二层">
+      <div class="modal-head">
+        <h3>抽屉内第二层</h3>
+        <button type="button" class="modal-close" data-modal-close aria-label="关闭">×</button>
+      </div>
+      <div class="modal-body">
+        <p>抽屉 → 弹窗 → 弹窗，共三层。</p>
+        <button type="button" class="btn" data-modal-close>完成</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 命令面板 -->
+  <div class="modal-mask" data-command-modal hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-label="命令面板">
+      <div class="modal-head">
+        <h3>命令面板</h3>
+        <button type="button" class="modal-close" data-command-close aria-label="关闭">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="field">
+          <label for="command-search">搜索命令</label>
+          <input id="command-search" type="search" placeholder="输入命令关键字" data-command-search />
+        </div>
+        <ul class="option-list">
+          <li role="option" data-command-item>新建订单</li>
+          <li role="option" data-command-item>导出报表</li>
+          <li role="option" data-command-item>打开系统设置</li>
+          <li role="option" data-command-item>切换主题</li>
+          <li role="option" data-command-item>查看帮助文档</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <script src="/site.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      document.querySelectorAll('[data-toast]').forEach(function (button) {
+        button.addEventListener('click', function () {
+          var kind = button.getAttribute('data-toast');
+          var text = kind === 'success' ? '操作成功' : kind === 'error' ? '操作失败，请重试' : '请注意检查填写内容';
+          toast(text, kind);
+        });
+      });
+
+      var confirmButton = document.querySelector('[data-confirm-delete]');
+      if (confirmButton) {
+        confirmButton.addEventListener('click', function () {
+          toast('记录已删除', 'warning');
+          var mask = confirmButton.closest('.modal-mask');
+          if (mask) mask.hidden = true;
+        });
+      }
+
+      document.querySelectorAll('[data-popup-close]').forEach(function (button) {
+        button.addEventListener('click', function () {
+          var layer = button.closest('.popup-layer');
+          if (layer) layer.hidden = true;
+        });
+      });
+
+      var popconfirmTrigger = document.querySelector('[data-popconfirm-trigger]');
+      var popconfirmPanel = document.querySelector('#popconfirm-panel');
+      if (popconfirmTrigger && popconfirmPanel) {
+        popconfirmTrigger.addEventListener('click', function () { popconfirmPanel.hidden = false; });
+        var yes = document.querySelector('[data-popconfirm-yes]');
+        var no = document.querySelector('[data-popconfirm-no]');
+        if (yes) yes.addEventListener('click', function () {
+          popconfirmPanel.hidden = true;
+          toast('已删除', 'warning');
+        });
+        if (no) no.addEventListener('click', function () { popconfirmPanel.hidden = true; });
+      }
+
+      var commandOpen = document.querySelector('[data-command-open]');
+      if (commandOpen) {
+        commandOpen.addEventListener('click', function () {
+          var modal = document.querySelector('[data-command-modal]');
+          if (modal) modal.hidden = false;
+        });
+      }
+    });
+  </script>
+</body>
+</html>

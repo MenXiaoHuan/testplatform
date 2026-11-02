@@ -38,7 +38,12 @@ public class SystemPromptHook extends MessagesAgentHook implements Prioritized {
         if (systemText == null || systemText.isBlank()) {
             return new AgentCommand(previousMessages);
         }
-        AgentInstructionMessage instructionMessage = AgentInstructionMessage.builder().text(systemText).build();
+        // 系统提示词是静态文本（AGENT.md 内含 JSON 示例、技能索引等），
+        // 标记 rendered=true 让 Agent 框架跳过 StringTemplate 渲染，避免 {} / [] 触发模板解析错误。
+        AgentInstructionMessage instructionMessage = AgentInstructionMessage.builder()
+                .text(systemText)
+                .rendered(true)
+                .build();
         List<Message> newMessages = new ArrayList<>(previousMessages);
         newMessages.add(instructionMessage);
         return new AgentCommand(newMessages);

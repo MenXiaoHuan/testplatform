@@ -84,13 +84,16 @@ analyzeLogs(taskId)                  → 日志级事实：错误行、失败用
 getSceneDetail / getRepository       → 配置级事实：分支、选择器、命令、路径、凭据
 ```
 
+巡页故障的取证路径不同：先确认是巡页任务（入口 URL / 状态 / 当前阶段），再核对巡页配置、模型配置、模型日志（仅超级管理员）与用例证据。当前工具集没有巡页专用只读工具，不要让用户误以为已查询；应要求用户提供巡页名称/任务 ID、状态、阶段与模型日志截图。
+
 **先证据后结论**：没有工具返回的事实，不得断言根因；只能给出「可能原因」并标注置信度。
 
-## 故障分类（fault_type 必须六选一）
+## 故障分类（fault_type 必须七选一）
 
 | fault_type | 适用场景 | 对应 SOP |
 |------------|----------|----------|
 | `UI自动化异常` | 用例失败、选择器/断言/超时、浏览器启动失败、页面行为异常 | `playwright-error.md` |
+| `巡页探索异常` | 巡页任务卡住/待审批、执行被拒、降级、判定不可信、覆盖率异常、定时不触发、证据缺失 | `patrol-error.md` |
 | `分布式调度冲突` | 任务长期 QUEUED、重复触发、定时不生效、取消不生效、队列满 | `scheduler-error.md` |
 | `容器资源异常` | OOM、容器启动失败、磁盘/网络/权限问题 | `docker-error.md` |
 | `数据库缓存问题` | MySQL/Redis/MinIO/Flyway 连接、超时、迁移、缓存异常 | `cache-db-error.md` |
@@ -99,7 +102,7 @@ getSceneDetail / getRepository       → 配置级事实：分支、选择器、
 
 ## 判定原则
 
-- **先分阶段**：PREPARING → INSTALLING → TESTING → ARCHIVING。阶段不同，根因域不同。
+- **先分对象与阶段**：Playwright 任务看 PREPARING → INSTALLING → TESTING → ARCHIVING；巡页任务看 PREPARING → SNAPSHOTTING → PLANNING → WAITING_APPROVAL → EXECUTING → JUDGING。阶段不同，根因域不同。
 - **区分任务级与用例级**：任务 FAILED 且 failedCount=0，多为环境/安装/归档问题；任务 SUCCESS 但用例失败，看用例级错误。
 - **区分确定与推测**：日志明确写出根因时可给 HIGH；仅凭现象推断给 MEDIUM；信息缺失给 LOW。
 - **给可执行方案**：临时恢复（先止血）+ 长期优化（防复发）+ 测试风险。

@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>异步状态 · 缺陷演示站点</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <nav>
+      <a href="/">首页</a>
+      <a href="/forms.html">表单</a>
+      <a href="/overlays.html">弹层</a>
+      <a href="/data.html">数据展示</a>
+      <a href="/advanced.html">复杂交互</a>
+      <a href="/states.html">异步状态</a>
+      <a href="/about.html">关于我们</a>
+      <a href="/orders.html">订单列表</a>
+    </nav>
+  </header>
+
+  <main>
+    <h1>异步与异常</h1>
+    <p class="hint">覆盖加载中、慢请求、500、401、重试、空数据、轮询、离线、提交成功/失败与长任务进度。</p>
+
+    <section>
+      <h2>加载与异常状态</h2>
+      <div class="btn-row">
+        <button type="button" class="btn" data-state="success">正常数据</button>
+        <button type="button" class="btn-secondary" data-state="slow">慢请求（1.2 秒）</button>
+        <button type="button" class="btn-danger" data-state="error">500 错误</button>
+        <button type="button" class="btn-secondary" data-state="unauthorized">401 未授权</button>
+        <button type="button" class="btn-secondary" data-state="empty">空数据</button>
+      </div>
+      <div class="state-result mt-12" data-state-result aria-live="polite">
+        <div class="empty-state">请选择上方按钮以加载不同状态</div>
+      </div>
+    </section>
+
+    <section>
+      <h2>轮询</h2>
+      <div class="btn-row">
+        <button type="button" class="btn" data-poll-toggle>开始轮询</button>
+        <span class="tag tag--gray" data-poll-status>未开始</span>
+      </div>
+      <ul class="timeline mt-12" data-poll-log aria-live="polite">
+        <li>等待开始轮询</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>离线提示</h2>
+      <p>网络状态：<span class="tag tag--green" data-online-badge>在线</span></p>
+      <div class="btn-row">
+        <button type="button" class="btn-secondary" data-offline-toggle>模拟离线</button>
+        <button type="button" class="btn-secondary" data-offline-request>发起请求</button>
+      </div>
+      <p class="small muted mt-12" data-offline-result>尚未发起请求</p>
+    </section>
+
+    <section>
+      <h2>表单提交成功 / 失败</h2>
+      <form data-state-form>
+        <div class="two-col">
+          <div class="field">
+            <label for="state-name">收货人（必填）</label>
+            <input id="state-name" type="text" placeholder="请输入收货人" data-required />
+            <div class="field-error"></div>
+          </div>
+          <div class="field">
+            <label for="state-amount">订单金额</label>
+            <input id="state-amount" type="number" min="1" value="199" />
+          </div>
+        </div>
+        <div class="btn-row">
+          <button type="button" class="btn" data-submit-mode="success">提交（成功）</button>
+          <button type="button" class="btn-danger" data-submit-mode="fail">提交（失败）</button>
+        </div>
+        <p class="mt-12" data-state-form-result>尚未提交</p>
+      </form>
+    </section>
+
+    <section>
+      <h2>长任务进度</h2>
+      <div class="btn-row">
+        <button type="button" class="btn" data-progress-start>开始任务</button>
+        <button type="button" class="btn-secondary" data-progress-cancel>取消任务</button>
+      </div>
+      <div class="progress progress-lg mt-12"><span data-progress-bar></span></div>
+      <p class="small muted mt-12" data-progress-label>未开始</p>
+    </section>
+
+    <section>
+      <h2>骨架屏与空状态</h2>
+      <div class="grid">
+        <div>
+          <div class="skeleton" style="width:85%"></div>
+          <div class="skeleton" style="width:60%"></div>
+          <div class="skeleton" style="width:72%"></div>
+          <div class="skeleton" style="width:48%"></div>
+        </div>
+        <div class="empty-state">暂无数据，稍后再试</div>
+      </div>
+    </section>
+  </main>
+
+  <script src="/site.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      var result = document.querySelector('[data-state-result]');
+
+      function renderError(message, retry) {
+        result.innerHTML = '<div class="error-state">' + message +
+          '<div class="mt-12"><button type="button" class="btn-secondary" data-retry>重试</button></div></div>';
+        var button = result.querySelector('[data-retry]');
+        if (button) button.addEventListener('click', retry);
+      }
+
+      function load(kind) {
+        result.innerHTML = '<div class="skeleton"></div><div class="skeleton" style="width:70%"></div><div class="skeleton" style="width:45%"></div>';
+        if (kind === 'offline') {
+          setTimeout(function () { renderError('网络已断开，请检查连接', function () { load(kind); }); }, 300);
+          return;
+        }
+        var url = '/api/orders';
+        if (kind === 'slow') url = '/api/slow?ms=1200';
+        if (kind === 'error') url = '/api/error';
+        if (kind === 'unauthorized') url = '/api/unauthorized';
+        if (kind === 'empty') url = '/api/empty';
+        fetch(url)
+          .then(function (response) {
+            if (!response.ok) throw new Error('HTTP ' + response.status + '（模拟异常）');
+            return response.json();
+          })
+          .then(function (data) {
+            if (!data.items || data.items.length === 0) {
+              result.innerHTML = '<div class="empty-state">暂无数据，列表为空</div>';
+              return;
+            }
+            result.innerHTML = '<ul class="timeline">' + data.items.map(function (item) {
+              return '<li>' + item + '</li>';
+            }).join('') + '</ul>';
+          })
+          .catch(function (error) {
+            renderError(error.message, function () { load(kind); });
+          });
+      }
+
+      document.querySelectorAll('[data-state]').forEach(function (button) {
+        button.addEventListener('click', function () {
+          if (offlineMode) {
+            renderError('当前为模拟离线状态，请求被拦截', function () { load(button.dataset.state); });
+            return;
+          }
+          load(button.dataset.state);
+        });
+      });
+
+      var pollTimer = null;
+      var pollCount = 0;
+      var pollButton = document.querySelector('[data-poll-toggle]');
+      var pollStatus = document.querySelector('[data-poll-status]');
+      var pollLog = document.querySelector('[data-poll-log]');
+
+      function addPollLog(text) {
+        var item = document.createElement('li');
+        item.textContent = text;
+        pollLog.insertBefore(item, pollLog.firstChild);
+        while (pollLog.children.length > 8) pollLog.removeChild(pollLog.lastChild);
+      }
+
+      function stopPolling() {
+        if (pollTimer) clearInterval(pollTimer);
+        pollTimer = null;
+        pollButton.textContent = '开始轮询';
+        pollStatus.textContent = '已停止';
+        pollStatus.className = 'tag tag--gray';
+      }
+
+      pollButton.addEventListener('click', function () {
+        if (pollTimer) { stopPolling(); return; }
+        pollButton.textContent = '停止轮询';
+        pollStatus.textContent = '轮询中';
+        pollStatus.className = 'tag tag--green';
+        addPollLog('开始轮询，每 2 秒请求一次');
+        pollTimer = setInterval(function () {
+          fetch('/api/state')
+            .then(function (response) { return response.json(); })
+            .then(function (data) {
+              pollCount += 1;
+              addPollLog('第 ' + data.counter + ' 次轮询 · ' + new Date(data.at).toLocaleTimeString());
+            })
+            .catch(function () { addPollLog('第 ' + (pollCount + 1) + ' 次轮询失败'); });
+        }, 2000);
+      });
+
+      var offlineMode = false;
+      var onlineBadge = document.querySelector('[data-online-badge]');
+      var offlineButton = document.querySelector('[data-offline-toggle]');
+      var offlineResult = document.querySelector('[data-offline-result]');
+      offlineButton.addEventListener('click', function () {
+        offlineMode = !offlineMode;
+        onlineBadge.textContent = offlineMode ? '离线（模拟）' : '在线';
+        onlineBadge.className = offlineMode ? 'tag tag--red' : 'tag tag--green';
+        offlineButton.textContent = offlineMode ? '恢复在线' : '模拟离线';
+        toast(offlineMode ? '已模拟离线状态' : '已恢复在线', offlineMode ? 'warning' : 'success');
+      });
+      document.querySelector('[data-offline-request]').addEventListener('click', function () {
+        if (offlineMode) {
+          offlineResult.textContent = '请求失败：当前处于模拟离线状态';
+          toast('网络不可用', 'error');
+          return;
+        }
+        offlineResult.textContent = '请求已发送，网络正常';
+        toast('请求成功', 'success');
+      });
+      window.addEventListener('offline', function () {
+        onlineBadge.textContent = '离线';
+        onlineBadge.className = 'tag tag--red';
+      });
+      window.addEventListener('online', function () {
+        onlineBadge.textContent = '在线';
+        onlineBadge.className = 'tag tag--green';
+      });
+
+      var stateForm = document.querySelector('[data-state-form]');
+      var formResult = document.querySelector('[data-state-form-result]');
+      document.querySelectorAll('[data-submit-mode]').forEach(function (button) {
+        button.addEventListener('click', function () {
+          var nameInput = document.querySelector('#state-name');
+          var field = nameInput.closest('.field');
+          var error = field.querySelector('.field-error');
+          if (!nameInput.value.trim()) {
+            field.classList.add('field-invalid');
+            error.textContent = '此项为必填';
+            formResult.textContent = '提交前请先填写收货人';
+            toast('表单校验失败', 'error');
+            return;
+          }
+          field.classList.remove('field-invalid');
+          error.textContent = '';
+          var fail = button.dataset.submitMode === 'fail';
+          formResult.textContent = '提交中…';
+          fetch('/api/submit', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ name: nameInput.value.trim(), fail: fail }),
+          })
+            .then(function (response) {
+              if (!response.ok) throw new Error('HTTP ' + response.status);
+              return response.json();
+            })
+            .then(function (data) {
+              formResult.textContent = '提交成功，订单号：' + data.orderNo;
+              toast('订单提交成功', 'success');
+            })
+            .catch(function (error) {
+              formResult.textContent = '提交失败：' + error.message;
+              toast('订单提交失败', 'error');
+            });
+        });
+      });
+
+      var progressTimer = null;
+      var progressValue = 0;
+      var progressBar = document.querySelector('[data-progress-bar]');
+      var progressLabel = document.querySelector('[data-progress-label]');
+      function stopProgress() {
+        if (progressTimer) clearInterval(progressTimer);
+        progressTimer = null;
+        progressLabel.textContent = '已取消，当前进度 ' + progressValue + '%';
+      }
+      document.querySelector('[data-progress-start]').addEventListener('click', function () {
+        if (progressTimer) return;
+        progressValue = 0;
+        progressBar.style.width = '0%';
+        progressLabel.textContent = '任务执行中…';
+        progressTimer = setInterval(function () {
+          progressValue = Math.min(progressValue + 10, 100);
+          progressBar.style.width = progressValue + '%';
+          progressLabel.textContent = '任务执行中，已完成 ' + progressValue + '%';
+          if (progressValue >= 100) {
+            clearInterval(progressTimer);
+            progressTimer = null;
+            progressLabel.textContent = '任务已完成';
+            toast('长任务已完成', 'success');
+          }
+        }, 240);
+      });
+      document.querySelector('[data-progress-cancel]').addEventListener('click', stopProgress);
+    });
+  </script>
+</body>
+</html>

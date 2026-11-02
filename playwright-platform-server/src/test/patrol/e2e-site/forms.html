@@ -1,0 +1,475 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>表单场景 · 缺陷演示站点</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <nav>
+      <a href="/">首页</a>
+      <a href="/forms.html">表单</a>
+      <a href="/overlays.html">弹层</a>
+      <a href="/data.html">数据展示</a>
+      <a href="/advanced.html">复杂交互</a>
+      <a href="/states.html">异步状态</a>
+      <a href="/about.html">关于我们</a>
+      <a href="/orders.html">订单列表</a>
+    </nav>
+  </header>
+
+  <main>
+    <h1>表单场景</h1>
+    <p class="hint">覆盖基础输入、校验、选择控件、日期时间、级联、树选择、评分、滑块、标签、穿梭框与文件选择。</p>
+
+    <section>
+      <h2>基础输入与校验</h2>
+      <form data-validate-form>
+        <div class="grid">
+          <div class="field">
+            <label for="form-name">姓名（必填）</label>
+            <input id="form-name" type="text" placeholder="请输入姓名" data-required />
+            <div class="field-error"></div>
+          </div>
+          <div class="field">
+            <label for="form-email">邮箱（必填）</label>
+            <input id="form-email" type="email" placeholder="name@example.com" data-required data-email />
+            <div class="field-error"></div>
+          </div>
+          <div class="field">
+            <label for="form-age">年龄</label>
+            <input id="form-age" type="number" min="1" max="120" value="28" />
+          </div>
+          <div class="field">
+            <label for="form-password">密码</label>
+            <input id="form-password" type="password" placeholder="请输入密码" />
+          </div>
+          <div class="field">
+            <label for="form-tel">手机号</label>
+            <input id="form-tel" type="tel" placeholder="13800000000" />
+          </div>
+          <div class="field">
+            <label for="form-url">个人主页</label>
+            <input id="form-url" type="url" placeholder="https://example.com" />
+          </div>
+          <div class="field">
+            <label for="form-disabled">禁用字段</label>
+            <input id="form-disabled" type="text" value="不可编辑" disabled />
+          </div>
+          <div class="field">
+            <label for="form-readonly">只读字段</label>
+            <input id="form-readonly" type="text" value="只读内容" readonly />
+          </div>
+        </div>
+        <div class="field">
+          <label for="form-remark">备注</label>
+          <textarea id="form-remark" placeholder="多行文本输入"></textarea>
+        </div>
+        <div class="field">
+          <span class="field-label">富文本（contenteditable）</span>
+          <div class="form-input" contenteditable="true" role="textbox" aria-multiline="true" aria-label="富文本编辑器" style="min-height:84px;">
+            这里可以直接编辑内容，用于验证 contenteditable 元素。
+          </div>
+        </div>
+        <div class="btn-row">
+          <button type="button" class="btn" data-submit>提交校验</button>
+          <button type="reset" class="btn-secondary">重置</button>
+        </div>
+      </form>
+    </section>
+
+    <section>
+      <h2>选项控件</h2>
+      <div class="grid">
+        <div>
+          <div class="field-label">复选框</div>
+          <div class="check-row">
+            <label><input type="checkbox" name="feature" value="email" checked /> 邮件通知</label>
+            <label><input type="checkbox" name="feature" value="sms" /> 短信通知</label>
+            <label><input type="checkbox" name="feature" value="push" /> 站内推送</label>
+          </div>
+        </div>
+        <div>
+          <div class="field-label">单选框</div>
+          <div class="radio-row">
+            <label><input type="radio" name="level" value="basic" checked /> 基础版</label>
+            <label><input type="radio" name="level" value="pro" /> 专业版</label>
+            <label><input type="radio" name="level" value="enterprise" /> 企业版</label>
+          </div>
+        </div>
+        <div>
+          <div class="field-label">开关</div>
+          <label class="switch">
+            <input type="checkbox" role="switch" aria-label="启用自动续费" />
+            <span></span>
+          </label>
+          <div class="small muted mt-12">role=switch，用于验证无障碍开关识别。</div>
+        </div>
+        <div>
+          <div class="field-label">原生下拉</div>
+          <select id="native-select" aria-label="配送方式">
+            <option value="express">快递配送</option>
+            <option value="pickup">到店自提</option>
+            <option value="same-day">当日达</option>
+          </select>
+        </div>
+        <div>
+          <div class="field-label">颜色选择</div>
+          <input id="color-input" type="color" value="#2563eb" aria-label="主题色" />
+        </div>
+        <div>
+          <div class="field-label">文件选择</div>
+          <input id="file-input" type="file" aria-label="上传附件" />
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>自定义下拉与多选</h2>
+      <div class="grid">
+        <div class="field">
+          <span class="field-label">自定义单选（弹层）</span>
+          <div class="layer-host">
+            <button id="custom-select-trigger" class="select-trigger" type="button"
+                    data-popup="custom-select-panel" aria-haspopup="listbox" aria-expanded="false">
+              <span data-select-label>请选择发票类型</span>
+            </button>
+            <div id="custom-select-panel" class="popup-layer select-popup" role="listbox" aria-label="发票类型" hidden>
+              <ul class="option-list">
+                <li role="option" data-value="personal" data-label="个人发票">个人发票</li>
+                <li role="option" data-value="company" data-label="企业发票">企业发票</li>
+                <li role="option" data-value="none" data-label="不开发票">不开发票</li>
+              </ul>
+              <input type="hidden" data-select-value />
+            </div>
+          </div>
+        </div>
+
+        <div class="field">
+          <span class="field-label">自定义多选</span>
+          <div class="layer-host" data-multi-select>
+            <button class="select-trigger" type="button" data-popup="multi-select-panel"
+                    aria-haspopup="listbox" aria-expanded="false">
+              <span data-multi-label>请选择</span>
+            </button>
+            <div id="multi-select-panel" class="popup-layer" role="listbox" aria-label="兴趣标签" hidden>
+              <ul class="option-list">
+                <li role="option" data-multi-value="数码" aria-selected="false">数码</li>
+                <li role="option" data-multi-value="家居" aria-selected="false">家居</li>
+                <li role="option" data-multi-value="运动" aria-selected="false">运动</li>
+                <li role="option" data-multi-value="图书" aria-selected="false">图书</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <div class="field">
+          <span class="field-label">自动完成搜索</span>
+          <div class="layer-host" data-autocomplete>
+            <input id="city-search" type="search" placeholder="输入城市名" data-popup="city-panel"
+                   aria-haspopup="listbox" aria-autocomplete="list" aria-expanded="false" />
+            <div id="city-panel" class="popup-layer autocomplete-popup" role="listbox" hidden>
+              <ul class="option-list">
+                <li role="option">杭州</li>
+                <li role="option">上海</li>
+                <li role="option">北京</li>
+                <li role="option">广州</li>
+                <li role="option">深圳</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <div class="field">
+          <span class="field-label">标签输入（回车添加）</span>
+          <div class="tag-input" data-tag-input>
+            <span class="tag-pill">已有标签 <button type="button" class="btn-link" aria-label="移除标签">×</button></span>
+            <input id="tag-input" type="text" placeholder="输入后按回车" aria-label="添加标签" />
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>日期、时间与级联</h2>
+      <div class="grid">
+        <div class="field">
+          <span class="field-label">日期选择器（弹层内再开年份层）</span>
+          <div class="layer-host" data-datepicker>
+            <input id="date-input" type="text" readonly placeholder="选择日期" data-popup="date-panel"
+                   aria-haspopup="dialog" aria-expanded="false" />
+            <div id="date-panel" class="popup-layer datepicker-popup" role="dialog" aria-label="日期选择器" hidden>
+              <div class="popup-head">
+                <button type="button" class="btn-link" data-date-prev aria-label="上个月">‹</button>
+                <span data-date-title>2026 年 3 月</span>
+                <button type="button" class="btn-link" data-date-next aria-label="下个月">›</button>
+              </div>
+              <div class="date-grid" data-date-grid></div>
+              <div class="popup-head">
+                <button type="button" class="btn-link" data-popup="year-panel" data-popup-group="date">选择年份</button>
+                <button type="button" class="btn-link" data-date-today>今天</button>
+              </div>
+              <div id="year-panel" class="year-popup popup-layer" role="dialog" aria-label="年份选择器" hidden>
+                <div class="year-grid">
+                  <button type="button" data-year="2022">2022</button>
+                  <button type="button" data-year="2023">2023</button>
+                  <button type="button" data-year="2024">2024</button>
+                  <button type="button" data-year="2025">2025</button>
+                  <button type="button" data-year="2026">2026</button>
+                  <button type="button" data-year="2027">2027</button>
+                  <button type="button" data-year="2028">2028</button>
+                  <button type="button" data-year="2029">2029</button>
+                  <button type="button" data-year="2030">2030</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="field">
+          <span class="field-label">时间选择器</span>
+          <div class="layer-host" data-timepicker>
+            <input id="time-input" type="text" readonly placeholder="选择时间" data-popup="time-panel"
+                   aria-haspopup="dialog" aria-expanded="false" />
+            <div id="time-panel" class="popup-layer timepicker-popup" role="dialog" aria-label="时间选择器" hidden>
+              <div class="popup-head">选择小时 / 分钟</div>
+              <div class="two-col">
+                <ul class="option-list">
+                  <li data-hour="0">00</li><li data-hour="1">01</li><li data-hour="2">02</li>
+                  <li data-hour="3">03</li><li data-hour="4">04</li><li data-hour="5">05</li>
+                  <li data-hour="6">06</li><li data-hour="7">07</li><li data-hour="8">08</li>
+                  <li data-hour="9">09</li><li data-hour="10">10</li><li data-hour="11">11</li>
+                  <li data-hour="12">12</li><li data-hour="13">13</li><li data-hour="14">14</li>
+                  <li data-hour="15">15</li><li data-hour="16">16</li><li data-hour="17">17</li>
+                  <li data-hour="18">18</li><li data-hour="19">19</li><li data-hour="20">20</li>
+                  <li data-hour="21">21</li><li data-hour="22">22</li><li data-hour="23">23</li>
+                </ul>
+                <ul class="option-list">
+                  <li data-minute="0">00</li><li data-minute="5">05</li><li data-minute="10">10</li>
+                  <li data-minute="15">15</li><li data-minute="20">20</li><li data-minute="25">25</li>
+                  <li data-minute="30">30</li><li data-minute="35">35</li><li data-minute="40">40</li>
+                  <li data-minute="45">45</li><li data-minute="50">50</li><li data-minute="55">55</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="field">
+          <span class="field-label">级联选择（三级）</span>
+          <div class="layer-host" data-cascader>
+            <input id="cascade-input" type="text" readonly placeholder="选择省 / 市 / 区" data-popup="cascade-panel"
+                   aria-haspopup="dialog" aria-expanded="false" />
+            <div id="cascade-panel" class="popup-layer cascader-popup" role="dialog" aria-label="级联选择器" hidden>
+              <ul class="cascade-col" data-level="0">
+                <li data-label="浙江省" data-next="1">浙江省 <span>›</span></li>
+                <li data-label="江苏省" data-next="1">江苏省 <span>›</span></li>
+                <li data-label="广东省" data-next="1">广东省 <span>›</span></li>
+              </ul>
+              <ul class="cascade-col" data-level="1" hidden>
+                <li data-label="杭州市" data-next="2">杭州市 <span>›</span></li>
+                <li data-label="宁波市" data-next="2">宁波市 <span>›</span></li>
+                <li data-label="南京市" data-next="2">南京市 <span>›</span></li>
+                <li data-label="广州市" data-next="2">广州市 <span>›</span></li>
+                <li data-label="深圳市" data-next="2">深圳市 <span>›</span></li>
+              </ul>
+              <ul class="cascade-col" data-level="2" hidden>
+                <li data-label="西湖区">西湖区</li>
+                <li data-label="上城区">上城区</li>
+                <li data-label="鄞州区">鄞州区</li>
+                <li data-label="玄武区">玄武区</li>
+                <li data-label="天河区">天河区</li>
+                <li data-label="南山区">南山区</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <div class="field">
+          <span class="field-label">树选择（可展开两层）</span>
+          <div class="layer-host" data-tree>
+            <input id="tree-input" type="text" readonly placeholder="选择部门" data-popup="tree-panel"
+                   aria-haspopup="tree" aria-expanded="false" />
+            <div id="tree-panel" class="popup-layer tree-popup" role="tree" aria-label="部门树" hidden>
+              <ul class="tree">
+                <li>
+                  <button type="button" class="tree-toggle" data-tree-toggle aria-expanded="false" aria-label="展开技术部">+</button>
+                  <input type="checkbox" data-tree-value="技术部" /> 技术部
+                  <ul hidden>
+                    <li><input type="checkbox" data-tree-value="前端组" /> 前端组</li>
+                    <li><input type="checkbox" data-tree-value="后端组" /> 后端组</li>
+                    <li>
+                      <button type="button" class="tree-toggle" data-tree-toggle aria-expanded="false" aria-label="展开测试组">+</button>
+                      <input type="checkbox" data-tree-value="测试组" /> 测试组
+                      <ul hidden>
+                        <li><input type="checkbox" data-tree-value="自动化组" /> 自动化组</li>
+                        <li><input type="checkbox" data-tree-value="手工组" /> 手工组</li>
+                      </ul>
+                    </li>
+                  </ul>
+                </li>
+                <li>
+                  <button type="button" class="tree-toggle" data-tree-toggle aria-expanded="false" aria-label="展开市场部">+</button>
+                  <input type="checkbox" data-tree-value="市场部" /> 市场部
+                  <ul hidden>
+                    <li><input type="checkbox" data-tree-value="品牌组" /> 品牌组</li>
+                    <li><input type="checkbox" data-tree-value="渠道组" /> 渠道组</li>
+                  </ul>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>分步向导</h2>
+      <div data-wizard>
+        <div class="steps">
+          <div class="step active" data-wizard-step>1. 基本信息</div>
+          <div class="step" data-wizard-step>2. 收货地址</div>
+          <div class="step" data-wizard-step>3. 确认提交</div>
+        </div>
+        <div data-wizard-panel>
+          <div class="field">
+            <label for="wizard-name">收货人（必填）</label>
+            <input id="wizard-name" type="text" placeholder="请输入收货人" data-required />
+          </div>
+          <div class="field">
+            <label for="wizard-phone">联系电话</label>
+            <input id="wizard-phone" type="tel" placeholder="13800000000" />
+          </div>
+          <p class="field-error" data-wizard-hint></p>
+          <div class="btn-row">
+            <button type="button" class="btn" data-wizard-next>下一步</button>
+          </div>
+        </div>
+        <div data-wizard-panel hidden>
+          <div class="field">
+            <label for="wizard-city">城市（必填）</label>
+            <input id="wizard-city" type="text" placeholder="请输入城市" data-required />
+          </div>
+          <div class="field">
+            <label for="wizard-address">详细地址（必填）</label>
+            <textarea id="wizard-address" placeholder="请输入详细地址" data-required></textarea>
+          </div>
+          <p class="field-error" data-wizard-hint></p>
+          <div class="btn-row">
+            <button type="button" class="btn-secondary" data-wizard-prev>上一步</button>
+            <button type="button" class="btn" data-wizard-next>下一步</button>
+          </div>
+        </div>
+        <div data-wizard-panel hidden>
+          <p>请确认以上信息无误后提交。</p>
+          <p class="small muted">收货人：向导第一步填写；地址：向导第二步填写。</p>
+          <div class="btn-row">
+            <button type="button" class="btn-secondary" data-wizard-prev>上一步</button>
+            <button type="button" class="btn" data-wizard-finish>完成提交</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section data-tabs>
+      <h2>登录 / 注册</h2>
+      <div class="tabs">
+        <button type="button" class="tab active" data-tab="login">登录</button>
+        <button type="button" class="tab" data-tab="register">注册</button>
+      </div>
+      <div class="tab-panel" data-tab-panel="login">
+        <form data-validate-form>
+          <div class="field">
+            <label for="login-account">账号（必填）</label>
+            <input id="login-account" type="text" placeholder="请输入账号" data-required />
+            <div class="field-error"></div>
+          </div>
+          <div class="field">
+            <label for="login-password">密码（必填）</label>
+            <input id="login-password" type="password" placeholder="请输入密码" data-required />
+            <div class="field-error"></div>
+          </div>
+          <div class="check-row">
+            <label><input type="checkbox" checked /> 记住登录状态</label>
+          </div>
+          <div class="btn-row mt-12">
+            <button type="button" class="btn" data-submit>登录</button>
+            <button type="button" class="btn-secondary">忘记密码</button>
+          </div>
+        </form>
+      </div>
+      <div class="tab-panel" data-tab-panel="register" hidden>
+        <form data-validate-form>
+          <div class="field">
+            <label for="register-email">邮箱（必填）</label>
+            <input id="register-email" type="email" placeholder="name@example.com" data-required data-email />
+            <div class="field-error"></div>
+          </div>
+          <div class="field">
+            <label for="register-password">密码（必填）</label>
+            <input id="register-password" type="password" placeholder="请输入密码" data-required />
+            <div class="field-error"></div>
+          </div>
+          <div class="check-row">
+            <label><input type="checkbox" /> 我已阅读并同意服务条款</label>
+          </div>
+          <div class="btn-row mt-12">
+            <button type="button" class="btn" data-submit>注册</button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <section>
+      <h2>数值与标签</h2>
+      <div class="grid">
+        <div class="field">
+          <span class="field-label">评分</span>
+          <div class="rating" data-rating aria-label="服务评分">
+            <button type="button" aria-label="1 星">★</button>
+            <button type="button" aria-label="2 星">★</button>
+            <button type="button" aria-label="3 星">★</button>
+            <button type="button" aria-label="4 星">★</button>
+            <button type="button" aria-label="5 星">★</button>
+            <input type="hidden" data-rating-value />
+          </div>
+        </div>
+        <div class="field">
+          <span class="field-label">滑块</span>
+          <div class="slider-row">
+            <input type="range" data-range min="0" max="100" value="40" aria-label="预算比例" />
+            <span data-range-output>40</span>
+          </div>
+        </div>
+        <div class="field">
+          <span class="field-label">数字步进</span>
+          <input type="number" id="quantity" min="1" max="20" step="1" value="2" aria-label="购买数量" />
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>穿梭框</h2>
+      <div class="transfer" data-transfer>
+        <ul class="transfer-list" data-transfer-source>
+          <li><label><input type="checkbox" /> 权限：查看</label></li>
+          <li><label><input type="checkbox" /> 权限：编辑</label></li>
+          <li><label><input type="checkbox" /> 权限：导出</label></li>
+          <li><label><input type="checkbox" /> 权限：审批</label></li>
+        </ul>
+        <div class="btn-row" style="flex-direction:column;">
+          <button type="button" class="btn" data-move-right aria-label="移动到右侧">→</button>
+          <button type="button" class="btn-secondary" data-move-left aria-label="移动到左侧">←</button>
+        </div>
+        <ul class="transfer-list" data-transfer-target>
+          <li><label><input type="checkbox" /> 权限：删除</label></li>
+        </ul>
+      </div>
+    </section>
+  </main>
+
+  <script src="/site.js"></script>
+</body>
+</html>

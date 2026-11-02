@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>易测缺陷演示站点</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <nav>
+      <a href="/">首页</a>
+      <a href="/forms.html">表单</a>
+      <a href="/overlays.html">弹层</a>
+      <a href="/data.html">数据展示</a>
+      <a href="/advanced.html">复杂交互</a>
+      <a href="/states.html">异步状态</a>
+      <a href="/about.html">关于我们</a>
+      <a href="/orders.html">订单列表</a>
+    </nav>
+  </header>
+
+  <main>
+    <h1>缺陷演示站点</h1>
+    <p class="hint">本页面用于验证巡页智能体的页面感知、用例执行、问题判定与自主探索能力。</p>
+
+    <section>
+      <h2>UI 场景导航</h2>
+      <p class="hint">每个页面覆盖一类场景，既有简单控件，也有多层弹层、Shadow DOM、同源 iframe 与异步异常状态。</p>
+      <div class="grid">
+        <a class="scenario-card" href="/forms.html">
+          <b>表单场景</b>
+          <span>输入、校验、复选框、单选框、开关、原生/自定义下拉、多选、日期、时间、级联、树选择、评分、滑块、标签输入、穿梭框、分步向导、登录注册。</span>
+        </a>
+        <a class="scenario-card" href="/overlays.html">
+          <b>弹层场景</b>
+          <span>基础弹窗、三层嵌套弹窗、动态创建弹窗、抽屉、抽屉内弹窗、下拉子菜单、右键菜单、Tooltip、Popover、确认框、Toast、图片预览、命令面板。</span>
+        </a>
+        <a class="scenario-card" href="/data.html">
+          <b>数据展示</b>
+          <span>可排序/筛选/分页表格、行展开、批量选择、树形表格、Tabs、折叠面板、轮播、时间线、进度条、空状态、骨架屏。</span>
+        </a>
+        <a class="scenario-card" href="/advanced.html">
+          <b>复杂交互</b>
+          <span>拖拽排序、跨列表拖拽、可调节分栏、无限滚动、同源 iframe 表单、开放 Shadow DOM、内容可编辑、键盘快捷键。</span>
+        </a>
+        <a class="scenario-card" href="/states.html">
+          <b>异步与异常</b>
+          <span>加载中、慢请求、500 错误、401 未授权、重试、空数据、离线提示、轮询、表单提交成功/失败。</span>
+        </a>
+        <a class="scenario-card" href="/orders.html">
+          <b>订单列表</b>
+          <span>简单静态表格与链接跳转，用于验证最基础的页面感知与跳转。</span>
+        </a>
+      </div>
+    </section>
+
+    <section id="product-card">
+      <h2>商品介绍 <span class="tag tag--red">已知缺陷</span></h2>
+      <p class="truncated" id="truncated-text">
+        这是一段非常长的商品描述文字，用来演示文字截断缺陷：当容器宽度不足时，剩余内容会被省略号隐藏，用户无法看到完整的商品参数、售后说明以及配送范围等重要信息。
+      </p>
+      <img class="broken-image" id="broken-cover" src="/broken-cover.png" alt="商品封面图" width="240" height="120" />
+      <p class="small muted">破图资源返回 404，控制台会出现资源加载失败。</p>
+    </section>
+
+    <section id="order-form">
+      <h2>下单流程 <span class="tag tag--red">点击无响应</span></h2>
+      <div class="two-col">
+        <div class="field">
+          <label for="receiver">收货人</label>
+          <input id="receiver" name="receiver" type="text" placeholder="请输入收货人" />
+        </div>
+        <div class="field">
+          <label for="coupon">优惠码</label>
+          <select id="coupon" name="coupon">
+            <option value="NONE">不使用优惠码</option>
+            <option value="SAVE10">立减 10 元</option>
+          </select>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button id="submit-order" class="btn" type="button" data-submit-order>提交订单</button>
+      </div>
+      <p id="order-result" data-order-result>尚未提交订单</p>
+    </section>
+
+    <section id="status-panel">
+      <h2>服务状态 <span class="tag tag--gray">只读外观 / POST 变更</span></h2>
+      <div class="btn-row">
+        <button id="refresh-status" class="btn-secondary" type="button" data-refresh-status>刷新状态</button>
+      </div>
+      <p id="refresh-result" data-refresh-result>尚未刷新</p>
+    </section>
+
+    <section id="danger-zone">
+      <h2>数据维护 <span class="tag tag--red">危险操作</span></h2>
+      <p class="hint">危险操作命中拦截规则，未经审批时应被步骤守卫拦截。</p>
+      <div class="btn-row">
+        <button id="delete-all" class="btn btn-danger" type="button" data-delete-all>删除全部数据</button>
+        <button id="sync-data" class="btn-secondary" type="button" data-sync-data>同步数据</button>
+      </div>
+    </section>
+  </main>
+
+  <script src="/site.js"></script>
+</body>
+</html>

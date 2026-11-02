@@ -105,6 +105,20 @@ platform:
       remove-container: ${PLATFORM_RUNNER_DOCKER_REMOVE_CONTAINER:true}
       image-pull-timeout-seconds: ${PLATFORM_RUNNER_DOCKER_IMAGE_PULL_TIMEOUT_SECONDS:1800}
 
+  # === 巡页配置 ===
+  patrol:
+    max-concurrent: ${PLATFORM_PATROL_MAX_CONCURRENT:2}
+    # 任务与证据（录屏/截图/控制台/DOM）保留天数
+    retention-days: ${PLATFORM_PATROL_RETENTION_DAYS:90}
+    retention-cron: "${PLATFORM_PATROL_RETENTION_CRON:0 30 2 * * *}"
+    llm-timeout-seconds: ${PLATFORM_PATROL_LLM_TIMEOUT_SECONDS:90}
+    # 多模态视觉模型（OpenAI 兼容 /chat/completions，messages 支持 image_url）
+    vision:
+      base-url: ${PLATFORM_VISION_BASE_URL:}
+      api-key: ${PLATFORM_VISION_API_KEY:}
+      model: ${PLATFORM_VISION_MODEL:}
+      timeout-seconds: ${PLATFORM_VISION_TIMEOUT_SECONDS:60}
+
   # === 对象存储配置（MinIO） ===
   storage:
     bucket: ${PLATFORM_STORAGE_BUCKET:qa-report}

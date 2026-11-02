@@ -3,6 +3,7 @@ import { type FormInstance, type FormRules } from 'element-plus'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import ListPageShell from '../../components/list/ListPageShell.vue'
+import CellTooltip from '../../components/list/CellTooltip.vue'
 import { useRepositoryStore } from '../../stores/repository'
 import { useSceneStore } from '../../stores/scene'
 import { useSpaceStore } from '../../stores/space'
@@ -313,16 +314,12 @@ async function handleSizeChange(size: number) {
       </el-table-column>
       <el-table-column label="场景名称" min-width="200">
         <template #default="{ row }">
-          <el-tooltip :content="row.name" placement="top" :show-after="300" effect="dark">
-            <span class="cell-tooltip">{{ row.name }}</span>
-          </el-tooltip>
+          <CellTooltip :content="row.name" />
         </template>
       </el-table-column>
       <el-table-column label="所属仓库" min-width="200">
         <template #default="{ row }">
-          <el-tooltip :content="repositoryName(row)" placement="top" :show-after="300" effect="dark">
-            <span class="cell-tooltip">{{ repositoryName(row) }}</span>
-          </el-tooltip>
+          <CellTooltip :content="repositoryName(row)" />
         </template>
       </el-table-column>
       <el-table-column label="执行模式" width="140">
@@ -346,53 +343,112 @@ async function handleSizeChange(size: number) {
       </el-table-column>
     </el-table>
 
-    <el-dialog v-model="dialogVisible" :title="editingId === null ? '新增场景' : '编辑场景'" width="720px">
-      <el-form ref="formRef" :model="form" :rules="formRules" label-position="top" class="form-grid">
-        <el-form-item label="场景名称" prop="name" required><el-input v-model="form.name" /></el-form-item>
-        <el-form-item label="场景描述">
-          <el-input v-model="form.description" type="textarea" :autosize="descriptionAutosize" />
-        </el-form-item>
-        <el-form-item label="所属仓库" prop="repoId" required>
-          <el-select v-model="repositorySelectValue" placeholder="请选择仓库">
-            <el-option v-for="item in selectableRepositories" :key="item.id" :label="item.name" :value="item.id" />
-          </el-select>
-          <div v-if="selectedRepositoryNeedsCredential" class="form-hint form-hint--warning">
-            该仓库是私有仓库，但还没有配置凭据。请先到「仓库管理」编辑该仓库，保存 HTTPS Token 或 SSH Key。
+    <el-dialog
+      v-model="dialogVisible"
+      :title="editingId === null ? '新增场景' : '编辑场景'"
+      width="900px"
+      top="4vh"
+      class="app-form-dialog"
+    >
+      <el-form
+        ref="formRef"
+        :model="form"
+        :rules="formRules"
+        label-position="top"
+        class="app-form"
+      >
+        <section class="app-form-section">
+          <div class="app-section-head">
+            <span class="app-section-dot" />
+            <div>
+              <h4>基础信息</h4>
+              <p>场景名称、所属仓库与用例范围</p>
+            </div>
           </div>
-        </el-form-item>
-        <el-form-item>
-          <template #label>
-            <span class="form-label-with-help">
-              <span>用例路径/目录</span>
-              <el-tooltip :content="matchValueHelpText" placement="top">
-                <span class="field-help-icon">?</span>
-              </el-tooltip>
-            </span>
-          </template>
-          <el-input v-model="form.matchValue" :placeholder="selectorPlaceholder" />
-        </el-form-item>
-        <el-form-item label="浏览器" prop="browser" required>
-          <el-select v-model="form.browser" placeholder="请选择浏览器">
-            <el-option v-for="item in browserOptions" :key="item" :label="item" :value="item" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="启用定时"><el-switch v-model="form.scheduleEnabled" /></el-form-item>
-        <el-form-item
-          v-if="form.scheduleEnabled"
-          label="Cron 表达式"
-          prop="cronExpression"
-          required
-          class="form-grid__full-span"
-        >
-          <el-input v-model="form.cronExpression" placeholder="0 0 2 * * ?" />
-        </el-form-item>
-        <el-form-item label="环境参数 JSON" class="form-grid__full-span">
-          <el-input v-model="form.envJson" type="textarea" :autosize="envJsonAutosize" />
-        </el-form-item>
+          <div class="app-form-grid">
+            <el-form-item label="场景名称" prop="name" required class="app-span-6">
+              <el-input v-model="form.name" />
+            </el-form-item>
+            <el-form-item label="场景描述" class="app-span-6">
+              <el-input v-model="form.description" type="textarea" :autosize="descriptionAutosize" />
+            </el-form-item>
+            <el-form-item label="所属仓库" prop="repoId" required class="app-span-6">
+              <el-select v-model="repositorySelectValue" placeholder="请选择仓库">
+                <el-option v-for="item in selectableRepositories" :key="item.id" :label="item.name" :value="item.id" />
+              </el-select>
+              <div v-if="selectedRepositoryNeedsCredential" class="form-hint form-hint--warning">
+                该仓库是私有仓库，但还没有配置凭据。请先到「仓库管理」编辑该仓库，保存 HTTPS Token 或 SSH Key。
+              </div>
+            </el-form-item>
+            <el-form-item class="app-span-6">
+              <template #label>
+                <span class="form-label-with-help">
+                  <span>用例路径/目录</span>
+                  <el-tooltip :content="matchValueHelpText" placement="top">
+                    <span class="field-help-icon">?</span>
+                  </el-tooltip>
+                </span>
+              </template>
+              <el-input v-model="form.matchValue" :placeholder="selectorPlaceholder" />
+            </el-form-item>
+          </div>
+        </section>
+
+        <section class="app-form-section">
+          <div class="app-section-head">
+            <span class="app-section-dot app-section-dot--blue" />
+            <div>
+              <h4>执行配置</h4>
+              <p>浏览器与定时调度</p>
+            </div>
+          </div>
+          <div class="app-form-grid">
+            <el-form-item label="浏览器" prop="browser" required class="app-span-4">
+              <el-select v-model="form.browser" placeholder="请选择浏览器">
+                <el-option v-for="item in browserOptions" :key="item" :label="item" :value="item" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="启用定时" class="app-span-4">
+              <div class="app-switch-line">
+                <el-switch v-model="form.scheduleEnabled" />
+                <span>{{ form.scheduleEnabled ? '按 Cron 自动执行' : '仅手动执行' }}</span>
+              </div>
+            </el-form-item>
+            <el-form-item
+              v-if="form.scheduleEnabled"
+              label="Cron 表达式"
+              prop="cronExpression"
+              required
+              class="app-span-8"
+            >
+              <el-input v-model="form.cronExpression" placeholder="0 0 2 * * ?" />
+            </el-form-item>
+          </div>
+        </section>
+
+        <section class="app-form-section app-form-section--last">
+          <div class="app-section-head">
+            <span class="app-section-dot app-section-dot--amber" />
+            <div>
+              <h4>环境参数</h4>
+              <p>以 JSON 形式传入测试运行时环境变量</p>
+            </div>
+          </div>
+          <div class="app-form-grid">
+            <el-form-item label="环境参数 JSON" class="app-span-12">
+              <el-input v-model="form.envJson" type="textarea" :autosize="envJsonAutosize" />
+            </el-form-item>
+          </div>
+        </section>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="submit">保存</el-button>
+        <div class="app-form-footer">
+          <span class="app-form-hint">保存后可在用例列表中勾选并执行</span>
+          <div>
+            <el-button @click="dialogVisible = false">取消</el-button>
+            <el-button type="primary" :loading="saving" @click="submit">保存</el-button>
+          </div>
+        </div>
       </template>
     </el-dialog>
   </ListPageShell>
@@ -440,15 +496,6 @@ async function handleSizeChange(size: number) {
 
 .table-action-trigger {
   display: inline-flex;
-}
-
-.cell-tooltip {
-  display: inline-block;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  vertical-align: middle;
 }
 
 .table-actions :deep(.el-button + .el-button) {

@@ -18,7 +18,7 @@ function isAdminRole(role: SpaceRole | null) {
  * 按一级分组返回当前空间的侧边栏菜单。
  *
  * 分组结构：
- *   UI 自动化  → 仓库管理 / 场景管理
+ *   UI 自动化  → 仓库管理 / 场景管理 / 巡页
  *   模型评测   → Agent 管理 / Prompt 管理 / 评测集管理 / 离线任务 / 在线监控
  *   平台运维   → 空间审批(Admin) / 用户管理(超管)
  */
@@ -33,6 +33,7 @@ export function getSpaceMenuGroups(
       children: [
         { index: `/spaces/${spaceId}/repos`, label: '仓库管理' },
         { index: `/spaces/${spaceId}/scenes`, label: '场景管理' },
+        { index: `/spaces/${spaceId}/patrol`, label: '巡页' },
       ],
     },
     {
@@ -92,6 +93,7 @@ export function getActiveSpaceMenuIndex(path: string, groups: SpaceMenuGroup[]):
   if (path.includes('/evaluation')) return groups.find((g) => g.group === '模型评测')?.children[0]?.index ?? path
   if (path.includes('/repos'))     return groups.find((g) => g.group === 'UI 自动化')?.children.find((c) => c.index.includes('/repos'))?.index ?? ''
   if (path.includes('/scenes'))    return groups.find((g) => g.group === 'UI 自动化')?.children.find((c) => c.index.includes('/scenes'))?.index ?? ''
+  if (path.includes('/patrol'))    return groups.find((g) => g.group === 'UI 自动化')?.children.find((c) => c.index.includes('/patrol'))?.index ?? ''
   if (path.includes('/access-requests')) return groups.find((g) => g.group === '平台运维')?.children.find((c) => c.index.includes('/access'))?.index ?? ''
   if (path.includes('/users'))          return groups.find((g) => g.group === '平台运维')?.children.find((c) => c.index.includes('/users'))?.index ?? ''
   return ''

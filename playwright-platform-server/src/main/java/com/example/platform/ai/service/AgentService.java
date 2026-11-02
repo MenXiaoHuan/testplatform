@@ -14,6 +14,7 @@ import com.example.platform.ai.trace.AgentTraceRecorder;
 import com.example.platform.auth.context.AuthContextHolder;
 import com.example.platform.space.service.SpaceAuthorizationService;
 import com.example.platform.scene.service.ScheduleEventService;
+import org.springframework.ai.chat.messages.UserMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import jakarta.annotation.PostConstruct;
@@ -309,7 +310,10 @@ public class AgentService {
                 callResult = callManager.executeWithRetry(
                         () -> {
                             try {
-                                return intelligentAssistantAgent.call(prompt).getText();
+                                // 传 UserMessage 而非 String：String 会被 Agent 框架包装成
+                                // AgentInstructionMessage 并按 StringTemplate 渲染，
+                                // 历史对话中的 JSON（含 {} 与 []）会触发模板解析错误。
+                                return intelligentAssistantAgent.call(new UserMessage(prompt)).getText();
                             } catch (Exception e) {
                                 throw new RuntimeException("Agent调用失败: " + e.getMessage(), e);
                             }
@@ -666,7 +670,10 @@ public class AgentService {
                 callResult = callManager.executeWithRetry(
                         () -> {
                             try {
-                                return intelligentAssistantAgent.call(prompt).getText();
+                                // 传 UserMessage 而非 String：String 会被 Agent 框架包装成
+                                // AgentInstructionMessage 并按 StringTemplate 渲染，
+                                // 历史对话中的 JSON（含 {} 与 []）会触发模板解析错误。
+                                return intelligentAssistantAgent.call(new UserMessage(prompt)).getText();
                             } catch (Exception e) {
                                 throw new RuntimeException("Agent调用失败: " + e.getMessage(), e);
                             }

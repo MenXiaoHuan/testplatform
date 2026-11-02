@@ -7,7 +7,7 @@
 [![Platform](https://img.shields.io/badge/platform-linux-docker-blue)](DEPLOYMENT.md)
 
 > 面向 **Node.js / TypeScript / JavaScript `@playwright/test`** 项目的**一站式智能自动化测试平台**。
-> 覆盖 **UI 自动化测试**（已完成）、**大模型评测**（Prompt 托管 / 目标接入 / 评测集 / 离线评测 / 在线监控已可用），未来扩展**性能测试**和**接口自动化**。
+> 覆盖 **UI 自动化测试**（含 LLM 驱动的巡页巡检，已完成）、**大模型评测**（Prompt 托管 / 目标接入 / 评测集 / 离线评测 / 在线监控已可用），未来扩展**性能测试**和**接口自动化**。
 
 ---
 
@@ -22,6 +22,9 @@
 - **产物自动归档**：截图 / 视频 / Trace / 阶段日志 自动上传 MinIO · 统一下载 / 分享链接
 - **结果解析**：Playwright JSON reporter → 自动入库为结构化用例结果
 - **任务状态机**：QUEUED → RUNNING → SUCCESS/FAILED/CANCELED，含 PREPARING / INSTALLING / TESTING / ARCHIVING 阶段日志
+- **巡页巡检**：入口页快照 → LLM 规划用例 → 覆盖率补全 → 风险审批 → 用例执行 → 视觉/规则判定；支持定时巡检、Token/时长预算、降级与 90 天证据保留
+- **巡页模型配置**：OpenAI 兼容模型接入（Base URL / API Key 加密 / 视觉 / 工具调用 / JSON 输出能力），规划与判定模型独立选择
+- **巡页任务详情**：用例录屏、步骤截图、控制台与 DOM 证据；模型日志（规划 / 覆盖率 / 判定原始上下文与输出，仅超级管理员可见）
 
 ### 🤖 知知（AI 智能助手）
 
@@ -67,6 +70,9 @@ flowchart TD
     Server -->|MinIO SDK| MinIO[MinIO]
     Server -->|Docker Socket| Runner[Docker Runner]
     Runner --> Repo[测试仓库 Playwright test]
+    Server -->|巡页快照 / 用例执行| Runner
+    Runner --> Target[巡页目标页面 URL]
+    Server -->|巡页规划 / 判定| PatrolLLM[巡页模型 API]
 
     subgraph Agent[AI Agent ReAct]
         Server -->|SystemPromptHook| Prompt[AGENT.md + Skills Index]
@@ -94,6 +100,7 @@ flowchart TD
 | **sections-only 输出**（不派 response）| LLM 只输出结构化 JSON，后端派生纯文本 · 省 40-50% Token · 避免双写不一致 |
 | **Agent Trace 存 Langfuse**（统一在线监控查看）| 无需自建存储 · 与评测 Trace 同源 · 保留策略由 Langfuse 项目配置决定 |
 | **Prompt 托管中心 API 拉取**（不硬编码）| 版本可回滚 · Langfuse Trace 自动关联 Prompt 版本 · A/B 实验强制注入 |
+| **巡页预算 + 降级**（不追求一次跑完）| 时长 / Token 双预算 + 风险审批；模型不可用时退回 DOM/控制台规则，避免阻断巡检 |
 
 ---
 
@@ -183,6 +190,7 @@ docker compose -f docker-compose.prod.yml exec mysql \
 | UI 自动化 - 仓库 | [02-repository.md](docs/playbooks/02-repository.md) |
 | UI 自动化 - 场景 | [03-scene.md](docs/playbooks/03-scene.md) |
 | UI 自动化 - 任务 | [04-task.md](docs/playbooks/04-task.md) |
+| UI 自动化 - 巡页 | [12-patrol.md](docs/playbooks/12-patrol.md) |
 | AI 智能助手 | [05-ai-assistant.md](docs/playbooks/05-ai-assistant.md) |
 | 评测 - Prompt 托管 | [06-prompt.md](docs/playbooks/06-prompt.md) |
 | 评测 - 被评目标 | [07-target.md](docs/playbooks/07-target.md) |
@@ -229,6 +237,7 @@ testplatform/
 │   │   ├── evaluation/                # 大模型评测（Prompt / 目标 / 评测集 / 离线 / 在线 / A-B）
 │   │   ├── admin/                     # 平台运维（超管用户管理 / 注册开关）
 │   │   ├── task/                      # 任务模块（核心）
+│   │   ├── patrol/                    # 巡页（场景 / 任务 / 规划 / 判定 / 模型配置 / 调度 / 保留）
 │   │   ├── runner/                    # Docker Runner 执行器
 │   │   ├── scene/                     # 场景 + 定时调度（租约机制）
 │   │   ├── repository/                # 仓库 + 私有凭据加密
@@ -243,7 +252,8 @@ testplatform/
 │       ├── application.yml
 │       ├── Dockerfile / Dockerfile.dev
 │       ├── pom.xml
-│       └── db/migration/              # Flyway 迁移（V1~V19）
+│       ├── patrol/patrol.js           # 巡页执行脚本（入口快照 / 用例执行 / 证据采集）
+│       └── db/migration/              # Flyway 迁移（V1~V29）
 │
 ├── playwright-platform-web/          # Vue 3 前端
 │   ├── src/
@@ -252,6 +262,7 @@ testplatform/
 │   │   │   ├── repository/            # 仓库管理
 │   │   │   ├── scene/                 # 场景管理
 │   │   │   ├── task/                  # 任务列表 / 详情
+│   │   │   ├── patrol/                # 巡页列表 / 任务抽屉 / 模型配置
 │   │   │   └── space/                 # 空间审批
 │   │   ├── components/ai/             # AiAssistantDialog（AI 对话框）
 │   │   ├── stores/                    # Pinia Store（auth · space · task · ai）
@@ -282,7 +293,8 @@ testplatform/
         ├── 08-dataset.md                # 评测集
         ├── 09-offline-evaluation.md     # 离线评测
         ├── 10-online-monitoring.md      # 在线监控与策略
-        └── 11-platform-admin.md         # 用户管理与注册开关
+        ├── 11-platform-admin.md         # 用户管理与注册开关
+        └── 12-patrol.md                 # 巡页巡检 / 模型配置 / 审批 / 证据
 ```
 
 ---
@@ -311,6 +323,7 @@ npm run build
 | 阶段 | 能力 | 状态 |
 |------|------|------|
 | **已完成** | UI 自动化测试（仓库 / 场景 / 任务 / Docker Runner / 产物归档）| ✅ |
+| **已完成** | 巡页巡检（入口快照 / LLM 规划 / 风险审批 / 视觉判定 / 模型日志）| ✅ |
 | **已完成** | AI 智能助手（ReAct / Tools / Skills / Trace / SSE）| ✅ |
 | **已完成** | 平台基础（登录 / 权限 / Space / 审批）| ✅ |
 | **进行中** | **大模型评测**（Prompt 托管 / 目标接入 / 评测集 / 离线评测 / 在线监控已可用；A/B 前端与全量评分持续完善）| 🚧 |

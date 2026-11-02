@@ -67,6 +67,13 @@ export function put<T>(url: string, payload?: unknown, config?: AxiosRequestConf
     .then((response) => unwrapResponseData<T>(response))
 }
 
+/** Sends a PATCH request and unwraps the platform response envelope. */
+export function patch<T>(url: string, payload?: unknown, config?: AxiosRequestConfig) {
+  return http
+    .patch<ApiResponseEnvelope<T> | T>(url, payload, config)
+    .then((response) => unwrapResponseData<T>(response))
+}
+
 /** Sends a DELETE request and treats 204/no-body responses as void. */
 export function del(url: string, config?: AxiosRequestConfig) {
   return http.delete(url, config).then(() => undefined)

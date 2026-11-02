@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>数据展示 · 缺陷演示站点</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <nav>
+      <a href="/">首页</a>
+      <a href="/forms.html">表单</a>
+      <a href="/overlays.html">弹层</a>
+      <a href="/data.html">数据展示</a>
+      <a href="/advanced.html">复杂交互</a>
+      <a href="/states.html">异步状态</a>
+      <a href="/about.html">关于我们</a>
+      <a href="/orders.html">订单列表</a>
+    </nav>
+  </header>
+
+  <main>
+    <h1>数据展示</h1>
+    <p class="hint">覆盖指标卡、Tabs、可排序筛选分页表格、行展开、批量选择、树形展开、折叠面板、轮播、时间线、进度条、空状态与骨架屏。</p>
+
+    <section>
+      <h2>指标卡</h2>
+      <div class="metric-grid">
+        <div class="metric"><span class="muted small">今日订单</span><b>1,286</b><span class="tag tag--green">+12%</span></div>
+        <div class="metric"><span class="muted small">待处理</span><b>34</b><span class="tag tag--red">需关注</span></div>
+        <div class="metric"><span class="muted small">平均响应</span><b>128ms</b><span class="tag tag--gray">正常</span></div>
+        <div class="metric"><span class="muted small">成功率</span><b>99.2%</b><span class="tag tag--green">稳定</span></div>
+      </div>
+    </section>
+
+    <section data-tabs>
+      <h2>Tabs 与表格</h2>
+      <div class="tabs">
+        <button type="button" class="tab active" data-tab="orders">订单表格</button>
+        <button type="button" class="tab" data-tab="cards">卡片列表</button>
+        <button type="button" class="tab" data-tab="timeline">时间线</button>
+      </div>
+
+      <div class="tab-panel" data-tab-panel="orders">
+        <div data-table-wrap data-page-size="6">
+          <div class="table-toolbar">
+            <input type="search" placeholder="搜索订单号 / 客户 / 状态" data-table-filter aria-label="搜索订单" />
+            <span class="muted small" data-bulk>未选择任何行</span>
+            <button type="button" class="btn-secondary" data-bulk-clear>清空选择</button>
+          </div>
+          <table class="data-table" data-table>
+            <thead>
+              <tr>
+                <th class="no-sort" style="width:36px;"><span class="sr-only">选择</span></th>
+                <th data-sort="name">订单号</th>
+                <th data-sort="customer">客户</th>
+                <th data-sort="amount">金额</th>
+                <th data-sort="status">状态</th>
+                <th class="no-sort">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr data-row="1" data-name="SO-1001" data-customer="杭州易测" data-amount="128" data-status="待发货">
+                <td><input type="checkbox" data-row-check aria-label="选择 SO-1001" /></td>
+                <td>SO-1001</td><td>杭州易测</td><td>￥128.00</td><td><span class="tag tag--gray">待发货</span></td>
+                <td><button type="button" class="btn-link" data-expand>展开</button></td>
+              </tr>
+              <tr class="row-detail" data-detail-for="1">
+                <td colspan="6">收货地址：杭州市西湖区；支付方式：在线支付；备注：优先发货。</td>
+              </tr>
+              <tr data-row="2" data-name="SO-1002" data-customer="上海云仓" data-amount="256" data-status="已完成">
+                <td><input type="checkbox" data-row-check aria-label="选择 SO-1002" /></td>
+                <td>SO-1002</td><td>上海云仓</td><td>￥256.00</td><td><span class="tag tag--green">已完成</span></td>
+                <td><button type="button" class="btn-link" data-expand>展开</button></td>
+              </tr>
+              <tr class="row-detail" data-detail-for="2">
+                <td colspan="6">收货地址：上海市浦东新区；支付方式：企业转账；备注：已开票。</td>
+              </tr>
+              <tr data-row="3" data-name="SO-1003" data-customer="北京智联" data-amount="512" data-status="待付款">
+                <td><input type="checkbox" data-row-check aria-label="选择 SO-1003" /></td>
+                <td>SO-1003</td><td>北京智联</td><td>￥512.00</td><td><span class="tag tag--red">待付款</span></td>
+                <td><button type="button" class="btn-link" data-expand>展开</button></td>
+              </tr>
+              <tr class="row-detail" data-detail-for="3">
+                <td colspan="6">收货地址：北京市海淀区；支付方式：未选择；备注：等待客户付款。</td>
+              </tr>
+              <tr data-row="4" data-name="SO-1004" data-customer="广州速达" data-amount="88" data-status="已完成">
+                <td><input type="checkbox" data-row-check aria-label="选择 SO-1004" /></td>
+                <td>SO-1004</td><td>广州速达</td><td>￥88.00</td><td><span class="tag tag--green">已完成</span></td>
+                <td><button type="button" class="btn-link" data-expand>展开</button></td>
+              </tr>
+              <tr class="row-detail" data-detail-for="4">
+                <td colspan="6">收货地址：广州市天河区；支付方式：在线支付；备注：无需发票。</td>
+              </tr>
+              <tr data-row="5" data-name="SO-1005" data-customer="深圳极客" data-amount="1024" data-status="待发货">
+                <td><input type="checkbox" data-row-check aria-label="选择 SO-1005" /></td>
+                <td>SO-1005</td><td>深圳极客</td><td>￥1024.00</td><td><span class="tag tag--gray">待发货</span></td>
+                <td><button type="button" class="btn-link" data-expand>展开</button></td>
+              </tr>
+              <tr class="row-detail" data-detail-for="5">
+                <td colspan="6">收货地址：深圳市南山区；支付方式：在线支付；备注：大客户订单。</td>
+              </tr>
+              <tr data-row="6" data-name="SO-1006" data-customer="成都天府" data-amount="64" data-status="已取消">
+                <td><input type="checkbox" data-row-check aria-label="选择 SO-1006" /></td>
+                <td>SO-1006</td><td>成都天府</td><td>￥64.00</td><td><span class="tag tag--red">已取消</span></td>
+                <td><button type="button" class="btn-link" data-expand>展开</button></td>
+              </tr>
+              <tr class="row-detail" data-detail-for="6">
+                <td colspan="6">收货地址：成都市高新区；支付方式：在线支付；备注：客户主动取消。</td>
+              </tr>
+              <tr data-row="7" data-name="SO-1007" data-customer="南京软通" data-amount="320" data-status="已完成">
+                <td><input type="checkbox" data-row-check aria-label="选择 SO-1007" /></td>
+                <td>SO-1007</td><td>南京软通</td><td>￥320.00</td><td><span class="tag tag--green">已完成</span></td>
+                <td><button type="button" class="btn-link" data-expand>展开</button></td>
+              </tr>
+              <tr class="row-detail" data-detail-for="7">
+                <td colspan="6">收货地址：南京市玄武区；支付方式：企业转账；备注：已归档。</td>
+              </tr>
+              <tr data-row="8" data-name="SO-1008" data-customer="武汉光谷" data-amount="199" data-status="待发货">
+                <td><input type="checkbox" data-row-check aria-label="选择 SO-1008" /></td>
+                <td>SO-1008</td><td>武汉光谷</td><td>￥199.00</td><td><span class="tag tag--gray">待发货</span></td>
+                <td><button type="button" class="btn-link" data-expand>展开</button></td>
+              </tr>
+              <tr class="row-detail" data-detail-for="8">
+                <td colspan="6">收货地址：武汉市洪山区；支付方式：在线支付；备注：工作日送达。</td>
+              </tr>
+              <tr data-row="9" data-name="SO-1009" data-customer="西安丝路" data-amount="76" data-status="已完成">
+                <td><input type="checkbox" data-row-check aria-label="选择 SO-1009" /></td>
+                <td>SO-1009</td><td>西安丝路</td><td>￥76.00</td><td><span class="tag tag--green">已完成</span></td>
+                <td><button type="button" class="btn-link" data-expand>展开</button></td>
+              </tr>
+              <tr class="row-detail" data-detail-for="9">
+                <td colspan="6">收货地址：西安市雁塔区；支付方式：在线支付；备注：无。</td>
+              </tr>
+              <tr data-row="10" data-name="SO-1010" data-customer="苏州工业园" data-amount="480" data-status="待付款">
+                <td><input type="checkbox" data-row-check aria-label="选择 SO-1010" /></td>
+                <td>SO-1010</td><td>苏州工业园</td><td>￥480.00</td><td><span class="tag tag--red">待付款</span></td>
+                <td><button type="button" class="btn-link" data-expand>展开</button></td>
+              </tr>
+              <tr class="row-detail" data-detail-for="10">
+                <td colspan="6">收货地址：苏州市工业园区；支付方式：未选择；备注：等待付款。</td>
+              </tr>
+              <tr data-row="11" data-name="SO-1011" data-customer="青岛海风" data-amount="156" data-status="已完成">
+                <td><input type="checkbox" data-row-check aria-label="选择 SO-1011" /></td>
+                <td>SO-1011</td><td>青岛海风</td><td>￥156.00</td><td><span class="tag tag--green">已完成</span></td>
+                <td><button type="button" class="btn-link" data-expand>展开</button></td>
+              </tr>
+              <tr class="row-detail" data-detail-for="11">
+                <td colspan="6">收货地址：青岛市市南区；支付方式：在线支付；备注：冷链配送。</td>
+              </tr>
+              <tr data-row="12" data-name="SO-1012" data-customer="厦门鹭岛" data-amount="240" data-status="待发货">
+                <td><input type="checkbox" data-row-check aria-label="选择 SO-1012" /></td>
+                <td>SO-1012</td><td>厦门鹭岛</td><td>￥240.00</td><td><span class="tag tag--gray">待发货</span></td>
+                <td><button type="button" class="btn-link" data-expand>展开</button></td>
+              </tr>
+              <tr class="row-detail" data-detail-for="12">
+                <td colspan="6">收货地址：厦门市思明区；支付方式：在线支付；备注：节假日不发货。</td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="pagination" data-pagination></div>
+        </div>
+      </div>
+
+      <div class="tab-panel" data-tab-panel="cards" hidden>
+        <div class="grid">
+          <div class="scenario-card"><b>SO-2001 · 杭州易测</b><span>状态：待发货 · 金额 ￥128.00</span></div>
+          <div class="scenario-card"><b>SO-2002 · 上海云仓</b><span>状态：已完成 · 金额 ￥256.00</span></div>
+          <div class="scenario-card"><b>SO-2003 · 北京智联</b><span>状态：待付款 · 金额 ￥512.00</span></div>
+          <div class="scenario-card"><b>SO-2004 · 广州速达</b><span>状态：已完成 · 金额 ￥88.00</span></div>
+        </div>
+      </div>
+
+      <div class="tab-panel" data-tab-panel="timeline" hidden>
+        <ul class="timeline">
+          <li>09:00 订单创建</li>
+          <li>09:05 支付成功</li>
+          <li>10:20 仓库拣货</li>
+          <li>14:30 已发货</li>
+        </ul>
+        <div class="progress mt-12"><span style="width:75%"></span></div>
+        <p class="small muted mt-12">当前进度 75%</p>
+      </div>
+    </section>
+
+    <section>
+      <h2>树形展开表格</h2>
+      <table class="data-table" data-table>
+        <thead>
+          <tr><th class="no-sort">组织</th><th class="no-sort">负责人</th><th class="no-sort">人数</th><th class="no-sort">操作</th></tr>
+        </thead>
+        <tbody>
+          <tr data-row="org-1" data-name="集团总部" data-customer="张明" data-amount="120" data-status="正常">
+            <td>集团总部</td><td>张明</td><td>120</td>
+            <td><button type="button" class="btn-link" data-expand>展开子部门</button></td>
+          </tr>
+          <tr class="row-detail" data-detail-for="org-1">
+            <td colspan="4">
+              <table class="data-table">
+                <thead><tr><th>子部门</th><th>负责人</th><th>人数</th></tr></thead>
+                <tbody>
+                  <tr><td>技术中心</td><td>李工</td><td>56</td></tr>
+                  <tr><td>市场中心</td><td>王莉</td><td>34</td></tr>
+                  <tr><td>运营中心</td><td>赵强</td><td>30</td></tr>
+                </tbody>
+              </table>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>折叠面板</h2>
+      <div class="accordion-item" data-accordion>
+        <button type="button" class="accordion-head" data-accordion-head aria-expanded="false">
+          配送与售后说明 <span>+</span>
+        </button>
+        <div class="accordion-body" data-accordion-body hidden>
+          <p>支持 7 天无理由退换，配送范围覆盖全国大部分地区。</p>
+        </div>
+      </div>
+      <div class="accordion-item" data-accordion>
+        <button type="button" class="accordion-head" data-accordion-head aria-expanded="false">
+          发票说明 <span>+</span>
+        </button>
+        <div class="accordion-body" data-accordion-body hidden>
+          <p>支持电子发票与纸质发票，企业发票需提供税号。</p>
+        </div>
+      </div>
+      <div class="accordion-item" data-accordion>
+        <button type="button" class="accordion-head" data-accordion-head aria-expanded="false">
+          隐私政策 <span>+</span>
+        </button>
+        <div class="accordion-body" data-accordion-body hidden>
+          <p>我们仅在提供服务所必需的范围内收集与使用个人信息。</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>轮播</h2>
+      <div class="carousel" data-carousel>
+        <div class="carousel-track">
+          <div class="carousel-slide">第一屏：新品推荐</div>
+          <div class="carousel-slide">第二屏：限时优惠</div>
+          <div class="carousel-slide">第三屏：会员权益</div>
+        </div>
+        <button type="button" class="carousel-ctrl prev" data-carousel-prev aria-label="上一屏">‹</button>
+        <button type="button" class="carousel-ctrl next" data-carousel-next aria-label="下一屏">›</button>
+        <div class="carousel-dots">
+          <button type="button" class="active" aria-label="第一屏"></button>
+          <button type="button" aria-label="第二屏"></button>
+          <button type="button" aria-label="第三屏"></button>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>空状态与骨架屏</h2>
+      <div class="grid">
+        <div class="empty-state">暂无数据，请先创建记录</div>
+        <div>
+          <div class="skeleton" style="width:80%"></div>
+          <div class="skeleton" style="width:60%"></div>
+          <div class="skeleton" style="width:70%"></div>
+          <div class="skeleton" style="width:40%"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="/site.js"></script>
+</body>
+</html>
