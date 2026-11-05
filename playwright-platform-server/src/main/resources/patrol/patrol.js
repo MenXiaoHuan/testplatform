@@ -43,6 +43,8 @@ const browserType = (config.browser || 'chromium').toLowerCase();
 const engineType = { chrome: 'chromium', edge: 'chromium' }[browserType] || browserType;
 const headless = config.headless === undefined ? true : Boolean(config.headless);
 const auth = config.auth || { mode: 'NONE' };
+// 补充入口的前置步骤：进入页面后先执行，再快照/跑用例。
+const setupSteps = Array.isArray(config.setupSteps) ? config.setupSteps.filter(Boolean) : [];
 const startedAt = Date.now();
 
 fs.mkdirSync(screenshotDir, { recursive: true });
@@ -369,11 +371,21 @@ async function collectElements(page) {
 
 async function buildSnapshot(page) {
   const elements = await collectElements(page);
-  const visibleText = await page.mainFrame()
-    .evaluate((limit) => (document.body ? document.body.innerText : '')
-      .replace(/\s+/g, ' ').trim().slice(0, limit), limits.visibleTextLimit)
-    .catch(() => '');
-  return { visibleText, elements };
+  const visible = await page.mainFrame()
+    .evaluate((limit) => {
+      const raw = (document.body ? document.body.innerText : '')
+        .replace(/\s+/g, ' ').trim();
+      return { text: raw.slice(0, limit), length: raw.length };
+    }, limits.visibleTextLimit)
+    .catch(() => ({ text: '', length: 0 }));
+  const visibleText = visible.text || '';
+  const visibleTextLength = visible.length || 0;
+  return {
+    visibleText,
+    visibleTextLength,
+    visibleTextTruncated: visibleTextLength > visibleText.length,
+    elements,
+  };
 }
 
 function buildCookies() {
@@ -551,6 +563,23 @@ async function captureScreenshot(page, options) {
   }
 }
 
+/**
+ * 把目标元素滚动到视口中央（会自动处理弹层、表格等内层滚动容器），
+ * 确保元素操作与断言发生时，截图和录屏都能拍到目标元素。
+ */
+async function revealElement(page, locator) {
+  try {
+    await locator.evaluate((element) => {
+      if (element && typeof element.scrollIntoView === 'function') {
+        element.scrollIntoView({ block: 'center', inline: 'center' });
+      }
+    });
+  } catch (error) {
+    await locator.scrollIntoViewIfNeeded({ timeout: limits.actionTimeoutMs }).catch(() => {});
+  }
+  await page.waitForTimeout(200).catch(() => {});
+}
+
 async function newContext(browser, withVideo) {
   const options = {
     viewport: { width: 1280, height: 900 },
@@ -562,7 +591,7 @@ async function newContext(browser, withVideo) {
     options.extraHTTPHeaders = { [auth.tokenHeader || 'Authorization']: token };
   }
   if (withVideo && limits.recordVideo) {
-    options.recordVideo = { dir: videoDir, size: { width: 1280, height: 720 } };
+    options.recordVideo = { dir: videoDir, size: { width: 1280, height: 900 } };
   }
   const context = await browser.newContext(options);
   if (withVideo && limits.recordVideo) {
@@ -584,6 +613,38 @@ async function newContext(browser, withVideo) {
   return context;
 }
 
+/** 重放补充入口的前置步骤；失败时返回原因，由调用方决定 SKIP 还是中断。 */
+async function runSetupSteps(page, caseId) {
+  if (setupSteps.length === 0) {
+    return { ok: true };
+  }
+  for (let index = 0; index < setupSteps.length; index += 1) {
+    const step = Object.assign({ seq: index + 1 }, setupSteps[index]);
+    const result = await runStep(page, step);
+    if (result.status !== 'SUCCESS') {
+      writeEvent('SETUP_STEP', {
+        caseId: caseId === undefined ? null : caseId,
+        seq: index + 1,
+        action: step.action,
+        selector: step.selector || null,
+        status: 'FAILED',
+        message: result.message || '',
+      });
+      return { ok: false, message: result.message || '前置步骤执行失败' };
+    }
+    writeEvent('SETUP_STEP', {
+      caseId: caseId === undefined ? null : caseId,
+      seq: index + 1,
+      action: step.action,
+      selector: step.selector || null,
+      status: 'SUCCESS',
+    });
+    await settle(page);
+  }
+  writeEvent('SETUP_DONE', { steps: setupSteps.length });
+  return { ok: true };
+}
+
 async function runSnapshot(browser) {
   const context = await newContext(browser, false);
   const page = await context.newPage();
@@ -601,6 +662,11 @@ async function runSnapshot(browser) {
   try {
     await page.goto(startUrl, { waitUntil: 'domcontentloaded', timeout: limits.pageTimeoutMs });
     await settle(page);
+    const setup = await runSetupSteps(page);
+    if (!setup.ok) {
+      writeEvent('SETUP_FAILED', { message: setup.message });
+      return false;
+    }
     await preScanScroll(page);
     await settle(page);
     const title = await page.title().catch(() => '');
@@ -643,7 +709,7 @@ function expectContains(actual, expected, label) {
   }
 }
 
-async function runStep(page, step) {
+async function runStep(page, step, beforeAct) {
   const action = String(step.action || '').toLowerCase();
   const selector = step.selector || '';
   const value = step.value === undefined || step.value === null ? '' : String(step.value);
@@ -669,6 +735,14 @@ async function runStep(page, step) {
     }
     if (['assert_hidden', 'assert_count'].includes(action) && !selector) {
       throw new Error(`${action} 缺少 selector`);
+    }
+
+    // 所有需要定位元素的操作/断言都先把元素滚到视口中央，避免“操作成功但截图/录屏里看不到”。
+    if (mustExist && locator) {
+      await revealElement(page, locator);
+      if (typeof beforeAct === 'function') {
+        await beforeAct();
+      }
     }
 
     switch (action) {
@@ -869,8 +943,24 @@ async function runStep(page, step) {
           if (actual === null) {
             throw new Error(`属性不存在: ${name}`);
           }
-        } else {
-          expectContains(actual || '', expected, '属性值');
+          break;
+        }
+        // 快照里的 href/src 是浏览器解析后的绝对地址，而 DOM attribute 往往仍是相对值（如 "/"），
+        // 直接比对会把正确页面判成失败；这里先比原始属性，再回退比解析后的属性值。
+        if (!normalizeText(actual).includes(normalizeText(expected))) {
+          const resolved = await locator.evaluate((element, attr) => {
+            const raw = element[attr];
+            if (typeof raw === 'string') {
+              return raw;
+            }
+            if (raw && typeof raw === 'object' && 'baseVal' in raw) {
+              return raw.baseVal;
+            }
+            return '';
+          }, name);
+          if (!normalizeText(resolved).includes(normalizeText(expected))) {
+            expectContains(actual || '', expected, '属性值');
+          }
         }
         break;
       }
@@ -921,6 +1011,8 @@ async function runExecution(browser) {
     let evidenceDom = null;
     let finalScreenshot = null;
     let visibleText = '';
+    let visibleTextLength = 0;
+    let visibleTextTruncated = false;
     const caseStartedAt = Date.now();
 
     const context = await newContext(browser, true);
@@ -967,7 +1059,13 @@ async function runExecution(browser) {
       await page.goto(startUrl, { waitUntil: 'domcontentloaded', timeout: limits.pageTimeoutMs });
       await settle(page);
 
-      const steps = Array.isArray(caseItem.steps) ? caseItem.steps : [];
+      const setup = await runSetupSteps(page, caseItem.caseId);
+      if (!setup.ok) {
+        caseStatus = 'SKIPPED';
+        caseMessage = `起始状态不可达：${setup.message}`;
+      }
+
+      const steps = setup.ok && Array.isArray(caseItem.steps) ? caseItem.steps : [];
       let blockedByGuard = false;
       for (const step of steps) {
         if (Date.now() - startedAt >= limits.maxDurationMs) {
@@ -999,22 +1097,32 @@ async function runExecution(browser) {
         }
 
         stats.steps += 1;
-        const result = await runStep(page, step);
         const isAssertion = String(step.action || '').toLowerCase().startsWith('assert_');
+        const stepShotName = `case-${caseItem.caseId}-step-${step.seq}.png`;
         let screenshot = null;
+        const result = await runStep(page, step, async () => {
+          // 元素操作前先截图：此时目标已滚动到视口中央，导航类点击也能留下操作现场。
+          if (!isAssertion) {
+            await captureScreenshot(page, { path: path.join(screenshotDir, stepShotName), timeout: 10000 })
+              .then(() => { screenshot = `screenshots/${stepShotName}`; })
+              .catch(() => {});
+          }
+        });
         if (isAssertion) {
-          screenshot = `screenshots/case-${caseItem.caseId}-step-${step.seq}.png`;
-          await captureScreenshot(page, {
-            path: path.join(screenshotDir, `case-${caseItem.caseId}-step-${step.seq}.png`),
-            timeout: 10000,
-          }).catch(() => { screenshot = null; });
+          await captureScreenshot(page, { path: path.join(screenshotDir, stepShotName), timeout: 10000 })
+            .then(() => { screenshot = `screenshots/${stepShotName}`; })
+            .catch(() => {});
+        }
+        if (!isAssertion && !screenshot) {
+          // 无目标元素的动作（goto / 滚动 / 等待等）在执行后补一张，便于追溯页面状态。
+          await captureScreenshot(page, { path: path.join(screenshotDir, stepShotName), timeout: 10000 })
+            .then(() => { screenshot = `screenshots/${stepShotName}`; })
+            .catch(() => {});
         }
         if (result.status === 'FAILED') {
-          if (isAssertion) {
-            const failedName = `case-${caseItem.caseId}-step-${step.seq}-failed.png`;
-            await captureScreenshot(page, { path: path.join(screenshotDir, failedName), timeout: 10000 }).catch(() => {});
-            screenshot = `screenshots/${failedName}`;
-          }
+          const failedName = `case-${caseItem.caseId}-step-${step.seq}-failed.png`;
+          await captureScreenshot(page, { path: path.join(screenshotDir, failedName), timeout: 10000 }).catch(() => {});
+          screenshot = `screenshots/${failedName}`;
           stats.failed += 1;
         } else {
           stats.success += 1;
@@ -1041,10 +1149,16 @@ async function runExecution(browser) {
       finalScreenshot = `screenshots/case-${caseItem.caseId}.png`;
       await captureScreenshot(page, { path: path.join(screenshotDir, `case-${caseItem.caseId}.png`), timeout: 10000 })
         .catch(() => { finalScreenshot = null; });
-      visibleText = await page.mainFrame()
-        .evaluate((limit) => (document.body ? document.body.innerText : '')
-          .replace(/\s+/g, ' ').trim().slice(0, limit), limits.visibleTextLimit)
-        .catch(() => '');
+      const visible = await page.mainFrame()
+        .evaluate((limit) => {
+          const raw = (document.body ? document.body.innerText : '')
+            .replace(/\s+/g, ' ').trim();
+          return { text: raw.slice(0, limit), length: raw.length };
+        }, limits.visibleTextLimit)
+        .catch(() => ({ text: '', length: 0 }));
+      visibleText = visible.text || '';
+      visibleTextLength = visible.length || 0;
+      visibleTextTruncated = visibleTextLength > visibleText.length;
 
       if (!blockedByGuard && requests.some((item) => item.blocked)) {
         caseStatus = 'BLOCKED';
@@ -1103,6 +1217,8 @@ async function runExecution(browser) {
       dom: evidenceDom,
       screenshot: finalScreenshot,
       visibleText,
+      visibleTextLength,
+      visibleTextTruncated,
       durationMs: Date.now() - caseStartedAt,
       consoleErrors,
     });

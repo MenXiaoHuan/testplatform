@@ -2,6 +2,7 @@
 import { type FormInstance, type FormRules } from 'element-plus'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import SchedulePicker from '../../components/form/SchedulePicker.vue'
 import ListPageShell from '../../components/list/ListPageShell.vue'
 import CellTooltip from '../../components/list/CellTooltip.vue'
 import { useRepositoryStore } from '../../stores/repository'
@@ -10,6 +11,7 @@ import { useSpaceStore } from '../../stores/space'
 import type { SceneForm, SceneRecord } from '../../types/scene'
 import { toErrorMessage } from '../../utils/error'
 import { formatBeijingDateTime } from '../../utils/datetime'
+import { describeCron } from '../../utils/schedule'
 import { confirmDangerAction, showAppToast } from '../../utils/ui-feedback'
 import { isPositiveId, isRequired } from '../../utils/validators'
 
@@ -93,9 +95,9 @@ const formRules: FormRules<SceneForm> = {
         callback()
         return
       }
-      callback(new Error('请输入 Cron 表达式'))
+      callback(new Error('启用定时执行后请选择执行频率与时间'))
     },
-    trigger: 'blur',
+    trigger: 'change',
   }],
 }
 
@@ -144,7 +146,9 @@ function formatLastRunAt(value: string | null) {
 }
 
 function executionMode(row: SceneRecord) {
-  return row.scheduleEnabled ? '定时 + 手动' : '手动'
+  if (!row.scheduleEnabled) return '手动'
+  const description = describeCron(row.cronExpression)
+  return description ? `定时 · ${description}` : '定时 + 手动'
 }
 
 async function openEdit(row: SceneRecord) {
@@ -227,7 +231,7 @@ async function submit() {
   }
 
   if (form.scheduleEnabled && !isRequired(form.cronExpression)) {
-    showAppToast('启用定时执行时请填写 Cron 表达式', 'warning')
+    showAppToast('启用定时执行时请选择执行频率与时间', 'warning')
     return
   }
 
@@ -322,7 +326,7 @@ async function handleSizeChange(size: number) {
           <CellTooltip :content="repositoryName(row)" />
         </template>
       </el-table-column>
-      <el-table-column label="执行模式" width="140">
+      <el-table-column label="执行模式" width="190">
         <template #default="{ row }">
           <span>{{ executionMode(row) }}</span>
         </template>
@@ -346,7 +350,7 @@ async function handleSizeChange(size: number) {
     <el-dialog
       v-model="dialogVisible"
       :title="editingId === null ? '新增场景' : '编辑场景'"
-      width="900px"
+      width="960px"
       top="4vh"
       class="app-form-dialog"
     >
@@ -403,25 +407,25 @@ async function handleSizeChange(size: number) {
             </div>
           </div>
           <div class="app-form-grid">
-            <el-form-item label="浏览器" prop="browser" required class="app-span-4">
+            <el-form-item label="浏览器" prop="browser" required class="app-span-3">
               <el-select v-model="form.browser" placeholder="请选择浏览器">
                 <el-option v-for="item in browserOptions" :key="item" :label="item" :value="item" />
               </el-select>
             </el-form-item>
-            <el-form-item label="启用定时" class="app-span-4">
+            <el-form-item label="启用定时" class="app-span-3">
               <div class="app-switch-line">
                 <el-switch v-model="form.scheduleEnabled" />
-                <span>{{ form.scheduleEnabled ? '按 Cron 自动执行' : '仅手动执行' }}</span>
+                <span>{{ form.scheduleEnabled ? '按设定时间自动执行' : '仅手动执行' }}</span>
               </div>
             </el-form-item>
             <el-form-item
               v-if="form.scheduleEnabled"
-              label="Cron 表达式"
+              label="执行时间"
               prop="cronExpression"
               required
               class="app-span-8"
             >
-              <el-input v-model="form.cronExpression" placeholder="0 0 2 * * ?" />
+              <SchedulePicker v-model="form.cronExpression" />
             </el-form-item>
           </div>
         </section>

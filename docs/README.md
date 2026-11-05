@@ -8,9 +8,9 @@
 |------|------|------|
 | [playbooks/01-account-and-space.md](playbooks/01-account-and-space.md) | 所有用户 | 登录注册、昵称、会话、空间广场、空间成员与审批 |
 | [playbooks/02-repository.md](playbooks/02-repository.md) | 测试工程师 / 空间管理员 | 测试仓库接入、私有凭据、分支与执行命令 |
-| [playbooks/03-scene.md](playbooks/03-scene.md) | 测试工程师 | 场景配置、Cron 定时、调度事件与重试 |
+| [playbooks/03-scene.md](playbooks/03-scene.md) | 测试工程师 | 场景配置、可视化定时、调度事件与重试 |
 | [playbooks/04-task.md](playbooks/04-task.md) | 测试工程师 | 任务触发、执行阶段、日志、产物、取消与重跑 |
-| [playbooks/12-patrol.md](playbooks/12-patrol.md) | 测试工程师 / 空间管理员 | 巡页配置、模型接入、LLM 规划与判定、审批、预算降级、证据与保留 |
+| [playbooks/12-patrol.md](playbooks/12-patrol.md) | 测试工程师 / 空间管理员 | 巡页配置、补充入口、四类模型、LLM 规划与判定、审批、预算降级、证据与保留 |
 | [playbooks/05-ai-assistant.md](playbooks/05-ai-assistant.md) | 所有用户 | AI 助手入口、上下文、工具、额度与故障排查 |
 | [playbooks/06-prompt.md](playbooks/06-prompt.md) | 评测负责人 | Prompt 版本托管、ACTIVE 切换、Pull API 接入 |
 | [playbooks/07-target.md](playbooks/07-target.md) | 评测负责人 | 被评目标（Agent）类型、连接配置、健康检查 |

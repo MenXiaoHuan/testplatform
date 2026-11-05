@@ -15,6 +15,7 @@ public class PatrolModelLogService {
     public static final String STAGE_PLAN = "PLAN";
     public static final String STAGE_COVERAGE = "COVERAGE";
     public static final String STAGE_JUDGE = "JUDGE";
+    public static final String STAGE_RESOLVE = "RESOLVE";
 
     private final PatrolModelLogMapper mapper;
 

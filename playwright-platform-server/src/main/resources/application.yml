@@ -107,11 +107,18 @@ platform:
 
   # === 巡页配置 ===
   patrol:
-    max-concurrent: ${PLATFORM_PATROL_MAX_CONCURRENT:2}
+    max-concurrent: ${PLATFORM_PATROL_MAX_CONCURRENT:10}
+    # 并行已满时手动执行进入排队，排队上限为该值（定时执行仍直接跳过）
+    queue-capacity: ${PLATFORM_PATROL_QUEUE_CAPACITY:100}
     # 任务与证据（录屏/截图/控制台/DOM）保留天数
     retention-days: ${PLATFORM_PATROL_RETENTION_DAYS:90}
     retention-cron: "${PLATFORM_PATROL_RETENTION_CRON:0 30 2 * * *}"
-    llm-timeout-seconds: ${PLATFORM_PATROL_LLM_TIMEOUT_SECONDS:90}
+    # 流式调用：两段数据之间的空闲上限。推理模型首字节很快、生成持续不断，
+    # 空闲超时只用于兜底卡死连接，不再限制整段生成时长。
+    llm-timeout-seconds: ${PLATFORM_PATROL_LLM_TIMEOUT_SECONDS:120}
+    # 单次调用的总时长上限（秒）。推理模型在 16k 输出档位实测需 7 分钟以上，
+    # 这里给足余量，真正的停止由任务时长预算负责。
+    llm-max-call-seconds: ${PLATFORM_PATROL_LLM_MAX_CALL_SECONDS:1800}
     # 多模态视觉模型（OpenAI 兼容 /chat/completions，messages 支持 image_url）
     vision:
       base-url: ${PLATFORM_VISION_BASE_URL:}

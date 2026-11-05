@@ -21,8 +21,8 @@ public interface PatrolSceneMapper {
     String COLUMNS = """
             id, space_id, name, description, start_url, browser, headless, auth_type,
             auth_cookie_encrypted, auth_token_encrypted, auth_token_header, auth_local_storage_encrypted,
-            plan_model_id, judge_model_id, task_brief, budget_duration_minutes, budget_llm_tokens,
-            visible_text_limit, budget_cases, scroll_scan, record_video, auto_approve_write, auto_approve_destructive,
+            plan_model_id, judge_model_id, resolve_model_id, supplement_model_id, supplements_json, budget_duration_minutes,
+            visible_text_limit, scroll_scan, record_video, auto_approve_write, auto_approve_destructive,
             schedule_enabled, cron_expression, next_run_at, last_run_at, last_task_id, last_task_status,
             created_by, created_at, updated_at
             """;
@@ -31,13 +31,13 @@ public interface PatrolSceneMapper {
             insert into patrol_scene (
                 space_id, name, description, start_url, browser, headless, auth_type,
                 auth_cookie_encrypted, auth_token_encrypted, auth_token_header, auth_local_storage_encrypted,
-                plan_model_id, judge_model_id, task_brief, budget_duration_minutes, budget_llm_tokens,
+                plan_model_id, judge_model_id, resolve_model_id, supplement_model_id, supplements_json, budget_duration_minutes,
                 visible_text_limit, scroll_scan, record_video, auto_approve_write, auto_approve_destructive,
                 schedule_enabled, cron_expression, next_run_at, created_by, created_at
             ) values (
                 #{spaceId}, #{name}, #{description}, #{startUrl}, #{browser}, #{headless}, #{authType},
                 #{authCookieEncrypted}, #{authTokenEncrypted}, #{authTokenHeader}, #{authLocalStorageEncrypted},
-                #{planModelId}, #{judgeModelId}, #{taskBrief}, #{budgetDurationMinutes}, #{budgetLlmTokens},
+                #{planModelId}, #{judgeModelId}, #{resolveModelId}, #{supplementModelId}, #{supplementsJson}, #{budgetDurationMinutes},
                 #{visibleTextLimit}, #{scrollScan}, #{recordVideo}, #{autoApproveWrite}, #{autoApproveDestructive},
                 #{scheduleEnabled}, #{cronExpression}, #{nextRunAt}, #{createdBy}, #{createdAt}
             )
@@ -59,9 +59,10 @@ public interface PatrolSceneMapper {
                 auth_local_storage_encrypted = #{authLocalStorageEncrypted},
                 plan_model_id = #{planModelId},
                 judge_model_id = #{judgeModelId},
-                task_brief = #{taskBrief},
+                resolve_model_id = #{resolveModelId},
+                supplement_model_id = #{supplementModelId},
+                supplements_json = #{supplementsJson},
                 budget_duration_minutes = #{budgetDurationMinutes},
-                budget_llm_tokens = #{budgetLlmTokens},
                 visible_text_limit = #{visibleTextLimit},
                 scroll_scan = #{scrollScan},
                 record_video = #{recordVideo},
@@ -90,11 +91,11 @@ public interface PatrolSceneMapper {
             @Result(property = "authLocalStorageEncrypted", column = "auth_local_storage_encrypted"),
             @Result(property = "planModelId", column = "plan_model_id"),
             @Result(property = "judgeModelId", column = "judge_model_id"),
-            @Result(property = "taskBrief", column = "task_brief"),
+            @Result(property = "resolveModelId", column = "resolve_model_id"),
+            @Result(property = "supplementModelId", column = "supplement_model_id"),
+            @Result(property = "supplementsJson", column = "supplements_json"),
             @Result(property = "budgetDurationMinutes", column = "budget_duration_minutes"),
-            @Result(property = "budgetLlmTokens", column = "budget_llm_tokens"),
             @Result(property = "visibleTextLimit", column = "visible_text_limit"),
-            @Result(property = "budgetCases", column = "budget_cases"),
             @Result(property = "scrollScan", column = "scroll_scan"),
             @Result(property = "recordVideo", column = "record_video"),
             @Result(property = "autoApproveWrite", column = "auto_approve_write"),

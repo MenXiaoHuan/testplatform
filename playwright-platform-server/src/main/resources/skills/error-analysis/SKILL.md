@@ -18,7 +18,7 @@ description: 易测平台错误排查技能，覆盖 UI 自动化用例失败、
 ## 核心原则
 
 1. **证据优先**：没有工具返回的事实，不下根因结论；只能写「可能原因」并标 `confidence=LOW/MEDIUM`。
-2. **先分对象与阶段**：先确认是 Playwright 任务还是巡页任务，再看阶段；Playwright 看 `PREPARING` / `INSTALLING` / `TESTING` / `ARCHIVING`，巡页看 `PREPARING` / `SNAPSHOTTING` / `PLANNING` / `WAITING_APPROVAL` / `EXECUTING` / `JUDGING`，避免一上来就猜测试代码。
+2. **先分对象与阶段**：先确认是 Playwright 任务还是巡页任务，再看阶段；Playwright 看 `PREPARING` / `INSTALLING` / `TESTING` / `ARCHIVING`，巡页看 `PREPARING` / `RESOLVING`（仅补充入口）/ `SNAPSHOTTING` / `PLANNING` / `WAITING_APPROVAL` / `EXECUTING` / `JUDGING`，避免一上来就猜测试代码。
 3. **区分任务级与用例级**：
    - 任务 `FAILED` 且 `failedCount=0` → 优先看环境、安装、归档。
    - 任务 `SUCCESS` 但有用例 `FAILED` → 进入用例级根因推断。
@@ -43,10 +43,10 @@ description: 易测平台错误排查技能，覆盖 UI 自动化用例失败、
 
 ```
 第 1 步  确认是巡页任务（入口 URL / 状态 / 当前阶段），不是 Playwright 回归任务
-第 2 步  巡页配置：入口 URL、规划/判定模型、预算、认证、自动审批、定时
+第 2 步  巡页配置：入口 URL、四类模型（解析/规划/补全/判定）、补充入口、预算、认证、自动审批、可视化定时
 第 3 步  模型配置：Base URL、模型 ID、Key、视觉能力、连通性测试
-第 4 步  模型日志（仅超级管理员）：PLAN / COVERAGE / JUDGE 的阶段状态与原始输出
-第 5 步  用例与证据：执行状态、判定原因、录屏、截图、控制台、DOM
+第 4 步  模型日志（仅超级管理员）：PLAN / COVERAGE / RESOLVE / JUDGE 的阶段状态与原始输出
+第 5 步  用例与证据：按 Run 分组的执行状态、判定原因、录屏、截图、控制台、DOM
 辅助    执行历史 / 调度与保留：是否有活动任务、并发是否已满、90 天清理
 ```
 
@@ -104,7 +104,7 @@ description: 易测平台错误排查技能，覆盖 UI 自动化用例失败、
 - [ ] 是否真的调用了 `getTask` 和 `analyzeLogs`？（巡页任务则确认已核对状态、阶段与模型日志）
 - [ ] 是否写清了失败阶段与结果码？
 - [ ] 巡页问题是否区分了配置、模型、执行、判定、调度五类根因？
-- [ ] 巡页降级是否说明了是 `PLAN` / `COVERAGE` / `JUDGE` 哪个阶段、状态是 `SKIPPED` 还是 `FAILED`？
+- [ ] 巡页降级是否说明了是 `PLAN` / `COVERAGE` / `RESOLVE` / `JUDGE` 哪个阶段、状态是 `SKIPPED` 还是 `FAILED`？
 - [ ] 是否引用了日志中的具体错误关键字，而不是泛泛而谈？
 - [ ] 是否区分了任务级失败与用例级失败？
 - [ ] 根因是否可能被反证？有没有遗漏更早阶段的错误？

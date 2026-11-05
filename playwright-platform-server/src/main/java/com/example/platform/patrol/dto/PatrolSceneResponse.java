@@ -1,7 +1,10 @@
 package com.example.platform.patrol.dto;
 
 import com.example.platform.patrol.model.PatrolSceneEntity;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.LocalDateTime;
+import java.util.List;
 
 /** 巡页场景响应：认证信息只返回是否已配置。 */
 public record PatrolSceneResponse(
@@ -18,11 +21,13 @@ public record PatrolSceneResponse(
         String planModelName,
         Long judgeModelId,
         String judgeModelName,
-        String taskBrief,
+        Long resolveModelId,
+        String resolveModelName,
+        Long supplementModelId,
+        String supplementModelName,
+        List<PatrolSceneSupplementDraft> supplements,
         int budgetDurationMinutes,
-        int budgetLlmTokens,
         int visibleTextLimit,
-        int budgetCases,
         boolean scrollScan,
         boolean recordVideo,
         boolean autoApproveWrite,
@@ -36,6 +41,11 @@ public record PatrolSceneResponse(
         long totalTokenUsed,
         LocalDateTime createdAt
 ) {
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final TypeReference<List<PatrolSceneSupplementDraft>> SUPPLEMENT_TYPE =
+            new TypeReference<>() {
+            };
+
     public static PatrolSceneResponse from(PatrolSceneEntity entity) {
         boolean authConfigured = "COOKIE".equalsIgnoreCase(entity.getAuthType())
                 ? entity.getAuthCookieEncrypted() != null
@@ -57,11 +67,13 @@ public record PatrolSceneResponse(
                 null,
                 entity.getJudgeModelId(),
                 null,
-                entity.getTaskBrief(),
-                entity.getBudgetDurationMinutes() == null ? 15 : entity.getBudgetDurationMinutes(),
-                entity.getBudgetLlmTokens() == null ? 300000 : entity.getBudgetLlmTokens(),
+                entity.getResolveModelId(),
+                null,
+                entity.getSupplementModelId(),
+                null,
+                parseSupplements(entity.getSupplementsJson()),
+                entity.getBudgetDurationMinutes() == null ? 20 : entity.getBudgetDurationMinutes(),
                 entity.getVisibleTextLimit() == null ? 1800 : entity.getVisibleTextLimit(),
-                entity.getBudgetCases() == null ? 10 : entity.getBudgetCases(),
                 !Boolean.FALSE.equals(entity.getScrollScan()),
                 !Boolean.FALSE.equals(entity.getRecordVideo()),
                 Boolean.TRUE.equals(entity.getAutoApproveWrite()),
@@ -76,11 +88,25 @@ public record PatrolSceneResponse(
                 entity.getCreatedAt());
     }
 
-    public PatrolSceneResponse withModelNames(String planModelName, String judgeModelName, long totalTokenUsed) {
+    public PatrolSceneResponse withModelNames(String planModelName, String judgeModelName,
+                                              String resolveModelName, String supplementModelName,
+                                              long totalTokenUsed) {
         return new PatrolSceneResponse(id, spaceId, name, description, startUrl, browser, headless, authType,
-                authConfigured, planModelId, planModelName, judgeModelId, judgeModelName, taskBrief,
-                budgetDurationMinutes, budgetLlmTokens, visibleTextLimit, budgetCases, scrollScan, recordVideo,
+                authConfigured, planModelId, planModelName, judgeModelId, judgeModelName,
+                resolveModelId, resolveModelName, supplementModelId, supplementModelName, supplements,
+                budgetDurationMinutes, visibleTextLimit, scrollScan, recordVideo,
                 autoApproveWrite, autoApproveDestructive, scheduleEnabled, cronExpression, nextRunAt,
                 lastRunAt, lastTaskId, lastTaskStatus, totalTokenUsed, createdAt);
+    }
+
+    private static List<PatrolSceneSupplementDraft> parseSupplements(String json) {
+        if (json == null || json.isBlank()) {
+            return List.of();
+        }
+        try {
+            return MAPPER.readValue(json, SUPPLEMENT_TYPE);
+        } catch (Exception exception) {
+            return List.of();
+        }
     }
 }

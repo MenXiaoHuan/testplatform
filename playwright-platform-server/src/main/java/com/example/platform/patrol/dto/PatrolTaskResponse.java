@@ -1,13 +1,18 @@
 package com.example.platform.patrol.dto;
 
 import com.example.platform.patrol.model.PatrolTaskEntity;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.LocalDateTime;
+import java.util.List;
 
 /** 巡页任务响应。 */
 public record PatrolTaskResponse(
         Long id,
         Long spaceId,
         Long sceneId,
+        Long parentTaskId,
+        String entryType,
+        String entryLabel,
         String sceneName,
         String triggerType,
         String status,
@@ -15,8 +20,6 @@ public record PatrolTaskResponse(
         String startUrl,
         String taskBrief,
         int budgetDurationMinutes,
-        int budgetLlmTokens,
-        int budgetCases,
         int caseCount,
         int casePassCount,
         int caseFailCount,
@@ -26,7 +29,9 @@ public record PatrolTaskResponse(
         int findingP2Count,
         int llmTokenUsed,
         boolean degraded,
+        String planningNote,
         String resultMessage,
+        List<String> advice,
         String approvedBy,
         LocalDateTime approvedAt,
         LocalDateTime retentionUntil,
@@ -39,6 +44,7 @@ public record PatrolTaskResponse(
         int coverageCovered,
         double coverageRate
 ) {
+    private static final ObjectMapper MAPPER = new ObjectMapper();
     public static PatrolTaskResponse from(PatrolTaskEntity task) {
         return from(task, 0, 0, 0d);
     }
@@ -49,15 +55,16 @@ public record PatrolTaskResponse(
                 task.getId(),
                 task.getSpaceId(),
                 task.getSceneId(),
+                task.getParentTaskId(),
+                task.getEntryType() == null ? "MAIN" : task.getEntryType(),
+                task.getEntryLabel(),
                 task.getSceneName(),
                 task.getTriggerType(),
                 task.getStatus(),
                 task.getCurrentStage(),
                 task.getStartUrl(),
                 task.getTaskBrief(),
-                task.getBudgetDurationMinutes() == null ? 15 : task.getBudgetDurationMinutes(),
-                task.getBudgetLlmTokens() == null ? 300000 : task.getBudgetLlmTokens(),
-                task.getBudgetCases() == null ? 10 : task.getBudgetCases(),
+                task.getBudgetDurationMinutes() == null ? 20 : task.getBudgetDurationMinutes(),
                 task.getCaseCount() == null ? 0 : task.getCaseCount(),
                 task.getCasePassCount() == null ? 0 : task.getCasePassCount(),
                 task.getCaseFailCount() == null ? 0 : task.getCaseFailCount(),
@@ -67,7 +74,9 @@ public record PatrolTaskResponse(
                 task.getFindingP2Count() == null ? 0 : task.getFindingP2Count(),
                 task.getLlmTokenUsed() == null ? 0 : task.getLlmTokenUsed(),
                 Boolean.TRUE.equals(task.getDegraded()),
+                task.getPlanningNote(),
                 task.getResultMessage(),
+                parseAdvice(task.getAdviceJson()),
                 task.getApprovedBy(),
                 task.getApprovedAt(),
                 task.getRetentionUntil(),
@@ -79,5 +88,16 @@ public record PatrolTaskResponse(
                 coverageTotal,
                 coverageCovered,
                 coverageRate);
+    }
+
+    private static List<String> parseAdvice(String adviceJson) {
+        if (adviceJson == null || adviceJson.isBlank()) {
+            return List.of();
+        }
+        try {
+            return List.of(MAPPER.readValue(adviceJson, String[].class));
+        } catch (Exception exception) {
+            return List.of();
+        }
     }
 }

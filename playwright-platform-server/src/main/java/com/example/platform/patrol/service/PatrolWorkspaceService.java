@@ -122,12 +122,14 @@ public class PatrolWorkspaceService {
                                              java.util.List<Long> approvedCaseIds,
                                              int pageTimeoutMs, int actionTimeoutMs,
                                              int visibleTextLimit, long maxDurationMs,
+                                             java.util.List<java.util.Map<String, Object>> setupSteps,
                                              String evidencePrefix) {
         Map<String, Object> config = new LinkedHashMap<>();
         config.put("startUrl", startUrl);
         config.put("browser", browser);
         config.put("headless", headless);
         config.put("mode", mode);
+        config.put("setupSteps", setupSteps == null ? java.util.List.of() : setupSteps);
         config.put("evidencePrefix", evidencePrefix);
         Map<String, Object> auth = new LinkedHashMap<>();
         auth.put("mode", authType == null ? "NONE" : authType);

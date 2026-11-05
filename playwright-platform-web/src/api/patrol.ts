@@ -4,11 +4,15 @@ import type {
   AiModelConfig,
   AiModelConfigPayload,
   AiModelOption,
+  AiPromptConfig,
+  AiPromptConfigPayload,
   PatrolApprovalPayload,
   PatrolCase,
   PatrolReport,
   PatrolScene,
   PatrolScenePayload,
+  PatrolSceneSupplement,
+  PatrolSupplementResolveResult,
   PatrolModelLog,
   PatrolTask,
   PatrolTaskDetail,
@@ -37,6 +41,21 @@ export const testModelConfig = (spaceId: number, id: number) =>
     `/spaces/${spaceId}/ai-models/${id}/test`,
   )
 
+// ───────── 模型提示词配置 ─────────
+
+export const listPromptConfigs = (spaceId: number) =>
+  get<AiPromptConfig[]>(`/spaces/${spaceId}/ai-prompts`)
+
+export const createPromptConfig = (spaceId: number, payload: AiPromptConfigPayload) =>
+  post<AiPromptConfig>(`/spaces/${spaceId}/ai-prompts`, payload)
+
+export const updatePromptConfig = (spaceId: number, id: number, payload: AiPromptConfigPayload) =>
+  put<AiPromptConfig>(`/spaces/${spaceId}/ai-prompts/${id}`, payload)
+
+/** 恢复内置默认：删除空间覆盖。 */
+export const resetPromptConfig = (spaceId: number, id: number) =>
+  del(`/spaces/${spaceId}/ai-prompts/${id}`)
+
 // ───────── 巡页场景 ─────────
 
 export const listPatrolScenes = (spaceId: number, page = 1, size = 10) =>
@@ -53,6 +72,13 @@ export const updatePatrolScene = (spaceId: number, sceneId: number, payload: Pat
 
 export const copyPatrolScene = (spaceId: number, sceneId: number) =>
   post<PatrolScene>(`/spaces/${spaceId}/patrol-scenes/${sceneId}/copy`)
+
+/** 解析补充入口前置（基于最近一次任务的入口页快照）。 */
+export const resolvePatrolSupplement = (spaceId: number, sceneId: number, draft: PatrolSceneSupplement) =>
+  post<PatrolSupplementResolveResult>(
+    `/spaces/${spaceId}/patrol-scenes/${sceneId}/supplements/resolve`,
+    draft,
+  )
 
 export const deletePatrolScene = (spaceId: number, sceneId: number) =>
   del(`/spaces/${spaceId}/patrol-scenes/${sceneId}`)

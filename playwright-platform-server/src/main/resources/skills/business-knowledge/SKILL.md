@@ -13,7 +13,7 @@ description: 易测平台业务知识库，覆盖账号与空间权限、UI 自�
 - 某个功能怎么操作、入口在哪、有哪些限制
 - 角色与权限、空间与审批、注册与登录规则
 - UI 自动化：仓库、场景、任务、日志、产物、定时调度
-- 巡页：入口快照、LLM 规划、覆盖率、风险审批、判定、预算降级、模型日志与证据保留
+- 巡页：主入口与补充入口、前置解析、LLM 规划与覆盖率补全、解析/规划/补全/判定四类模型、风险审批、视觉判定、预算降级、模型日志与证据保留
 - 模型评测：Prompt 版本、被评目标、评测集、离线评测、在线监控
 - 状态、枚举、术语、数据关系与数据隔离
 - 平台运维：用户管理、注册开关、审计与保护规则
@@ -29,7 +29,7 @@ description: 易测平台业务知识库，覆盖账号与空间权限、UI 自�
 | 平台定位、能力地图、技术架构、核心对象、状态机、数据隔离 | `platform-overview.md` | 全局视角 |
 | 登录注册、昵称、会话、空间广场、加入空间、审批、角色权限 | `account-and-space.md` | 账号与空间 |
 | 仓库接入、场景配置、任务执行、阶段日志、产物、定时与重跑 | `ui-automation.md` | UI 自动化主线 |
-| 巡页怎么配、模型怎么选、什么时候要审批、为什么降级、覆盖率与证据 | `patrol.md` | 巡页巡检 |
+| 巡页怎么配、补充入口、四类模型怎么选、什么时候要审批、为什么降级、覆盖率与证据 | `patrol.md` | 巡页巡检 |
 | 知知是谁、能做什么、工具、额度、上下文、Trace、技能 | `ai-assistant.md` | AI 助手 |
 | Prompt 托管、Target、Dataset、离线评测、评分器、在线监控 | `model-evaluation.md` | 模型评测主线 |
 | 用户管理、注册开关、删除保护、审计 | `platform-admin.md` | 平台运维 |
@@ -56,9 +56,9 @@ description: 易测平台业务知识库，覆盖账号与空间权限、UI 自�
 | 任务状态 | `QUEUED`、`RUNNING`、`SUCCESS`、`FAILED`、`TIMEOUT`、`CANCELED` |
 | 任务阶段 | `PREPARING`、`INSTALLING`、`TESTING`、`ARCHIVING`、`FINISHED` |
 | 巡页任务状态 | `QUEUED`、`RUNNING`、`WAITING_APPROVAL`、`COMPLETED`、`FAILED`、`CANCELED` |
-| 巡页阶段 | `PREPARING`、`SNAPSHOTTING`、`PLANNING`、`WAITING_APPROVAL`、`EXECUTING`、`JUDGING`、`FINISHED` |
-| 巡页预算 | 默认 15 分钟 / 300000 Token；平台并发默认 2；保留 90 天 |
-| 模型日志 | 仅超级管理员可见，分规划 / 覆盖率补全 / 判定三个阶段 |
+| 巡页阶段 | `PREPARING`、`RESOLVING`（仅补充入口前置解析）、`SNAPSHOTTING`、`PLANNING`、`WAITING_APPROVAL`、`EXECUTING`、`JUDGING`、`FINISHED` |
+| 巡页预算 | 默认 20 分钟 / 不限制单任务 Token；平台并发默认 10（排队 100）；保留 90 天 |
+| 模型日志 | 仅超级管理员可见，分规划 / 覆盖率补全 / 前置解析 / 判定四个阶段 |
 | Prompt 状态 | `DRAFT`、`ACTIVE`、`DEPRECATED` |
 | 评测运行状态 | `PENDING`、`RUNNING`、`COMPLETED`、`FAILED`、`CANCELLED` |
 | 在线策略状态 | `ACTIVE`、`PAUSED` |

@@ -20,23 +20,26 @@ import org.apache.ibatis.annotations.Update;
 public interface PatrolTaskMapper {
 
     String COLUMNS = """
-            id, space_id, scene_id, scene_name, trigger_type, status, current_stage, start_url,
+            id, space_id, scene_id, parent_task_id, entry_type, entry_label, setup_steps_json, scene_name,
+            trigger_type, status, current_stage, start_url,
             task_brief, planning_note, scene_snapshot_json, model_snapshot_json, snapshot_json, snapshot_screenshot_key,
-            approval_json, approved_by, approved_at, budget_duration_minutes, budget_llm_tokens, budget_cases,
+            approval_json, approved_by, approved_at, budget_duration_minutes,
             case_count, case_pass_count, case_fail_count, case_skip_count,
             finding_p0_count, finding_p1_count, finding_p2_count, llm_token_used, degraded,
-            result_message, cancel_requested, retention_until, started_at, finished_at, duration_ms,
+            result_message, advice_json, cancel_requested, retention_until, started_at, finished_at, duration_ms,
             created_by, created_at, updated_at
             """;
 
     @Insert("""
             insert into patrol_task (
-                space_id, scene_id, scene_name, trigger_type, status, current_stage, start_url, task_brief, planning_note,
-                scene_snapshot_json, model_snapshot_json, budget_duration_minutes, budget_llm_tokens, budget_cases,
+                space_id, scene_id, parent_task_id, entry_type, entry_label, setup_steps_json,
+                scene_name, trigger_type, status, current_stage, start_url, task_brief, planning_note,
+                scene_snapshot_json, model_snapshot_json, budget_duration_minutes,
                 created_by, created_at
             ) values (
-                #{spaceId}, #{sceneId}, #{sceneName}, #{triggerType}, #{status}, #{currentStage}, #{startUrl}, #{taskBrief}, #{planningNote},
-                #{sceneSnapshotJson}, #{modelSnapshotJson}, #{budgetDurationMinutes}, #{budgetLlmTokens}, #{budgetCases},
+                #{spaceId}, #{sceneId}, #{parentTaskId}, #{entryType}, #{entryLabel}, #{setupStepsJson},
+                #{sceneName}, #{triggerType}, #{status}, #{currentStage}, #{startUrl}, #{taskBrief}, #{planningNote},
+                #{sceneSnapshotJson}, #{modelSnapshotJson}, #{budgetDurationMinutes},
                 #{createdBy}, #{createdAt}
             )
             """)
@@ -47,6 +50,10 @@ public interface PatrolTaskMapper {
             update patrol_task
             set status = #{status},
                 current_stage = #{currentStage},
+                parent_task_id = #{parentTaskId},
+                entry_type = #{entryType},
+                entry_label = #{entryLabel},
+                setup_steps_json = #{setupStepsJson},
                 planning_note = #{planningNote},
                 snapshot_json = #{snapshotJson},
                 snapshot_screenshot_key = #{snapshotScreenshotKey},
@@ -63,6 +70,7 @@ public interface PatrolTaskMapper {
                 llm_token_used = #{llmTokenUsed},
                 degraded = #{degraded},
                 result_message = #{resultMessage},
+                advice_json = #{adviceJson},
                 cancel_requested = #{cancelRequested},
                 retention_until = #{retentionUntil},
                 started_at = #{startedAt},
@@ -98,6 +106,10 @@ public interface PatrolTaskMapper {
             @Result(property = "id", column = "id", id = true),
             @Result(property = "spaceId", column = "space_id"),
             @Result(property = "sceneId", column = "scene_id"),
+            @Result(property = "parentTaskId", column = "parent_task_id"),
+            @Result(property = "entryType", column = "entry_type"),
+            @Result(property = "entryLabel", column = "entry_label"),
+            @Result(property = "setupStepsJson", column = "setup_steps_json"),
             @Result(property = "sceneName", column = "scene_name"),
             @Result(property = "triggerType", column = "trigger_type"),
             @Result(property = "status", column = "status"),
@@ -113,8 +125,6 @@ public interface PatrolTaskMapper {
             @Result(property = "approvedBy", column = "approved_by"),
             @Result(property = "approvedAt", column = "approved_at"),
             @Result(property = "budgetDurationMinutes", column = "budget_duration_minutes"),
-            @Result(property = "budgetLlmTokens", column = "budget_llm_tokens"),
-            @Result(property = "budgetCases", column = "budget_cases"),
             @Result(property = "caseCount", column = "case_count"),
             @Result(property = "casePassCount", column = "case_pass_count"),
             @Result(property = "caseFailCount", column = "case_fail_count"),
@@ -125,6 +135,7 @@ public interface PatrolTaskMapper {
             @Result(property = "llmTokenUsed", column = "llm_token_used"),
             @Result(property = "degraded", column = "degraded"),
             @Result(property = "resultMessage", column = "result_message"),
+            @Result(property = "adviceJson", column = "advice_json"),
             @Result(property = "cancelRequested", column = "cancel_requested"),
             @Result(property = "retentionUntil", column = "retention_until"),
             @Result(property = "startedAt", column = "started_at"),
@@ -144,6 +155,7 @@ public interface PatrolTaskMapper {
             select\s""" + COLUMNS + """
             from patrol_task
             where space_id = #{spaceId}
+              and parent_task_id is null
             order by created_at desc, id desc
             limit #{limit} offset #{offset}
             """)
@@ -152,13 +164,14 @@ public interface PatrolTaskMapper {
                                              @Param("limit") int limit,
                                              @Param("offset") int offset);
 
-    @Select("select count(1) from patrol_task where space_id = #{spaceId}")
+    @Select("select count(1) from patrol_task where space_id = #{spaceId} and parent_task_id is null")
     long countBySpaceId(@Param("spaceId") Long spaceId);
 
     @Select("""
             select\s""" + COLUMNS + """
             from patrol_task
             where scene_id = #{sceneId}
+              and parent_task_id is null
             order by created_at desc, id desc
             limit #{limit} offset #{offset}
             """)
@@ -167,8 +180,32 @@ public interface PatrolTaskMapper {
                                              @Param("limit") int limit,
                                              @Param("offset") int offset);
 
-    @Select("select count(1) from patrol_task where scene_id = #{sceneId}")
+    @Select("select count(1) from patrol_task where scene_id = #{sceneId} and parent_task_id is null")
     long countBySceneId(@Param("sceneId") Long sceneId);
+
+    @Select("select " + COLUMNS + " from patrol_task where parent_task_id = #{parentTaskId} order by id asc")
+    @ResultMap("PatrolTaskResultMap")
+    List<PatrolTaskEntity> findByParentId(@Param("parentTaskId") Long parentTaskId);
+
+    @Select("""
+            select count(1) > 0 from patrol_task
+            where parent_task_id = #{parentTaskId}
+              and status in ('QUEUED','RUNNING','WAITING_APPROVAL')
+            """)
+    boolean existsActiveChild(@Param("parentTaskId") Long parentTaskId);
+
+    /** 最近一次带入口页快照的主任务，用于补充入口前置解析预览。 */
+    @Select("""
+            select\s""" + COLUMNS + """
+            from patrol_task
+            where scene_id = #{sceneId}
+              and parent_task_id is null
+              and snapshot_json is not null
+            order by id desc
+            limit 1
+            """)
+    @ResultMap("PatrolTaskResultMap")
+    java.util.Optional<PatrolTaskEntity> findLatestSnapshotTask(@Param("sceneId") Long sceneId);
 
     @Select("select " + COLUMNS + " from patrol_task where scene_id = #{sceneId} order by id asc")
     @ResultMap("PatrolTaskResultMap")
@@ -178,6 +215,7 @@ public interface PatrolTaskMapper {
             select scene_id, coalesce(sum(llm_token_used), 0) as total_tokens
             from patrol_task
             where space_id = #{spaceId}
+              and parent_task_id is null
             group by scene_id
             """)
     @Results(id = "PatrolSceneTokenTotalMap", value = {
@@ -188,21 +226,21 @@ public interface PatrolTaskMapper {
 
     @Select("""
             select count(1) from patrol_task
-            where status in ('QUEUED','PREPARING','SNAPSHOTTING','PLANNING','WAITING_APPROVAL','EXECUTING','JUDGING')
+            where status in ('QUEUED','RUNNING','WAITING_APPROVAL')
             """)
     long countActive();
 
     @Select("""
             select count(1) > 0 from patrol_task
             where scene_id = #{sceneId}
-              and status in ('QUEUED','PREPARING','SNAPSHOTTING','PLANNING','WAITING_APPROVAL','EXECUTING','JUDGING')
+              and status in ('QUEUED','RUNNING','WAITING_APPROVAL')
             """)
     boolean existsActiveBySceneId(@Param("sceneId") Long sceneId);
 
     @Select("""
             select\s""" + COLUMNS + """
             from patrol_task
-            where status in ('FINISHED','FAILED','CANCELED')
+            where status in ('COMPLETED','FAILED','CANCELED','UNREACHABLE')
               and retention_until is not null
               and retention_until <= #{now}
             order by retention_until asc
@@ -212,7 +250,7 @@ public interface PatrolTaskMapper {
     List<PatrolTaskEntity> findRetentionCandidates(@Param("now") LocalDateTime now, @Param("limit") int limit);
 
     /**
-     * 服务重启后，内存中的执行线程已丢失：把非审批态的活动任务标记为中断，
+     * 服务重启后，内存中的执行线程已丢失：把排队中/执行中的任务标记为中断，
      * 避免场景被永久占用；待审批任务保留，重启后仍可批准恢复。
      */
     @Update("""
@@ -222,19 +260,19 @@ public interface PatrolTaskMapper {
                 result_message = '服务重启，任务执行中断',
                 finished_at = now(),
                 retention_until = date_add(now(), interval #{retentionDays} day)
-            where status in ('QUEUED','PREPARING','SNAPSHOTTING','PLANNING','EXECUTING','JUDGING')
+            where status in ('QUEUED','RUNNING')
             """)
     int failInterruptedTasks(@Param("retentionDays") int retentionDays);
 
     @Select("""
             select\s""" + COLUMNS + """
             from patrol_task
-            where status in ('QUEUED','PREPARING','SNAPSHOTTING','PLANNING','WAITING_APPROVAL','EXECUTING','JUDGING')
-              and created_at < #{before}
-            limit 20
+            where status in ('QUEUED','RUNNING')
+            order by id asc
+            limit 50
             """)
     @ResultMap("PatrolTaskResultMap")
-    List<PatrolTaskEntity> findStaleActiveTasks(@Param("before") LocalDateTime before);
+    List<PatrolTaskEntity> findActiveRunningTasks();
 
     @Delete("delete from patrol_task where id = #{id}")
     int deleteById(@Param("id") Long id);

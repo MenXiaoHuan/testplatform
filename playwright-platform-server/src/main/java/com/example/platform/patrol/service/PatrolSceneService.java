@@ -4,6 +4,7 @@ import com.example.platform.common.CredentialCipher;
 import com.example.platform.common.PageResponse;
 import com.example.platform.patrol.dto.PatrolSceneRequest;
 import com.example.platform.patrol.dto.PatrolSceneResponse;
+import com.example.platform.patrol.dto.PatrolSceneSupplementDraft;
 import com.example.platform.patrol.dto.PatrolTaskResponse;
 import com.example.platform.patrol.dto.PatrolTaskSummaryResponse;
 import com.example.platform.patrol.mapper.AiModelConfigMapper;
@@ -13,14 +14,18 @@ import com.example.platform.patrol.model.AiModelConfigEntity;
 import com.example.platform.patrol.model.PatrolSceneEntity;
 import com.example.platform.patrol.model.PatrolSceneTokenTotal;
 import com.example.platform.patrol.model.PatrolTaskEntity;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.net.URI;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.RejectedExecutionException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -44,8 +49,12 @@ public class PatrolSceneService {
     private final PatrolExecutionService executionService;
     private final PatrolRetentionService retentionService;
     private final PatrolCoverageService coverageService;
+    private final PatrolSupplementResolver supplementResolver;
     private final CredentialCipher credentialCipher;
+    /** 并行执行的巡页任务数（等于执行线程池大小）。 */
     private final int maxConcurrent;
+    /** 并行已满时允许排队的任务数。 */
+    private final int maxQueue;
 
     public PatrolSceneService(PatrolSceneMapper sceneMapper,
                               PatrolTaskMapper taskMapper,
@@ -54,8 +63,10 @@ public class PatrolSceneService {
                               PatrolExecutionService executionService,
                               PatrolRetentionService retentionService,
                               PatrolCoverageService coverageService,
+                              PatrolSupplementResolver supplementResolver,
                               CredentialCipher credentialCipher,
-                              @Value("${platform.patrol.max-concurrent:2}") int maxConcurrent) {
+                              @Value("${platform.patrol.max-concurrent:10}") int maxConcurrent,
+                              @Value("${platform.patrol.queue-capacity:100}") int queueCapacity) {
         this.sceneMapper = sceneMapper;
         this.taskMapper = taskMapper;
         this.modelMapper = modelMapper;
@@ -63,8 +74,10 @@ public class PatrolSceneService {
         this.executionService = executionService;
         this.retentionService = retentionService;
         this.coverageService = coverageService;
+        this.supplementResolver = supplementResolver;
         this.credentialCipher = credentialCipher;
-        this.maxConcurrent = maxConcurrent <= 0 ? 2 : maxConcurrent;
+        this.maxConcurrent = maxConcurrent <= 0 ? 10 : maxConcurrent;
+        this.maxQueue = queueCapacity <= 0 ? 100 : queueCapacity;
     }
 
     public PageResponse<PatrolSceneResponse> list(Long spaceId, int page, int size) {
@@ -121,11 +134,11 @@ public class PatrolSceneService {
         copy.setAuthLocalStorageEncrypted(source.getAuthLocalStorageEncrypted());
         copy.setPlanModelId(source.getPlanModelId());
         copy.setJudgeModelId(source.getJudgeModelId());
-        copy.setTaskBrief(source.getTaskBrief());
+        copy.setResolveModelId(source.getResolveModelId());
+        copy.setSupplementModelId(source.getSupplementModelId());
+        copy.setSupplementsJson(copySupplements(source.getSupplementsJson()));
         copy.setBudgetDurationMinutes(source.getBudgetDurationMinutes());
-        copy.setBudgetLlmTokens(source.getBudgetLlmTokens());
         copy.setVisibleTextLimit(source.getVisibleTextLimit());
-        copy.setBudgetCases(source.getBudgetCases());
         copy.setScrollScan(source.getScrollScan());
         copy.setRecordVideo(source.getRecordVideo());
         copy.setAutoApproveWrite(source.getAutoApproveWrite());
@@ -150,6 +163,24 @@ public class PatrolSceneService {
         sceneMapper.deleteByIdAndSpaceId(id, spaceId);
     }
 
+    /** 前置解析预览：基于最近一次任务的入口页快照，把补充入口描述解析为可执行步骤。 */
+    public PatrolSupplementResolver.ResolveResult resolveSupplement(Long spaceId, Long sceneId,
+                                                                   PatrolSceneSupplementDraft draft) {
+        PatrolSceneEntity scene = requireScene(spaceId, sceneId);
+        PatrolTaskEntity task = taskMapper.findLatestSnapshotTask(sceneId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "请先执行一次任务，生成入口页快照后再解析前置"));
+        JsonNode snapshot;
+        try {
+            snapshot = MAPPER.readTree(task.getSnapshotJson());
+        } catch (Exception exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "入口页快照解析失败，请重新执行一次任务");
+        }
+        Long modelId = scene.getResolveModelId() != null ? scene.getResolveModelId() : scene.getPlanModelId();
+        AiModelConfigEntity model = modelService.resolve(spaceId, modelId, false);
+        return supplementResolver.resolve(null, spaceId, draft, snapshot, model);
+    }
+
     /** 手动执行：创建任务并异步启动。 */
     public PatrolTaskResponse run(Long spaceId, Long sceneId, String actor) {
         PatrolSceneEntity scene = requireScene(spaceId, sceneId);
@@ -160,12 +191,15 @@ public class PatrolSceneService {
         if (taskMapper.existsActiveBySceneId(sceneId)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "该巡页已有任务在执行，请等待完成");
         }
-        if (taskMapper.countActive() >= maxConcurrent) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "平台同时执行的巡页任务已达上限（" + maxConcurrent + "）");
+        if (taskMapper.countActive() >= (long) maxConcurrent + maxQueue) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "巡页执行队列已满，请稍后再试");
         }
         PatrolTaskEntity task = createTask(scene, "MANUAL", actor);
-        executionService.start(task.getId());
+        try {
+            executionService.start(task.getId());
+        } catch (RejectedExecutionException exception) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "巡页执行队列已满，请稍后再试");
+        }
         return PatrolTaskResponse.from(task);
     }
 
@@ -203,6 +237,7 @@ public class PatrolSceneService {
     public PatrolTaskSummaryResponse taskSummary(Long spaceId, Long sceneId) {
         requireScene(spaceId, sceneId);
         List<PatrolTaskEntity> finished = taskMapper.findBySceneId(sceneId).stream()
+                .filter(task -> task.getParentTaskId() == null)
                 .filter(task -> task.getDurationMs() != null)
                 .toList();
         if (finished.isEmpty()) {
@@ -242,20 +277,37 @@ public class PatrolSceneService {
         } catch (Exception exception) {
             log.warn("Resolve judge model failed. sceneId={}, reason={}", scene.getId(), exception.getMessage());
         }
+        AiModelConfigEntity resolveModel = null;
+        try {
+            Long resolveModelId = scene.getResolveModelId() != null
+                    ? scene.getResolveModelId() : scene.getPlanModelId();
+            resolveModel = modelService.resolve(scene.getSpaceId(), resolveModelId, false);
+        } catch (Exception exception) {
+            log.warn("Resolve model failed. sceneId={}, reason={}",
+                    scene.getId(), exception.getMessage());
+        }
+        AiModelConfigEntity supplementModel = null;
+        try {
+            Long supplementModelId = scene.getSupplementModelId() != null
+                    ? scene.getSupplementModelId() : scene.getPlanModelId();
+            supplementModel = modelService.resolve(scene.getSpaceId(), supplementModelId, false);
+        } catch (Exception exception) {
+            log.warn("Supplement model failed. sceneId={}, reason={}",
+                    scene.getId(), exception.getMessage());
+        }
         PatrolTaskEntity task = new PatrolTaskEntity();
         task.setSpaceId(scene.getSpaceId());
         task.setSceneId(scene.getId());
         task.setSceneName(scene.getName());
+        task.setEntryType("MAIN");
         task.setTriggerType(triggerType);
         task.setStatus("QUEUED");
         task.setCurrentStage("QUEUED");
         task.setStartUrl(scene.getStartUrl());
-        task.setTaskBrief(scene.getTaskBrief());
         task.setSceneSnapshotJson(PatrolExecutionService.sceneSnapshotJson(scene));
-        task.setModelSnapshotJson(PatrolExecutionService.modelSnapshotJson(planModel, judgeModel));
+        task.setModelSnapshotJson(PatrolExecutionService.modelSnapshotJson(
+                planModel, judgeModel, resolveModel, supplementModel));
         task.setBudgetDurationMinutes(scene.getBudgetDurationMinutes());
-        task.setBudgetLlmTokens(scene.getBudgetLlmTokens());
-        task.setBudgetCases(scene.getBudgetCases());
         task.setCreatedBy(actor);
         task.setCreatedAt(LocalDateTime.now());
         taskMapper.insert(task);
@@ -284,9 +336,10 @@ public class PatrolSceneService {
         applyAuth(entity, request);
         entity.setPlanModelId(validateModel(entity.getSpaceId(), request.planModelId(), false));
         entity.setJudgeModelId(validateModel(entity.getSpaceId(), request.judgeModelId(), true));
-        entity.setTaskBrief(truncate(request.taskBrief(), 1024));
-        entity.setBudgetDurationMinutes(clamp(request.budgetDurationMinutes(), 15, 1, 60, "预算时长（分钟）"));
-        entity.setBudgetLlmTokens(clamp(request.budgetLlmTokens(), 300000, 10000, 1000000, "Token 预算"));
+        entity.setResolveModelId(validateOptionalModel(entity.getSpaceId(), request.resolveModelId()));
+        entity.setSupplementModelId(validateOptionalModel(entity.getSpaceId(), request.supplementModelId()));
+        entity.setSupplementsJson(normalizeSupplements(entity.getStartUrl(), request.supplements()));
+        entity.setBudgetDurationMinutes(clamp(request.budgetDurationMinutes(), 20, 1, 60, "预算时长（分钟）"));
         entity.setVisibleTextLimit(clamp(request.visibleTextLimit(), 1800, 100, 100000, "模型可见页面文本字数"));
         entity.setScrollScan(!Boolean.FALSE.equals(request.scrollScan()));
         entity.setRecordVideo(!Boolean.FALSE.equals(request.recordVideo()));
@@ -358,6 +411,123 @@ public class PatrolSceneService {
         return modelId;
     }
 
+    private Long validateOptionalModel(Long spaceId, Long modelId) {
+        if (modelId == null || modelId <= 0) {
+            return null;
+        }
+        return validateModel(spaceId, modelId, false);
+    }
+
+    /** 校验并序列化场景补充；为空时返回 null，保证与未配置补充项的旧行为一致。 */
+    private String normalizeSupplements(String sceneStartUrl, List<PatrolSceneSupplementDraft> supplements) {
+        if (supplements == null || supplements.isEmpty()) {
+            return null;
+        }
+        List<PatrolSceneSupplementDraft> normalized = new ArrayList<>();
+        for (PatrolSceneSupplementDraft draft : supplements) {
+            if (draft == null) {
+                continue;
+            }
+            String entryType = trim(draft.entryType()).isEmpty()
+                    ? "ACTION" : draft.entryType().trim().toUpperCase(Locale.ROOT);
+            if (!"ACTION".equals(entryType) && !"URL".equals(entryType)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "补充入口类型仅支持 ACTION / URL");
+            }
+            String precondition = trim(draft.preconditionText());
+            String startUrl = trim(draft.startUrl());
+            if ("ACTION".equals(entryType) && precondition.isEmpty()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "操作型补充入口必须填写前置描述");
+            }
+            if ("URL".equals(entryType)) {
+                if (startUrl.isEmpty()) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "URL 型补充入口必须填写起始地址");
+                }
+                validateSupplementUrl(sceneStartUrl, startUrl);
+            }
+            List<PatrolSceneSupplementDraft.ResolvedStep> steps = draft.steps() == null
+                    ? List.of() : draft.steps().stream().filter(item -> item != null
+                    && item.action() != null && !item.action().isBlank()).toList();
+            if (steps.size() > 20) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "补充入口前置步骤不能超过 20 步");
+            }
+            String name = trim(draft.name()).isEmpty()
+                    ? clip(precondition.isEmpty() ? startUrl : precondition, 32)
+                    : clip(trim(draft.name()), 128);
+            normalized.add(new PatrolSceneSupplementDraft(
+                    (long) (normalized.size() + 1),
+                    name,
+                    entryType,
+                    clip(precondition, 1024),
+                    clip(startUrl, 2048),
+                    clip(trim(draft.focusText()), 200),
+                    !Boolean.FALSE.equals(draft.enabled()),
+                    steps,
+                    draft.confidence(),
+                    clip(trim(draft.unresolvedReason()), 500)));
+        }
+        if (normalized.isEmpty()) {
+            return null;
+        }
+        try {
+            return MAPPER.writeValueAsString(normalized);
+        } catch (Exception exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "补充入口配置序列化失败");
+        }
+    }
+
+    private void validateSupplementUrl(String sceneStartUrl, String startUrl) {
+        try {
+            URI uri = URI.create(startUrl);
+            if (startUrl.startsWith("/")) {
+                return; // 相对路径视为同源
+            }
+            String scheme = uri.getScheme();
+            if (scheme == null || !("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme))) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "补充入口起始地址必须是 http/https 或同源相对路径");
+            }
+            URI sceneUri = URI.create(sceneStartUrl);
+            if (uri.getHost() == null || !uri.getHost().equalsIgnoreCase(sceneUri.getHost())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "补充入口起始地址必须与巡页入口同源");
+            }
+        } catch (ResponseStatusException exception) {
+            throw exception;
+        } catch (Exception exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "补充入口起始地址不合法");
+        }
+    }
+
+    private List<PatrolSceneSupplementDraft> parseSupplements(String json) {
+        if (json == null || json.isBlank()) {
+            return List.of();
+        }
+        try {
+            return MAPPER.readValue(json, new TypeReference<>() {
+            });
+        } catch (Exception exception) {
+            log.warn("Parse patrol scene supplements failed: {}", exception.getMessage());
+            return List.of();
+        }
+    }
+
+    private String copySupplements(String json) {
+        List<PatrolSceneSupplementDraft> supplements = parseSupplements(json);
+        if (supplements.isEmpty()) {
+            return null;
+        }
+        List<PatrolSceneSupplementDraft> copied = new ArrayList<>();
+        long id = 1;
+        for (PatrolSceneSupplementDraft draft : supplements) {
+            copied.add(new PatrolSceneSupplementDraft(id++, draft.name(), draft.entryType(),
+                    draft.preconditionText(), draft.startUrl(), draft.focusText(), draft.enabled(),
+                    draft.steps(), draft.confidence(), draft.unresolvedReason()));
+        }
+        try {
+            return MAPPER.writeValueAsString(copied);
+        } catch (Exception exception) {
+            return json;
+        }
+    }
+
     private LocalDateTime resolveNextRun(boolean enabled, String cron) {
         if (!enabled || cron == null || cron.isBlank()) {
             return null;
@@ -418,7 +588,14 @@ public class PatrolSceneService {
         String judgeName = entity.getJudgeModelId() == null ? null
                 : Optional.ofNullable(models.get(entity.getJudgeModelId()))
                 .map(AiModelConfigEntity::getName).orElse("未配置");
-        return PatrolSceneResponse.from(entity).withModelNames(planName, judgeName, totalTokenUsed);
+        String resolveName = entity.getResolveModelId() == null ? null
+                : Optional.ofNullable(models.get(entity.getResolveModelId()))
+                .map(AiModelConfigEntity::getName).orElse("未配置");
+        String supplementName = entity.getSupplementModelId() == null ? null
+                : Optional.ofNullable(models.get(entity.getSupplementModelId()))
+                .map(AiModelConfigEntity::getName).orElse("未配置");
+        return PatrolSceneResponse.from(entity).withModelNames(
+                planName, judgeName, resolveName, supplementName, totalTokenUsed);
     }
 
     private String validateUrl(String raw) {

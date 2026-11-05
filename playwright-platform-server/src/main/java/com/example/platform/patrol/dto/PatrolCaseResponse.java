@@ -3,7 +3,7 @@ package com.example.platform.patrol.dto;
 import com.example.platform.patrol.model.PatrolCaseEntity;
 import java.util.List;
 
-/** 用例响应：一条用例就是一个 Trace 单元。 */
+/** 用例响应：一条用例就是一个 Trace 单元；runId/entryLabel 标识所属 Run。 */
 public record PatrolCaseResponse(
         Long id,
         int seq,
@@ -23,9 +23,16 @@ public record PatrolCaseResponse(
         int tokens,
         Long durationMs,
         boolean degraded,
-        List<PatrolCaseStepResponse> steps
+        List<PatrolCaseStepResponse> steps,
+        Long runId,
+        String entryLabel
 ) {
     public static PatrolCaseResponse from(PatrolCaseEntity entity, List<PatrolCaseStepResponse> steps) {
+        return from(entity, steps, null, null);
+    }
+
+    public static PatrolCaseResponse from(PatrolCaseEntity entity, List<PatrolCaseStepResponse> steps,
+                                          Long runId, String entryLabel) {
         return new PatrolCaseResponse(
                 entity.getId(),
                 entity.getSeq() == null ? 0 : entity.getSeq(),
@@ -45,6 +52,8 @@ public record PatrolCaseResponse(
                 entity.getTokens() == null ? 0 : entity.getTokens(),
                 entity.getDurationMs(),
                 Boolean.TRUE.equals(entity.getDegraded()),
-                steps);
+                steps,
+                runId,
+                entryLabel);
     }
 }

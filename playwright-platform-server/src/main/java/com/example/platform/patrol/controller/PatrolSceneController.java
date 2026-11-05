@@ -5,9 +5,11 @@ import com.example.platform.common.ApiResponse;
 import com.example.platform.common.PageResponse;
 import com.example.platform.patrol.dto.PatrolSceneRequest;
 import com.example.platform.patrol.dto.PatrolSceneResponse;
+import com.example.platform.patrol.dto.PatrolSceneSupplementDraft;
 import com.example.platform.patrol.dto.PatrolTaskResponse;
 import com.example.platform.patrol.dto.PatrolTaskSummaryResponse;
 import com.example.platform.patrol.service.PatrolSceneService;
+import com.example.platform.patrol.service.PatrolSupplementResolver;
 import com.example.platform.space.service.SpaceAuthorizationService;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -69,6 +71,14 @@ public class PatrolSceneController {
     public void delete(@PathVariable Long spaceId, @PathVariable Long id) {
         spaceAuthorizationService.requireOperableSpace(spaceId, AuthContextHolder.require());
         sceneService.delete(spaceId, id);
+    }
+
+    @PostMapping("/{id}/supplements/resolve")
+    public ApiResponse<PatrolSupplementResolver.ResolveResult> resolveSupplement(
+            @PathVariable Long spaceId, @PathVariable Long id,
+            @RequestBody PatrolSceneSupplementDraft draft) {
+        spaceAuthorizationService.requireOperableSpace(spaceId, AuthContextHolder.require());
+        return ApiResponse.ok(sceneService.resolveSupplement(spaceId, id, draft));
     }
 
     @PostMapping("/{id}/copy")

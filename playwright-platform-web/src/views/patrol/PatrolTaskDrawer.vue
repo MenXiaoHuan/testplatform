@@ -8,7 +8,7 @@ import {
   getPatrolTaskModelLogs,
   patrolEvidenceUrl,
 } from '../../api/patrol'
-import type { PatrolCase, PatrolModelLog, PatrolRisk, PatrolTaskDetail } from '../../types/patrol'
+import type { PatrolCase, PatrolModelLog, PatrolRisk, PatrolRun, PatrolTaskDetail } from '../../types/patrol'
 import CellTooltip from '../../components/list/CellTooltip.vue'
 import { useAuthStore } from '../../stores/auth'
 import { formatBeijingDateTime } from '../../utils/datetime'
@@ -62,10 +62,37 @@ const consoleErrorCount = ref(0)
 const consoleRaw = ref('')
 
 const caseFilter = ref<'ALL' | 'PASS' | 'FAIL'>('ALL')
+const runFilter = ref('ALL')
 const expandedCaseIds = ref<number[]>([])
 
+const runs = computed<PatrolRun[]>(() => detail.value?.runs ?? [])
+
+function runLabel(run: PatrolRun) {
+  if (run.entryType === 'MAIN') return '主入口'
+  return run.entryLabel?.trim() || `补充入口 #${run.runId}`
+}
+
+function runStatusText(status: string) {
+  return {
+    QUEUED: '排队中',
+    RUNNING: '执行中',
+    WAITING_APPROVAL: '待审批',
+    COMPLETED: '已完成',
+    FAILED: '失败',
+    CANCELED: '已取消',
+    UNREACHABLE: '不可达',
+  }[status] ?? status
+}
+
+function caseRunKey(item: PatrolCase) {
+  return item.runId == null ? 'ALL' : String(item.runId)
+}
+
 const filteredCases = computed(() => {
-  const cases = detail.value?.cases ?? []
+  let cases = detail.value?.cases ?? []
+  if (runFilter.value !== 'ALL') {
+    cases = cases.filter((item) => caseRunKey(item) === runFilter.value)
+  }
   if (caseFilter.value === 'ALL') return cases
   return cases.filter((item) => item.status === caseFilter.value)
 })
@@ -82,6 +109,7 @@ function toggleCase(caseId: number) {
 
 function resetCaseView() {
   caseFilter.value = 'ALL'
+  runFilter.value = 'ALL'
   expandedCaseIds.value = []
   activeTab.value = 'overview'
   modelLogs.value = []
@@ -95,7 +123,78 @@ const visible = computed({
 const task = computed(() => detail.value?.task ?? null)
 const isActive = computed(() => {
   const status = task.value?.status
-  return !!status && !['COMPLETED', 'FAILED', 'CANCELED'].includes(status)
+  return !!status && !['COMPLETED', 'FAILED', 'CANCELED', 'UNREACHABLE'].includes(status)
+})
+
+interface RuntimeHint {
+  type: 'warning' | 'error' | 'info'
+  title: string
+  text: string
+}
+
+const runtimeHints = computed<RuntimeHint[]>(() => {
+  const current = task.value
+  if (!current) return []
+  const hints: RuntimeHint[] = []
+  if (current.degraded) {
+    hints.push({
+      type: 'warning',
+      title: '本次运行发生降级',
+      text: (current.planningNote || '').trim()
+        || '模型阶段已降级为规则兜底，详见用例来源与执行信息。',
+    })
+  }
+  const advice = Array.isArray(current.advice) ? current.advice.filter((item) => item?.trim()) : []
+  if (advice.length) {
+    hints.push({
+      type: current.status === 'FAILED' ? 'error' : 'info',
+      title: '解决建议',
+      text: advice.map((item, index) => `${index + 1}. ${item}`).join('\n'),
+    })
+  }
+  const snapshot = parseSnapshotSummary()
+  if (snapshot?.truncated) {
+    hints.push({
+      type: 'warning',
+      title: '页面可见文本已截断',
+      text: `仅前 ${snapshot.keptLength} 字（原文 ${snapshot.visibleTextLength} 字）送入模型，`
+        + '规划与判定可能遗漏页面内容。',
+    })
+  }
+  return hints
+})
+
+function parseSnapshotSummary(): { visibleTextLength: number; keptLength: number; truncated: boolean; hasLength: boolean } | null {
+  const raw = detail.value?.snapshotJson
+  if (!raw) return null
+  try {
+    const data = JSON.parse(raw) as {
+      visibleText?: string
+      visibleTextLength?: number
+      visibleTextTruncated?: boolean
+    }
+    const keptLength = data.visibleText ? String(data.visibleText).length : 0
+    const hasLength = typeof data.visibleTextLength === 'number'
+    const visibleTextLength = hasLength ? Number(data.visibleTextLength) : keptLength
+    return {
+      visibleTextLength,
+      keptLength,
+      truncated: Boolean(data.visibleTextTruncated) || visibleTextLength > keptLength,
+      hasLength,
+    }
+  } catch {
+    return null
+  }
+}
+
+const visibleTextStats = computed(() => {
+  const snapshot = parseSnapshotSummary()
+  if (!snapshot) return '未记录'
+  if (snapshot.truncated) {
+    return `${snapshot.keptLength} 字 / 原文 ${snapshot.visibleTextLength} 字（已截断）`
+  }
+  if (!snapshot.hasLength) return `${snapshot.keptLength} 字（未记录原文长度）`
+  return `${snapshot.keptLength} 字（未截断）`
 })
 
 watch(
@@ -253,7 +352,8 @@ function statusTag(status?: string) {
   if (!status) return 'info'
   if (status === 'PASS' || status === 'SUCCESS' || status === 'COMPLETED') return 'success'
   if (status === 'FAIL' || status === 'FAILED' || status === 'BLOCKED') return 'danger'
-  if (status === 'SKIP' || status === 'SKIPPED' || status === 'WAITING_APPROVAL') return 'warning'
+  if (status === 'SKIP' || status === 'SKIPPED' || status === 'WAITING_APPROVAL'
+    || status === 'UNREACHABLE') return 'warning'
   return 'info'
 }
 
@@ -313,7 +413,9 @@ function modelSummary(): string {
   try {
     const snapshot = JSON.parse(detail.value.modelSnapshotJson)
     const parts: string[] = []
+    if (snapshot.resolve?.modelId) parts.push(`解析 ${snapshot.resolve.modelId}`)
     if (snapshot.plan?.modelId) parts.push(`规划 ${snapshot.plan.modelId}`)
+    if (snapshot.supplement?.modelId) parts.push(`补全 ${snapshot.supplement.modelId}`)
     if (snapshot.judge?.modelId) {
       parts.push(`判定 ${snapshot.judge.modelId}${snapshot.judge.vision ? '（视觉）' : ''}`)
     } else {
@@ -333,6 +435,7 @@ const STAGE_LABELS: Record<string, string> = {
   PLAN: '用例规划',
   COVERAGE: '覆盖率补全',
   JUDGE: '视觉判定',
+  RESOLVE: '前置解析',
 }
 
 function stageLabel(stage: string) {
@@ -412,8 +515,22 @@ function formatDuration(ms: number) {
               <el-tag type="warning" size="small">
                 {{ detail?.report.pendingApprovalCaseIds.length ?? 0 }} 条写操作用例
               </el-tag>
+              <el-tag
+                v-if="detail?.report.pendingSupplementLabels?.length"
+                type="info"
+                size="small"
+              >
+                {{ detail?.report.pendingSupplementLabels?.length }} 个补充入口待审批
+              </el-tag>
             </div>
             <span class="approval-sub">未授权步骤会被步骤守卫拦截，未授权变更请求会被网络护栏阻断</span>
+            <span
+              v-if="detail?.report.pendingSupplementLabels?.length"
+              class="approval-sub"
+            >
+              以下补充入口含写操作前置，审批通过后才会执行前置并生成状态快照：
+              {{ detail?.report.pendingSupplementLabels?.join('、') }}
+            </span>
           </div>
           <div class="approval-switches">
             <div class="approval-switch-card">
@@ -459,7 +576,7 @@ function formatDuration(ms: number) {
               </div>
               <div class="stat-card stat-card--blue">
                 <div class="stat-label">LLM Token</div>
-                <div class="stat-value">{{ task.llmTokenUsed }}<span class="stat-total">/{{ task.budgetLlmTokens }}</span></div>
+                <div class="stat-value">{{ task.llmTokenUsed }}</div>
                 <div class="stat-sub">{{ modelSummary() }}</div>
               </div>
               <div class="stat-card stat-card--amber">
@@ -467,6 +584,19 @@ function formatDuration(ms: number) {
                 <div class="stat-value">{{ formatBeijingDateTime(task.retentionUntil) }}</div>
                 <div class="stat-sub">任务与全部证据保留 90 天</div>
               </div>
+            </div>
+
+            <div v-if="runtimeHints.length" class="runtime-hints">
+              <el-alert
+                v-for="(hint, index) in runtimeHints"
+                :key="index"
+                :type="hint.type"
+                :closable="false"
+                show-icon
+                :title="hint.title"
+              >
+                <div class="runtime-hint__text">{{ hint.text }}</div>
+              </el-alert>
             </div>
 
             <div class="overview-grid">
@@ -477,20 +607,48 @@ function formatDuration(ms: number) {
                 <div class="info-row"><span>开始时间</span><strong>{{ formatBeijingDateTime(task.startedAt) }}</strong></div>
                 <div class="info-row"><span>结束时间</span><strong>{{ formatBeijingDateTime(task.finishedAt) }}</strong></div>
                 <div class="info-row"><span>当前阶段</span><strong>{{ task.currentStage }}</strong></div>
+                <div class="info-row"><span>入口页文本</span><strong>{{ visibleTextStats }}</strong></div>
               </section>
               <section class="info-card">
-                <h4>任务描述</h4>
-                <p class="task-brief">{{ task.taskBrief || '未填写任务描述' }}</p>
+                <h4>模型</h4>
                 <div class="model-block">
-                  <div class="model-block__label">模型</div>
+                  <div class="model-block__label">执行所用模型</div>
                   <div class="model-block__value">{{ modelSummary() }}</div>
                 </div>
               </section>
             </div>
+            <section v-if="runs.length" class="info-card run-card">
+              <h4>Run 执行情况</h4>
+              <div v-for="run in runs" :key="run.runId" class="run-row">
+                <div class="run-row__head">
+                  <span class="run-row__label">{{ runLabel(run) }}</span>
+                  <el-tag :type="statusTag(run.status)" size="small">{{ runStatusText(run.status) }}</el-tag>
+                  <span class="run-row__meta">
+                    用例 {{ run.casePassCount }}/{{ run.caseCount }} · 失败 {{ run.caseFailCount }} ·
+                    覆盖 {{ run.coverageRate }}% · {{ run.llmTokenUsed }} tokens
+                  </span>
+                </div>
+                <div v-if="run.resultMessage" class="run-row__message">{{ run.resultMessage }}</div>
+              </div>
+            </section>
           </el-tab-pane>
 
           <el-tab-pane :label="`用例`" name="cases">
             <div class="case-toolbar">
+              <el-select
+                v-if="runs.length"
+                v-model="runFilter"
+                size="small"
+                class="case-toolbar__run"
+              >
+                <el-option label="全部 Run" value="ALL" />
+                <el-option
+                  v-for="run in runs"
+                  :key="run.runId"
+                  :label="runLabel(run)"
+                  :value="String(run.runId)"
+                />
+              </el-select>
               <el-radio-group v-model="caseFilter" size="small">
                 <el-radio-button value="ALL">全部</el-radio-button>
                 <el-radio-button value="PASS">成功</el-radio-button>
@@ -503,6 +661,7 @@ function formatDuration(ms: number) {
                 <div class="case-title">
                   <span class="case-seq">#{{ item.seq }}</span>
                   <span class="case-name">{{ item.name }}</span>
+                  <el-tag v-if="item.entryLabel" type="warning" size="small">{{ item.entryLabel }}</el-tag>
                   <el-tag :type="statusTag(item.status)" size="small">{{ caseStatusText(item.status) }}</el-tag>
                   <el-tag :type="riskTag(item.worstRisk)" size="small">{{ item.worstRisk }}</el-tag>
                   <el-tag type="info" size="small">{{ item.source }}</el-tag>
@@ -913,6 +1072,19 @@ function formatDuration(ms: number) {
   font-size: 12px;
   line-height: 1.5;
 }
+.runtime-hints {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.runtime-hint__text {
+  font-size: 12px;
+  line-height: 1.7;
+  color: #475569;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
 .overview-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -949,17 +1121,8 @@ function formatDuration(ms: number) {
   font-weight: 600;
   text-align: right;
 }
-.task-brief {
-  margin: 0;
-  color: #475569;
-  font-size: 13px;
-  line-height: 1.7;
-  white-space: pre-wrap;
-}
 .model-block {
-  margin-top: 14px;
-  padding-top: 12px;
-  border-top: 1px dashed #eef2f7;
+  margin-top: 6px;
 }
 .model-block__label {
   color: #94a3b8;
@@ -1024,6 +1187,41 @@ function formatDuration(ms: number) {
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 12px;
+}
+.case-toolbar__run {
+  width: 200px;
+  margin-right: auto;
+}
+.run-card {
+  margin-top: 14px;
+}
+.run-row {
+  padding: 10px 0;
+  border-bottom: 1px dashed #e8edf3;
+}
+.run-row:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+.run-row__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.run-row__label {
+  font-weight: 600;
+  color: #0f172a;
+}
+.run-row__meta {
+  color: #64748b;
+  font-size: 12px;
+}
+.run-row__message {
+  margin-top: 4px;
+  color: #94a3b8;
+  font-size: 12px;
+  word-break: break-all;
 }
 .case-toolbar__count {
   color: #94a3b8;

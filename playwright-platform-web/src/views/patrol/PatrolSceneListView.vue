@@ -12,6 +12,7 @@ import {
   listModelOptions,
   listPatrolScenes,
   listSceneTasks,
+  resolvePatrolSupplement,
   runPatrolScene,
   updatePatrolScene,
 } from '../../api/patrol'
@@ -19,14 +20,17 @@ import type {
   AiModelOption,
   PatrolScene,
   PatrolScenePayload,
+  PatrolSceneSupplement,
   PatrolTask,
   PatrolTaskSummary,
 } from '../../types/patrol'
+import SchedulePicker from '../../components/form/SchedulePicker.vue'
 import CellTooltip from '../../components/list/CellTooltip.vue'
 import ListPageShell from '../../components/list/ListPageShell.vue'
 import { useSpaceStore } from '../../stores/space'
 import { formatBeijingDateTime } from '../../utils/datetime'
 import { toErrorMessage } from '../../utils/error'
+import { describeCron } from '../../utils/schedule'
 import { confirmDangerAction, showAppToast } from '../../utils/ui-feedback'
 import PatrolTaskDrawer from './PatrolTaskDrawer.vue'
 import AiModelConfigDrawer from './AiModelConfigDrawer.vue'
@@ -47,7 +51,7 @@ const sceneDialogVisible = ref(false)
 const sceneFormRef = ref<FormInstance>()
 const saving = ref(false)
 const editingId = ref<number | null>(null)
-const form = reactive<PatrolScenePayload & { authCookie: string; authToken: string; authTokenHeader: string; authLocalStorage: string; cronExpression: string }>({
+const form = reactive<PatrolScenePayload & { authCookie: string; authToken: string; authTokenHeader: string; authLocalStorage: string; cronExpression: string; supplements: PatrolSceneSupplement[] }>({
   name: '',
   description: '',
   startUrl: '',
@@ -60,9 +64,10 @@ const form = reactive<PatrolScenePayload & { authCookie: string; authToken: stri
   authLocalStorage: '',
   planModelId: null,
   judgeModelId: null,
-  taskBrief: '',
-  budgetDurationMinutes: 15,
-  budgetLlmTokens: 300000,
+  resolveModelId: null,
+  supplementModelId: null,
+  supplements: [] as PatrolSceneSupplement[],
+  budgetDurationMinutes: 20,
   visibleTextLimit: 1800,
   scrollScan: true,
   recordVideo: true,
@@ -90,7 +95,6 @@ const sceneRules: FormRules = {
   name: [{ required: true, message: '请输入巡页名称', trigger: 'blur' }],
   startUrl: [{ required: true, message: '请输入入口页 URL', trigger: 'blur' }],
   budgetDurationMinutes: [{ required: true, message: '请输入预算时长', trigger: 'change' }],
-  budgetLlmTokens: [{ required: true, message: '请输入 Token 预算', trigger: 'change' }],
   planModelId: [{ required: true, message: '请选择规划模型', trigger: 'change' }],
   judgeModelId: [{ required: true, message: '请选择判定模型', trigger: 'change' }],
   cronExpression: [{
@@ -99,9 +103,9 @@ const sceneRules: FormRules = {
         callback()
         return
       }
-      callback(new Error('开启定时后必须填写 Cron 表达式'))
+      callback(new Error('开启定时后必须选择执行频率与时间'))
     },
-    trigger: 'blur',
+    trigger: 'change',
   }],
 }
 
@@ -183,9 +187,10 @@ function resetForm() {
     authLocalStorage: '',
     planModelId: null,
     judgeModelId: null,
-    taskBrief: '',
-    budgetDurationMinutes: 15,
-    budgetLlmTokens: 300000,
+    resolveModelId: null,
+    supplementModelId: null,
+    supplements: [],
+    budgetDurationMinutes: 20,
     visibleTextLimit: 1800,
     scrollScan: true,
     recordVideo: true,
@@ -202,6 +207,131 @@ function openCreate() {
   sceneDialogVisible.value = true
 }
 
+// ───────── 场景补充（补充入口） ─────────
+const supplementDialogVisible = ref(false)
+const supplementEditingIndex = ref<number | null>(null)
+const resolvingSupplement = ref(false)
+const supplementPreview = ref<{ confidence: number; reason: string; source: string } | null>(null)
+const supplementForm = reactive<PatrolSceneSupplement>({
+  name: '',
+  entryType: 'ACTION',
+  preconditionText: '',
+  startUrl: '',
+  focusText: '',
+  enabled: true,
+  steps: [],
+})
+
+function openSupplementCreate() {
+  supplementEditingIndex.value = null
+  supplementPreview.value = null
+  Object.assign(supplementForm, {
+    name: '',
+    entryType: 'ACTION',
+    preconditionText: '',
+    startUrl: '',
+    focusText: '',
+    enabled: true,
+    steps: [],
+    confidence: null,
+    unresolvedReason: null,
+  })
+  supplementDialogVisible.value = true
+}
+
+function fillSupplementExample() {
+  Object.assign(supplementForm, {
+    name: '右侧抽屉',
+    entryType: 'ACTION',
+    preconditionText: '点击「打开右侧抽屉」',
+    startUrl: '',
+    focusText: '检查抽屉打开后的内容与关闭行为',
+    enabled: true,
+    steps: [],
+    confidence: null,
+    unresolvedReason: null,
+  })
+  supplementPreview.value = null
+  showAppToast('已填入示例配置，可按实际页面调整', 'success')
+}
+
+function openSupplementEdit(index: number) {
+  const item = form.supplements[index]
+  if (!item) return
+  supplementEditingIndex.value = index
+  supplementPreview.value = null
+  Object.assign(supplementForm, {
+    ...item,
+    steps: item.steps ? item.steps.map((step) => ({ ...step })) : [],
+  })
+  supplementDialogVisible.value = true
+}
+
+function saveSupplement() {
+  if (supplementForm.entryType === 'ACTION' && !supplementForm.preconditionText?.trim()) {
+    showAppToast('操作型补充入口必须填写前置描述', 'warning')
+    return
+  }
+  if (supplementForm.entryType === 'URL' && !supplementForm.startUrl?.trim()) {
+    showAppToast('URL 型补充入口必须填写起始地址', 'warning')
+    return
+  }
+  const item: PatrolSceneSupplement = {
+    ...supplementForm,
+    name: supplementForm.name?.trim()
+      || supplementForm.preconditionText?.trim()
+      || supplementForm.startUrl?.trim()
+      || '补充入口',
+    steps: supplementForm.steps ?? [],
+  }
+  if (supplementEditingIndex.value === null) {
+    form.supplements.push(item)
+  } else {
+    form.supplements[supplementEditingIndex.value] = item
+  }
+  supplementDialogVisible.value = false
+}
+
+function removeSupplement(index: number) {
+  form.supplements.splice(index, 1)
+}
+
+async function previewSupplement() {
+  if (!editingId.value) {
+    showAppToast('请先保存巡页，再解析补充入口前置', 'warning')
+    return
+  }
+  if (supplementForm.entryType === 'ACTION' && !supplementForm.preconditionText?.trim()) {
+    showAppToast('请先填写前置描述', 'warning')
+    return
+  }
+  resolvingSupplement.value = true
+  try {
+    const result = await resolvePatrolSupplement(spaceId.value, editingId.value, {
+      ...supplementForm,
+      steps: [],
+      confidence: null,
+      unresolvedReason: null,
+    })
+    supplementForm.steps = result.steps ?? []
+    supplementForm.confidence = result.confidence
+    supplementForm.unresolvedReason = result.unresolvedReason ?? ''
+    supplementPreview.value = {
+      confidence: result.confidence,
+      reason: result.unresolvedReason ?? '',
+      source: result.source ?? '',
+    }
+    showAppToast(
+      result.steps?.length ? `解析成功：共 ${result.steps.length} 步` : '未解析出步骤，请调整前置描述',
+      result.steps?.length ? 'success' : 'warning',
+    )
+  } catch (error) {
+    showAppToast(toErrorMessage(error, '前置解析失败'), 'error')
+  } finally {
+    resolvingSupplement.value = false
+  }
+}
+
 function fillFormFromScene(row: PatrolScene, name: string) {
   Object.assign(form, {
     name,
@@ -216,9 +346,15 @@ function fillFormFromScene(row: PatrolScene, name: string) {
     authLocalStorage: '',
     planModelId: modelOptions.value.some((item) => item.id === row.planModelId) ? row.planModelId ?? null : null,
     judgeModelId: visionModels.value.some((item) => item.id === row.judgeModelId) ? row.judgeModelId ?? null : null,
-    taskBrief: row.taskBrief ?? '',
+    resolveModelId: modelOptions.value.some((item) => item.id === row.resolveModelId) ? row.resolveModelId ?? null : null,
+    supplementModelId: modelOptions.value.some((item) => item.id === row.supplementModelId)
+      ? row.supplementModelId ?? null
+      : null,
+    supplements: (row.supplements ?? []).map((item) => ({
+      ...item,
+      steps: item.steps ? item.steps.map((step) => ({ ...step })) : [],
+    })),
     budgetDurationMinutes: row.budgetDurationMinutes,
-    budgetLlmTokens: row.budgetLlmTokens,
     visibleTextLimit: row.visibleTextLimit ?? 1800,
     scrollScan: row.scrollScan,
     recordVideo: row.recordVideo,
@@ -261,9 +397,10 @@ async function submitScene() {
       authLocalStorage: form.authLocalStorage?.trim() || undefined,
       planModelId: form.planModelId ?? null,
       judgeModelId: form.judgeModelId ?? null,
-      taskBrief: form.taskBrief?.trim() || null,
+      resolveModelId: form.resolveModelId ?? null,
+      supplementModelId: form.supplementModelId ?? null,
+      supplements: form.supplements,
       budgetDurationMinutes: form.budgetDurationMinutes,
-      budgetLlmTokens: form.budgetLlmTokens,
       visibleTextLimit: form.visibleTextLimit,
       scrollScan: form.scrollScan,
       recordVideo: form.recordVideo,
@@ -290,8 +427,8 @@ async function submitScene() {
 
 async function runScene(row: PatrolScene) {
   try {
-    const task = await runPatrolScene(spaceId.value, row.id)
-    showAppToast(`已创建巡页任务 #${task.id}`)
+    await runPatrolScene(spaceId.value, row.id)
+    showAppToast('已提交巡页任务，正在排队执行')
     await loadScenes(true)
     historyScene.value = row
     historyPage.value = 1
@@ -349,7 +486,7 @@ function openTask(task: PatrolTask) {
 }
 
 function isTaskActive(task: PatrolTask) {
-  return !['COMPLETED', 'FAILED', 'CANCELED'].includes(task.status)
+  return !['COMPLETED', 'FAILED', 'CANCELED', 'UNREACHABLE'].includes(task.status)
 }
 
 async function cancelHistoryTask(task: PatrolTask) {
@@ -383,7 +520,7 @@ function statusType(status?: string | null) {
   if (!status) return 'info'
   if (status === 'COMPLETED' || status === 'PASS') return 'success'
   if (status === 'FAILED' || status === 'FAIL') return 'danger'
-  if (status === 'WAITING_APPROVAL' || status === 'RUNNING') return 'warning'
+  if (status === 'WAITING_APPROVAL' || status === 'RUNNING' || status === 'UNREACHABLE') return 'warning'
   return 'info'
 }
 
@@ -441,12 +578,20 @@ async function handleHistorySizeChange(next: number) {
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="规划/判定模型" min-width="220">
+        <el-table-column label="模型配置" min-width="230">
           <template #default="{ row }">
             <div class="stack-cell">
               <div class="model-line">
+                <span class="model-key">解析</span>
+                <CellTooltip :content="row.resolveModelName || '复用规划模型'" />
+              </div>
+              <div class="model-line">
                 <span class="model-key">规划</span>
                 <CellTooltip :content="row.planModelName || '未配置'" />
+              </div>
+              <div class="model-line">
+                <span class="model-key">补全</span>
+                <CellTooltip :content="row.supplementModelName || '复用规划模型'" />
               </div>
               <div class="model-line">
                 <span class="model-key">判定</span>
@@ -455,16 +600,15 @@ async function handleHistorySizeChange(next: number) {
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="预算" width="170">
+        <el-table-column label="执行限制" width="170">
           <template #default="{ row }">
             <div class="stack-cell">
               <div>{{ row.budgetDurationMinutes }} 分钟</div>
-              <div class="scene-sub">{{ row.budgetLlmTokens }} tokens</div>
               <div class="scene-sub">页面文本 {{ row.visibleTextLimit }} 字</div>
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="总 Token 消耗" width="170" align="right">
+        <el-table-column label="总 Token 消耗" width="170">
           <template #default="{ row }">{{ formatTokens(row.totalTokenUsed) }}</template>
         </el-table-column>
         <el-table-column label="定时" width="140">
@@ -472,8 +616,8 @@ async function handleHistorySizeChange(next: number) {
             <div class="stack-cell">
               <el-tag v-if="row.scheduleEnabled" type="success" size="small">已开启</el-tag>
               <el-tag v-else type="info" size="small">手动</el-tag>
-              <div v-if="row.cronExpression" class="scene-sub">
-                <CellTooltip :content="row.cronExpression" />
+              <div v-if="row.scheduleEnabled && row.cronExpression" class="scene-sub">
+                <CellTooltip :content="describeCron(row.cronExpression)" />
               </div>
             </div>
           </template>
@@ -497,7 +641,7 @@ async function handleHistorySizeChange(next: number) {
     <el-dialog
       v-model="sceneDialogVisible"
       :title="editingId ? '编辑巡页' : '新建巡页'"
-      width="900px"
+      width="980px"
       top="4vh"
       class="patrol-form-dialog"
     >
@@ -513,7 +657,7 @@ async function handleHistorySizeChange(next: number) {
             <span class="section-dot" />
             <div>
               <h4>基础信息</h4>
-              <p>入口页地址、浏览器与巡检目标</p>
+              <p>入口页地址与浏览器运行方式</p>
             </div>
           </div>
           <div class="form-grid">
@@ -523,10 +667,10 @@ async function handleHistorySizeChange(next: number) {
             <el-form-item label="描述" class="span-6">
               <el-input v-model="form.description" placeholder="可选，用于区分多个巡页" />
             </el-form-item>
-            <el-form-item label="入口页 URL" prop="startUrl" class="span-12">
+            <el-form-item label="入口页 URL" prop="startUrl" class="span-6">
               <el-input v-model="form.startUrl" placeholder="https://example.com/" />
             </el-form-item>
-            <el-form-item label="浏览器" class="span-4">
+            <el-form-item label="浏览器" class="span-3">
               <el-select v-model="form.browser">
                 <el-option label="chromium" value="chromium" />
                 <el-option label="chrome" value="chrome" />
@@ -534,19 +678,11 @@ async function handleHistorySizeChange(next: number) {
                 <el-option label="edge" value="edge" />
               </el-select>
             </el-form-item>
-            <el-form-item label="运行模式" class="span-4">
+            <el-form-item label="运行模式" class="span-3">
               <div class="switch-line">
                 <el-switch v-model="form.headless" />
                 <span>{{ form.headless ? '无头模式' : '有界面模式' }}</span>
               </div>
-            </el-form-item>
-            <el-form-item label="任务描述" class="span-12">
-              <el-input
-                v-model="form.taskBrief"
-                type="textarea"
-                :rows="2"
-                placeholder="用自然语言描述关注模块与验收点，LLM 据此规划用例"
-              />
             </el-form-item>
           </div>
         </section>
@@ -555,46 +691,124 @@ async function handleHistorySizeChange(next: number) {
           <div class="section-head">
             <span class="section-dot section-dot--blue" />
             <div>
-              <h4>模型与预算</h4>
-              <p>规划与判定可分别选择模型；判定模型需要支持视觉</p>
+              <h4>模型配置</h4>
+              <p>解析、规划、补全、判定四类模型分别独立选择</p>
             </div>
           </div>
           <div class="form-grid">
-            <el-form-item label="规划模型" prop="planModelId" class="span-6">
-              <el-select v-model="form.planModelId" placeholder="请选择规划模型">
+            <el-form-item label="解析模型" class="span-3">
+              <el-select v-model="form.resolveModelId" clearable placeholder="不选则复用规划">
                 <el-option
                   v-for="item in modelOptions"
                   :key="item.id"
-                  :label="`${item.name} / ${item.modelId}`"
+                  :label="item.name"
                   :value="item.id"
                 />
               </el-select>
             </el-form-item>
-            <el-form-item label="判定模型" prop="judgeModelId" class="span-6">
-              <el-select v-model="form.judgeModelId" placeholder="请选择判定模型（需支持视觉）">
+            <el-form-item label="规划模型" prop="planModelId" class="span-3">
+              <el-select v-model="form.planModelId" placeholder="规划用例">
+                <el-option
+                  v-for="item in modelOptions"
+                  :key="item.id"
+                  :label="item.name"
+                  :value="item.id"
+                />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="补全模型" class="span-3">
+              <el-select v-model="form.supplementModelId" clearable placeholder="不选则复用规划">
+                <el-option
+                  v-for="item in modelOptions"
+                  :key="item.id"
+                  :label="item.name"
+                  :value="item.id"
+                />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="判定模型" prop="judgeModelId" class="span-3">
+              <el-select v-model="form.judgeModelId" placeholder="需支持视觉">
                 <el-option
                   v-for="item in visionModels"
                   :key="item.id"
-                  :label="`${item.name} / ${item.modelId}`"
+                  :label="item.name"
                   :value="item.id"
                 />
               </el-select>
             </el-form-item>
-            <el-form-item label="时长预算（分钟）" prop="budgetDurationMinutes" class="span-4">
+          </div>
+          <p class="section-hint">
+            判定模型必须支持视觉输入；补全模型用于覆盖率补全，解析模型用于补充入口前置解析，留空时均复用规划模型。
+          </p>
+        </section>
+
+        <section class="form-section">
+          <div class="section-head">
+            <span class="section-dot section-dot--blue" />
+            <div>
+              <h4>执行限制</h4>
+              <p>控制单次任务时长、模型可见内容与采集方式</p>
+            </div>
+          </div>
+          <div class="form-grid">
+            <el-form-item label="时长预算（分钟）" prop="budgetDurationMinutes" class="span-3">
               <el-input-number v-model="form.budgetDurationMinutes" :min="1" :max="60" />
             </el-form-item>
-            <el-form-item label="Token 预算" prop="budgetLlmTokens" class="span-4">
-              <el-input-number v-model="form.budgetLlmTokens" :min="10000" :max="1000000" :step="10000" />
-            </el-form-item>
-            <el-form-item label="模型可见页面文本字数" prop="visibleTextLimit" class="span-4">
+            <el-form-item label="模型可见页面文本字数" prop="visibleTextLimit" class="span-3">
               <el-input-number v-model="form.visibleTextLimit" :min="100" :max="100000" :step="100" />
             </el-form-item>
-            <el-form-item label="采集选项" class="span-12">
-              <div class="checkbox-line">
-                <el-checkbox v-model="form.scrollScan">进入页面先滚动触发懒加载</el-checkbox>
-                <el-checkbox v-model="form.recordVideo">每条用例录屏</el-checkbox>
+            <el-form-item label="滚动扫描" class="span-3">
+              <div class="switch-line">
+                <el-switch v-model="form.scrollScan" />
+                <span>先滚动触发懒加载</span>
               </div>
             </el-form-item>
+            <el-form-item label="用例录屏" class="span-3">
+              <div class="switch-line">
+                <el-switch v-model="form.recordVideo" />
+                <span>每条用例录屏</span>
+              </div>
+            </el-form-item>
+          </div>
+        </section>
+
+        <section class="form-section">
+          <div class="section-head">
+            <span class="section-dot section-dot--green" />
+            <div>
+              <h4>场景补充（补充入口）</h4>
+              <p>每个补充入口作为独立任务与主入口并发执行；填写前置操作或起始地址，进入该状态后再规划用例</p>
+            </div>
+            <el-button class="section-action" type="primary" plain @click="openSupplementCreate">
+              新增补充入口
+            </el-button>
+          </div>
+          <div class="supplement-list">
+            <div v-if="!form.supplements.length" class="supplement-empty">
+              暂未配置补充入口，仅执行入口页
+            </div>
+            <div v-for="(item, index) in form.supplements" :key="index" class="supplement-item">
+              <div class="supplement-item__main">
+                <div class="supplement-item__name">
+                  <el-tag size="small" :type="item.entryType === 'URL' ? 'info' : 'success'">
+                    {{ item.entryType === 'URL' ? 'URL' : '操作' }}
+                  </el-tag>
+                  <span>{{ item.name }}</span>
+                  <el-tag v-if="!item.enabled" size="small" type="info">已停用</el-tag>
+                </div>
+                <div class="supplement-item__desc">
+                  {{ item.entryType === 'URL' ? item.startUrl : item.preconditionText }}
+                </div>
+                <div v-if="item.focusText" class="supplement-item__focus">关注点：{{ item.focusText }}</div>
+                <div v-if="item.steps?.length" class="supplement-item__steps">
+                  解析结果：{{ item.steps.map((step) => `${step.action} ${step.target || step.selector || ''}`.trim()).join(' → ') }}
+                </div>
+              </div>
+              <div class="supplement-item__ops">
+                <el-button link type="primary" @click="openSupplementEdit(index)">编辑</el-button>
+                <el-button link type="danger" @click="removeSupplement(index)">删除</el-button>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -654,7 +868,7 @@ async function handleHistorySizeChange(next: number) {
             <span class="section-dot section-dot--green" />
             <div>
               <h4>定时执行</h4>
-              <p>开启后按 Cron 自动创建巡页任务</p>
+              <p>按每天 / 每周 / 每月的时间自动创建巡页任务</p>
             </div>
           </div>
           <div class="form-grid">
@@ -664,8 +878,13 @@ async function handleHistorySizeChange(next: number) {
                 <span>{{ form.scheduleEnabled ? '已开启' : '仅手动执行' }}</span>
               </div>
             </el-form-item>
-            <el-form-item v-if="form.scheduleEnabled" label="Cron 表达式" prop="cronExpression" class="span-8">
-              <el-input v-model="form.cronExpression" placeholder="0 30 2 * * *（每天 02:30）" />
+            <el-form-item
+              v-if="form.scheduleEnabled"
+              label="执行时间"
+              prop="cronExpression"
+              class="span-8"
+            >
+              <SchedulePicker v-model="form.cronExpression" />
             </el-form-item>
           </div>
         </section>
@@ -676,6 +895,93 @@ async function handleHistorySizeChange(next: number) {
           <div>
             <el-button @click="sceneDialogVisible = false">取消</el-button>
             <el-button type="primary" :loading="saving" @click="submitScene">保存</el-button>
+          </div>
+        </div>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="supplementDialogVisible" width="620px" append-to-body>
+      <template #header>
+        <div class="supplement-dialog__header">
+          <span class="supplement-dialog__title">补充入口</span>
+          <el-link type="primary" :underline="false" @click="fillSupplementExample">
+            一键填入示例配置
+          </el-link>
+        </div>
+      </template>
+      <el-form label-width="96px" label-position="left">
+        <el-form-item label="入口类型">
+          <el-radio-group v-model="supplementForm.entryType">
+            <el-radio-button value="ACTION">前置操作</el-radio-button>
+            <el-radio-button value="URL">起始地址</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item v-if="supplementForm.entryType === 'ACTION'" label="前置描述">
+          <el-input
+            v-model="supplementForm.preconditionText"
+            type="textarea"
+            :rows="3"
+            placeholder="例如：点击「详情」按钮；多步可换行，如 点击「历史」 后 点击第一行「详情」"
+          />
+        </el-form-item>
+        <el-form-item v-else label="起始地址">
+          <el-input v-model="supplementForm.startUrl" placeholder="例如 /demo/list?id=1，仅支持同源地址" />
+        </el-form-item>
+        <el-form-item label="名称">
+          <el-input v-model="supplementForm.name" placeholder="留空则取前置描述/地址前 32 字" />
+        </el-form-item>
+        <el-form-item label="关注点">
+          <el-input
+            v-model="supplementForm.focusText"
+            type="textarea"
+            :rows="2"
+            placeholder="可选，例如：检查任务详情字段完整性"
+          />
+        </el-form-item>
+        <el-form-item label="启用">
+          <el-switch v-model="supplementForm.enabled" />
+        </el-form-item>
+        <el-alert
+          type="info"
+          :closable="false"
+          show-icon
+          title="保存后由平台在任务执行时解析前置；包含写操作的补充入口会在审批后才采集状态快照。"
+        />
+        <div v-if="supplementForm.steps?.length" class="supplement-preview">
+          <div class="supplement-preview__title">
+            解析结果（置信度 {{ supplementForm.confidence ?? '—' }}）
+            <span v-if="supplementPreview?.source">· {{ supplementPreview.source }}</span>
+          </div>
+          <div
+            v-for="(step, index) in supplementForm.steps"
+            :key="index"
+            class="supplement-preview__item"
+          >
+            {{ index + 1 }}. {{ step.action }} {{ step.target || step.selector || '' }}
+            <span v-if="step.confidence !== undefined && step.confidence !== null" class="supplement-preview__score">
+              （{{ step.confidence }}）
+            </span>
+          </div>
+          <div v-if="supplementForm.unresolvedReason" class="supplement-preview__warn">
+            {{ supplementForm.unresolvedReason }}
+          </div>
+        </div>
+      </el-form>
+      <template #footer>
+        <div class="dialog-footer">
+          <span class="dialog-footer__hint">
+            {{ editingId ? '解析基于最近一次任务的入口页快照' : '保存巡页后可解析前置' }}
+          </span>
+          <div>
+            <el-button
+              :loading="resolvingSupplement"
+              :disabled="!editingId"
+              @click="previewSupplement"
+            >
+              解析预览
+            </el-button>
+            <el-button @click="supplementDialogVisible = false">取消</el-button>
+            <el-button type="primary" @click="saveSupplement">确定</el-button>
           </div>
         </div>
       </template>
@@ -921,6 +1227,24 @@ async function handleHistorySizeChange(next: number) {
   font-size: 12px;
   color: #94a3b8;
 }
+.supplement-dialog__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-right: 24px;
+}
+.supplement-dialog__title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1f2937;
+}
+.section-hint {
+  margin: -4px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #94a3b8;
+}
 .form-grid {
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
@@ -1017,5 +1341,85 @@ async function handleHistorySizeChange(next: number) {
 .dialog-footer__hint {
   font-size: 12px;
   color: #94a3b8;
+}
+.section-action {
+  margin-left: auto;
+}
+.supplement-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.supplement-empty {
+  padding: 14px 16px;
+  border: 1px dashed #dbe3ef;
+  border-radius: 10px;
+  color: #94a3b8;
+  font-size: 13px;
+  background: #fafcff;
+}
+.supplement-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 16px;
+  border: 1px solid #e6edf7;
+  border-radius: 10px;
+  background: #fff;
+}
+.supplement-item__main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.supplement-item__name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1e293b;
+}
+.supplement-item__desc {
+  font-size: 12px;
+  color: #475569;
+  word-break: break-all;
+}
+.supplement-item__focus,
+.supplement-item__steps {
+  font-size: 12px;
+  color: #94a3b8;
+  word-break: break-all;
+}
+.supplement-item__ops {
+  flex-shrink: 0;
+  display: flex;
+  gap: 4px;
+}
+.supplement-preview {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #f5f9ff;
+  font-size: 12px;
+  color: #475569;
+}
+.supplement-preview__title {
+  font-weight: 600;
+  margin-bottom: 6px;
+  color: #1e293b;
+}
+.supplement-preview__item {
+  line-height: 1.8;
+  word-break: break-all;
+}
+.supplement-preview__score {
+  color: #94a3b8;
+}
+.supplement-preview__warn {
+  margin-top: 6px;
+  color: #d97706;
 }
 </style>

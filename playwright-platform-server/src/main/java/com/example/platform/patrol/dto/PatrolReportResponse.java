@@ -12,7 +12,8 @@ public record PatrolReportResponse(
         CaseStats cases,
         CoverageStats coverage,
         TokenStats tokens,
-        List<Long> pendingApprovalCaseIds
+        List<Long> pendingApprovalCaseIds,
+        List<String> pendingSupplementLabels
 ) {
     public record CaseStats(int total, int pass, int fail, int skip, double passRate) {
     }
@@ -20,6 +21,6 @@ public record PatrolReportResponse(
     public record CoverageStats(int totalElements, int coveredElements, double coverageRate) {
     }
 
-    public record TokenStats(int used, int budget) {
+    public record TokenStats(int used) {
     }
 }

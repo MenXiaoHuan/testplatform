@@ -1,6 +1,6 @@
 # 易测 · 部署指南
 
-> 版本 v2.1 · 2026-11-01
+> 版本 v2.2 · 2026-11-05
 > 
 > 本指南覆盖从**本地开发**到 **Kubernetes / 云托管** 的主流部署模式。选择哪种模式取决于团队规模、业务流量、运维能力和预算。
 > 
@@ -9,6 +9,7 @@
 > - `docs/README.md`：模块 playbook 导航
 > - `docs/playbooks/01-account-and-space.md`：账号、空间与权限设计
 > - `docs/playbooks/11-platform-admin.md`：超管用户管理与注册开关
+> - `docs/playbooks/12-patrol.md`：巡页配置、补充入口、四类模型与证据保留
 > - `docs/code-style.md`：代码编写规范
 
 ---
@@ -321,6 +322,14 @@ PLATFORM_TASK_QUEUE_CAPACITY=50
 PLATFORM_TASK_RETENTION_DAYS=90
 PLATFORM_AI_DAILY_LIMIT=50
 PLATFORM_AI_MAX_CONCURRENT=4
+
+# === 后端：巡页 ===
+PLATFORM_PATROL_MAX_CONCURRENT=10
+PLATFORM_PATROL_QUEUE_CAPACITY=100
+PLATFORM_PATROL_RETENTION_DAYS=90
+PLATFORM_PATROL_RETENTION_CRON=0 30 2 * * *
+PLATFORM_PATROL_LLM_TIMEOUT_SECONDS=120
+PLATFORM_PATROL_LLM_MAX_CALL_SECONDS=1800
 
 # === 加密与 Git ===
 PLATFORM_CREDENTIAL_KEY=<32-byte-base64>
@@ -661,6 +670,7 @@ PLATFORM_RUNNER_DOCKER_HOST=tcp://runner-dind:2375
 | 指标 | 计算 | 默认 |
 |------|------|------|
 | 任务并发数 | = `PLATFORM_TASK_MAX_POOL_SIZE` | 单机 4，K8s 可更高 |
+| 巡页任务并发数 | = `PLATFORM_PATROL_MAX_CONCURRENT` | 默认 10，并行已满时手动执行排队（队列 `PLATFORM_PATROL_QUEUE_CAPACITY` 默认 100），定时执行直接跳过 |
 | 每个 Runner 资源 | 2 vCPU + 2GB 内存 | 默认值 |
 | Runner 启动时间 | 镜像 pull ≈ 15~30s + npm ci ≈ 30~120s | 取决于镜像大小和依赖 |
 | AI 并发数 | = `PLATFORM_AI_MAX_CONCURRENT` | 4 |
@@ -674,6 +684,7 @@ PLATFORM_RUNNER_DOCKER_HOST=tcp://runner-dind:2375
 | Langfuse 数据（Trace / 评分） | 高 | 按 Langfuse 项目保留策略 | ClickHouse + Postgres 数据盘，≥ 100GB 起步 |
 | Redis 缓存 / 会话 | 低 | 详情缓存 TTL 抖动，会话 30 分钟 | SSD，≥ 20GB |
 | MinIO 产物（截图/视频/Trace）| **高**（每任务 ~50~200MB）| 按策略清理 | 对象存储，≥ 500GB 起步 |
+| 巡页证据（状态快照/用例录屏/步骤截图/控制台/DOM）| 高（随用例数与录屏开关变化）| 默认 90 天，每天 02:30 清理 | 与 MinIO 共用对象存储，预留 ≥ 200GB |
 | Runner Workspace | 高（临时）| 任务完成后清理 | 本地 SSD，≥ 100GB |
 
 ### 8.3 成本估算（云环境参考）
@@ -1240,3 +1251,4 @@ top / htop                                                      # CPU
 | v1.0 | 2026-10-15 | 初始版本：单机 Docker Compose 部署（原 deployment.md）|
 | **v2.0** | **2026-10-28** | **大幅升级：新增模式选择、分机部署、Kubernetes、云托管、容量规划、监控日志、CI/CD、镜像仓库、滚动更新、多实例注意事项、DinD Runner 适配、安全加固** |
 | **v2.1** | **2026-11-01** | **同步平台现状：补充 Langfuse 自托管变量、超管初始化与注册开关落库说明；标注 Actuator 需自行接入；文档链接改指向 `docs/README.md` 与模块 playbook** |
+| **v2.2** | **2026-11-05** | **同步巡页现状：补充巡页并发/排队/保留与模型调用超时变量、巡页证据存储规划、巡页 playbook 链接** |

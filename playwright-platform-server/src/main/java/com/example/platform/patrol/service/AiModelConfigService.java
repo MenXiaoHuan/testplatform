@@ -22,6 +22,10 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class AiModelConfigService {
     private static final String PROVIDER_OPENAI = "OPENAI_COMPATIBLE";
+    /** maxTokens 仅支持档位化配置：8k / 16k / 32k / 64k。 */
+    private static final int DEFAULT_MAX_TOKENS = 16384;
+    private static final java.util.Set<Integer> ALLOWED_MAX_TOKENS =
+            java.util.Set.of(8192, 16384, 32768, 65536);
 
     private final AiModelConfigMapper mapper;
     private final CredentialCipher credentialCipher;
@@ -132,9 +136,10 @@ public class AiModelConfigService {
         entity.setSupportsVision(Boolean.TRUE.equals(request.supportsVision()));
         entity.setSupportsTools(Boolean.TRUE.equals(request.supportsTools()));
         entity.setSupportsJson(!Boolean.FALSE.equals(request.supportsJson()));
-        int maxTokens = request.maxTokens() == null ? 4096 : request.maxTokens();
-        if (maxTokens < 256 || maxTokens > 32768) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "maxTokens 需在 256 到 32768 之间");
+        int maxTokens = request.maxTokens() == null ? DEFAULT_MAX_TOKENS : request.maxTokens();
+        if (!ALLOWED_MAX_TOKENS.contains(maxTokens)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "maxTokens 仅支持 8192 / 16384 / 32768 / 65536（8k / 16k / 32k / 64k）");
         }
         entity.setMaxTokens(maxTokens);
         BigDecimal temperature = request.temperature() == null

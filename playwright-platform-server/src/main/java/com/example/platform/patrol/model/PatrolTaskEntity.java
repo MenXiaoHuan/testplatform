@@ -7,6 +7,10 @@ public class PatrolTaskEntity {
     private Long id;
     private Long spaceId;
     private Long sceneId;
+    private Long parentTaskId;
+    private String entryType;
+    private String entryLabel;
+    private String setupStepsJson;
     private String sceneName;
     private String triggerType;
     private String status;
@@ -22,8 +26,6 @@ public class PatrolTaskEntity {
     private String approvedBy;
     private LocalDateTime approvedAt;
     private Integer budgetDurationMinutes;
-    private Integer budgetLlmTokens;
-    private Integer budgetCases;
     private Integer caseCount;
     private Integer casePassCount;
     private Integer caseFailCount;
@@ -34,6 +36,8 @@ public class PatrolTaskEntity {
     private Integer llmTokenUsed;
     private Boolean degraded;
     private String resultMessage;
+    /** 可执行解决建议（JSON 字符串数组），由失败归因生成，供概览展示。 */
+    private String adviceJson;
     private Boolean cancelRequested;
     private LocalDateTime retentionUntil;
     private LocalDateTime startedAt;
@@ -49,6 +53,14 @@ public class PatrolTaskEntity {
     public void setSpaceId(Long spaceId) { this.spaceId = spaceId; }
     public Long getSceneId() { return sceneId; }
     public void setSceneId(Long sceneId) { this.sceneId = sceneId; }
+    public Long getParentTaskId() { return parentTaskId; }
+    public void setParentTaskId(Long parentTaskId) { this.parentTaskId = parentTaskId; }
+    public String getEntryType() { return entryType; }
+    public void setEntryType(String entryType) { this.entryType = entryType; }
+    public String getEntryLabel() { return entryLabel; }
+    public void setEntryLabel(String entryLabel) { this.entryLabel = entryLabel; }
+    public String getSetupStepsJson() { return setupStepsJson; }
+    public void setSetupStepsJson(String setupStepsJson) { this.setupStepsJson = setupStepsJson; }
     public String getSceneName() { return sceneName; }
     public void setSceneName(String sceneName) { this.sceneName = sceneName; }
     public String getTriggerType() { return triggerType; }
@@ -79,10 +91,6 @@ public class PatrolTaskEntity {
     public void setApprovedAt(LocalDateTime approvedAt) { this.approvedAt = approvedAt; }
     public Integer getBudgetDurationMinutes() { return budgetDurationMinutes; }
     public void setBudgetDurationMinutes(Integer budgetDurationMinutes) { this.budgetDurationMinutes = budgetDurationMinutes; }
-    public Integer getBudgetLlmTokens() { return budgetLlmTokens; }
-    public void setBudgetLlmTokens(Integer budgetLlmTokens) { this.budgetLlmTokens = budgetLlmTokens; }
-    public Integer getBudgetCases() { return budgetCases; }
-    public void setBudgetCases(Integer budgetCases) { this.budgetCases = budgetCases; }
     public Integer getCaseCount() { return caseCount; }
     public void setCaseCount(Integer caseCount) { this.caseCount = caseCount; }
     public Integer getCasePassCount() { return casePassCount; }
@@ -103,6 +111,8 @@ public class PatrolTaskEntity {
     public void setDegraded(Boolean degraded) { this.degraded = degraded; }
     public String getResultMessage() { return resultMessage; }
     public void setResultMessage(String resultMessage) { this.resultMessage = resultMessage; }
+    public String getAdviceJson() { return adviceJson; }
+    public void setAdviceJson(String adviceJson) { this.adviceJson = adviceJson; }
     public Boolean getCancelRequested() { return cancelRequested; }
     public void setCancelRequested(Boolean cancelRequested) { this.cancelRequested = cancelRequested; }
     public LocalDateTime getRetentionUntil() { return retentionUntil; }

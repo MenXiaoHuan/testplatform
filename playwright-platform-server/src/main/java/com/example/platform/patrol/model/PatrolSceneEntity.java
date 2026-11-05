@@ -18,11 +18,11 @@ public class PatrolSceneEntity {
     private String authLocalStorageEncrypted;
     private Long planModelId;
     private Long judgeModelId;
-    private String taskBrief;
+    private Long resolveModelId;
+    private Long supplementModelId;
+    private String supplementsJson;
     private Integer budgetDurationMinutes;
-    private Integer budgetLlmTokens;
     private Integer visibleTextLimit;
-    private Integer budgetCases;
     private Boolean scrollScan;
     private Boolean recordVideo;
     private Boolean autoApproveWrite;
@@ -65,16 +65,16 @@ public class PatrolSceneEntity {
     public void setPlanModelId(Long planModelId) { this.planModelId = planModelId; }
     public Long getJudgeModelId() { return judgeModelId; }
     public void setJudgeModelId(Long judgeModelId) { this.judgeModelId = judgeModelId; }
-    public String getTaskBrief() { return taskBrief; }
-    public void setTaskBrief(String taskBrief) { this.taskBrief = taskBrief; }
+    public Long getResolveModelId() { return resolveModelId; }
+    public void setResolveModelId(Long resolveModelId) { this.resolveModelId = resolveModelId; }
+    public Long getSupplementModelId() { return supplementModelId; }
+    public void setSupplementModelId(Long supplementModelId) { this.supplementModelId = supplementModelId; }
+    public String getSupplementsJson() { return supplementsJson; }
+    public void setSupplementsJson(String supplementsJson) { this.supplementsJson = supplementsJson; }
     public Integer getBudgetDurationMinutes() { return budgetDurationMinutes; }
     public void setBudgetDurationMinutes(Integer budgetDurationMinutes) { this.budgetDurationMinutes = budgetDurationMinutes; }
-    public Integer getBudgetLlmTokens() { return budgetLlmTokens; }
-    public void setBudgetLlmTokens(Integer budgetLlmTokens) { this.budgetLlmTokens = budgetLlmTokens; }
     public Integer getVisibleTextLimit() { return visibleTextLimit; }
     public void setVisibleTextLimit(Integer visibleTextLimit) { this.visibleTextLimit = visibleTextLimit; }
-    public Integer getBudgetCases() { return budgetCases; }
-    public void setBudgetCases(Integer budgetCases) { this.budgetCases = budgetCases; }
     public Boolean getScrollScan() { return scrollScan; }
     public void setScrollScan(Boolean scrollScan) { this.scrollScan = scrollScan; }
     public Boolean getRecordVideo() { return recordVideo; }
